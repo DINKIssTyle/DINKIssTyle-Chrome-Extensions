@@ -14,10 +14,24 @@
     const fullscreenToggle = document.getElementById("fullscreenToggle");
     const savePdf = document.getElementById("savePdf");
 
+    // Advanced Settings Modal Elements
+    const advSettings = document.getElementById("advSettings");
+    const advModal = document.getElementById("advModal");
+    const customFontInput = document.getElementById("customFont");
+    const lineHeightInput = document.getElementById("lineHeight");
+    const lineHeightDefault = document.getElementById("lineHeightDefault");
+    const advReset = document.getElementById("advReset");
+    const advSave = document.getElementById("advSave");
+
     // State
     let currentFont = localStorage.getItem("articleView_font") || "sans";
     let currentTheme = localStorage.getItem("articleView_theme") || "auto";
     let currentZoom = parseFloat(localStorage.getItem("articleView_zoom") || "1");
+    let customFontName = localStorage.getItem("articleView_customFont") || "";
+    let lineHeight = localStorage.getItem("articleView_lineHeight") || "";
+
+    // Defaults
+    const DEFAULT_LINE_HEIGHT = "1.8";
 
     // Theme order: light -> dark -> auto -> light ...
     const themeOrder = ["light", "dark", "auto"];
@@ -49,6 +63,7 @@
         applyFont(currentFont);
         applyTheme(currentTheme);
         applyZoom(currentZoom);
+        applyAdvancedSettings();
     }
 
     // Zoom controls - scales entire article area like Ctrl+/-
@@ -119,6 +134,75 @@
     // Save as PDF
     savePdf.addEventListener("click", () => {
         window.print();
+    });
+
+    // Advanced Settings
+    function applyAdvancedSettings() {
+        // Apply custom font
+        if (customFontName) {
+            readerContent.style.fontFamily = customFontName;
+        } else {
+            readerContent.style.fontFamily = "";
+        }
+
+        // Apply line height
+        if (lineHeight) {
+            articleBody.style.lineHeight = lineHeight + "em";
+        } else {
+            articleBody.style.lineHeight = "";
+        }
+    }
+
+    // Open modal
+    advSettings.addEventListener("click", () => {
+        customFontInput.value = customFontName;
+        lineHeightInput.value = lineHeight || "";
+        advModal.style.display = "flex";
+    });
+
+    // Close modal when clicking overlay
+    advModal.addEventListener("click", (e) => {
+        if (e.target === advModal) {
+            advModal.style.display = "none";
+        }
+    });
+
+    // Line height default button
+    lineHeightDefault.addEventListener("click", () => {
+        lineHeightInput.value = DEFAULT_LINE_HEIGHT;
+    });
+
+    // Reset button
+    advReset.addEventListener("click", () => {
+        customFontInput.value = "";
+        lineHeightInput.value = "";
+        customFontName = "";
+        lineHeight = "";
+        localStorage.removeItem("articleView_customFont");
+        localStorage.removeItem("articleView_lineHeight");
+        applyAdvancedSettings();
+        advModal.style.display = "none";
+    });
+
+    // Save button
+    advSave.addEventListener("click", () => {
+        customFontName = customFontInput.value.trim();
+        lineHeight = lineHeightInput.value.trim();
+
+        if (customFontName) {
+            localStorage.setItem("articleView_customFont", customFontName);
+        } else {
+            localStorage.removeItem("articleView_customFont");
+        }
+
+        if (lineHeight) {
+            localStorage.setItem("articleView_lineHeight", lineHeight);
+        } else {
+            localStorage.removeItem("articleView_lineHeight");
+        }
+
+        applyAdvancedSettings();
+        advModal.style.display = "none";
     });
 
     // Initialize

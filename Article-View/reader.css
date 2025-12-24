@@ -237,10 +237,149 @@ body {
     background: none;
 }
 
+/* Modal Styles */
+.modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.6);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+}
+
+.modal-content {
+    background: var(--bg-toolbar);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    width: 320px;
+    max-width: 90%;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+}
+
+.modal-title {
+    font-size: 16px;
+    font-weight: 600;
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--border-color);
+    margin: 0;
+}
+
+.modal-body {
+    padding: 20px;
+}
+
+.form-group {
+    margin-bottom: 16px;
+}
+
+.form-group:last-child {
+    margin-bottom: 0;
+}
+
+.form-group label {
+    display: block;
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--text-secondary);
+    margin-bottom: 6px;
+}
+
+.form-group input[type="text"],
+.form-group input[type="number"] {
+    width: 100%;
+    padding: 8px 12px;
+    font-size: 13px;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    background: var(--bg-body);
+    color: var(--text-primary);
+    outline: none;
+}
+
+.form-group input:focus {
+    border-color: var(--link-color);
+}
+
+.input-with-button {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.input-with-button input {
+    flex: 1;
+    width: auto;
+}
+
+.input-suffix {
+    font-size: 12px;
+    color: var(--text-muted);
+}
+
+.btn-small {
+    padding: 6px 10px;
+    font-size: 11px;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    background: var(--btn-bg);
+    color: var(--text-primary);
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+.btn-small:hover {
+    background: var(--btn-hover);
+}
+
+.modal-footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    padding: 16px 20px;
+    border-top: 1px solid var(--border-color);
+}
+
+.modal-btn {
+    padding: 8px 16px;
+    font-size: 13px;
+    font-weight: 500;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background 0.15s;
+}
+
+.btn-reset {
+    background: var(--btn-bg);
+    color: var(--text-primary);
+}
+
+.btn-reset:hover {
+    background: var(--btn-hover);
+}
+
+.btn-save {
+    background: var(--link-color);
+    border-color: var(--link-color);
+    color: white;
+}
+
+.btn-save:hover {
+    opacity: 0.9;
+}
+
 /* Print styles */
 @media print {
     .toolbar {
         display: none;
+    }
+
+    .modal-overlay {
+        display: none !important;
     }
 
     .reader-content {

@@ -23,6 +23,20 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
     if (info.menuItemId !== MENU_ID) return;
 
     try {
+        // First, try to inject the content script in case it's not loaded
+        try {
+            await chrome.scripting.executeScript({
+                target: { tabId: tab.id },
+                files: ["content.js"]
+            });
+        } catch (injectError) {
+            // Script may already be injected or page doesn't allow injection
+            console.log("[Article View] Script injection skipped:", injectError.message);
+        }
+
+        // Small delay to ensure script is ready
+        await new Promise(resolve => setTimeout(resolve, 100));
+
         // Send message to content script to extract article
         const response = await chrome.tabs.sendMessage(tab.id, { action: "extractArticle" });
 
