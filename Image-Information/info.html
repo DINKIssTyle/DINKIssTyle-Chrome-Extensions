@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Image Information</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+
+<body>
+  <div class="container">
+
+    <!-- Image Viewer -->
+    <div class="image-viewer" id="imageViewer">
+      <img id="previewImage" src="" alt="Image Preview">
+    </div>
+
+    <!-- Image Info Table -->
+    <table class="info-table">
+      <tr>
+        <th>Filename</th>
+        <td id="fileName">-</td>
+      </tr>
+      <tr>
+        <th>Type</th>
+        <td id="fileType">-</td>
+      </tr>
+      <tr>
+        <th>File Size</th>
+        <td id="fileSize">-</td>
+      </tr>
+      <tr>
+        <th>Dimensions</th>
+        <td id="imageDimensions">-</td>
+      </tr>
+      <tr>
+        <th>Alt / Desc</th>
+        <td id="altText">-</td>
+      </tr>
+      <tr>
+        <th>URL</th>
+        <td id="imageUrl" class="url-cell">-</td>
+      </tr>
+    </table>
+
+    <!-- Action Buttons -->
+    <div class="button-group">
+      <button id="openNewTab" class="btn btn-primary">
+        <span class="icon">🔗</span>
+        Open in New Tab
+      </button>
+      <button id="saveImage" class="btn btn-secondary">
+        <span class="icon">💾</span>
+        Save Image
+      </button>
+    </div>
+  </div>
+
+  <script src="info.js"></script>
+</body>
+
+</html>
