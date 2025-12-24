@@ -19,5 +19,6 @@ Since these are unpacked extensions, you need to install them via Chrome's Devel
 
 ## Extensions List
 
+*   **Article-View**: Extract articles and posts into a clean, ad-free reader window with zoom controls, font toggle (Serif/Sans), theme modes (Light/Dark/Auto), fullscreen, and Save as PDF.
 *   **Image-Information**: Right-click on any image (even those behind layers) to view detailed metadata like filename, MIME type, size, and dimensions.
 *   **save-image-as-type**: Context menu options to save images as different formats (JPG, PNG, WebP) or the original.

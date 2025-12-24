@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Article View</title>
+    <link rel="stylesheet" href="reader.css">
+</head>
+
+<body>
+    <!-- Toolbar -->
+    <header class="toolbar">
+        <div class="toolbar-left">
+            <span class="site-name" id="siteName"></span>
+        </div>
+        <div class="toolbar-right">
+            <button id="zoomOut" class="toolbar-btn toolbar-btn-icon" title="Zoom Out">
+                <span class="btn-label">−</span>
+            </button>
+            <button id="zoomIn" class="toolbar-btn toolbar-btn-icon" title="Zoom In">
+                <span class="btn-label">+</span>
+            </button>
+            <button id="fontToggle" class="toolbar-btn" title="Toggle Font">
+                <span class="btn-label">Serif</span>
+            </button>
+            <button id="themeToggle" class="toolbar-btn" title="Toggle Theme">
+                <span class="btn-label">Light</span>
+            </button>
+            <button id="savePdf" class="toolbar-btn" title="Save as PDF">
+                <span class="btn-label">PDF</span>
+            </button>
+            <button id="fullscreenToggle" class="toolbar-btn toolbar-btn-icon" title="Toggle Fullscreen">
+                <span class="btn-label">⛶</span>
+            </button>
+        </div>
+    </header>
+
+    <!-- Article Content -->
+    <main class="reader-content">
+        <h1 class="article-title" id="articleTitle"></h1>
+        <div class="article-meta" id="articleMeta"></div>
+        <div class="article-body" id="articleBody"></div>
+    </main>
+
+    <script src="reader.js"></script>
+</body>
+
+</html>
