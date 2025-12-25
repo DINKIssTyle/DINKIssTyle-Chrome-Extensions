@@ -154,25 +154,17 @@ body {
   font-size: 14px;
 }
 
-.btn-primary {
+.btn-primary,
+.btn-secondary {
   background: var(--accent);
   border-color: var(--accent);
-  color: var(--text-primary);
+  color: #ffffff;
 }
 
-.btn-primary:hover {
+.btn-primary:hover,
+.btn-secondary:hover {
   background: var(--accent-hover);
   border-color: var(--accent-hover);
-}
-
-.btn-secondary {
-  background: var(--bg-card);
-  color: var(--text-primary);
-}
-
-.btn-secondary:hover {
-  background: var(--bg-input);
-  border-color: var(--text-muted);
 }
 
 .btn:active {
