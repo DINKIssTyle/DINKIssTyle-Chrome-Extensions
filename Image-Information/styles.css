@@ -1,17 +1,35 @@
-/* styles.css - Clean modern dark theme inspired by reference */
+/* styles.css - Clean modern theme with auto dark/light mode */
 
+/* Light theme (default) */
 :root {
-  --bg-body: #1e2330;
-  --bg-card: #252a3a;
-  --bg-input: #1a1f2c;
-  --text-primary: #e8e8e8;
-  --text-secondary: #8b919e;
-  --text-muted: #5c6270;
-  --accent: #203d63;
-  --accent-hover: #21506b;
-  --border-color: #343a4a;
-  --danger: #e57373;
-  --shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+  --bg-body: #f5f6f8;
+  --bg-card: #ffffff;
+  --bg-input: #ebedf0;
+  --text-primary: #1a1a1a;
+  --text-secondary: #5c6270;
+  --text-muted: #8b919e;
+  --accent: #3b82f6;
+  --accent-hover: #2563eb;
+  --border-color: #d1d5db;
+  --danger: #dc2626;
+  --shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+/* Dark theme (auto-switch based on system preference) */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg-body: #1e2330;
+    --bg-card: #252a3a;
+    --bg-input: #1a1f2c;
+    --text-primary: #e8e8e8;
+    --text-secondary: #8b919e;
+    --text-muted: #5c6270;
+    --accent: #3b82f6;
+    --accent-hover: #60a5fa;
+    --border-color: #343a4a;
+    --danger: #e57373;
+    --shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+  }
 }
 
 * {

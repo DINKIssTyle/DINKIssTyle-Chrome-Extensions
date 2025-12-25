@@ -90,7 +90,10 @@ function updateLastHitFromEvent(ev) {
     naturalWidth: hit.naturalWidth || 0,
     naturalHeight: hit.naturalHeight || 0,
     pageUrl: location.href,
-    at: Date.now()
+    at: Date.now(),
+    // 마우스 화면 좌표 저장 (팝업 위치 결정용)
+    screenX: ev.screenX,
+    screenY: ev.screenY
   };
 
   // service worker에서 context menu click 시 참조하도록 session 저장

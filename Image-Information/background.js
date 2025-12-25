@@ -40,13 +40,26 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
             return;
         }
 
-        // 팝업 창 열기
+        // 팝업 창 열기 - 마우스 커서 근처에 열기
         const popupUrl = chrome.runtime.getURL("info.html");
+        const popupWidth = 520;
+        const popupHeight = 700;
+
+        // 마우스 화면 좌표 사용 (저장된 좌표가 없으면 화면 중앙에 열기)
+        let left = hit.screenX || 100;
+        let top = hit.screenY || 100;
+
+        // 창이 마우스 오른쪽 아래로 열리도록 약간 오프셋
+        left = Math.max(0, left - 50);
+        top = Math.max(0, top - 50);
+
         chrome.windows.create({
             url: popupUrl,
             type: "popup",
-            width: 520,
-            height: 700
+            width: popupWidth,
+            height: popupHeight,
+            left: Math.round(left),
+            top: Math.round(top)
         });
     } catch (e) {
         console.error("[Image Information] Error:", e);
