@@ -5,6 +5,30 @@
 (function () {
     'use strict';
 
+    let isEnabled = true;
+
+    // Load initial settings
+    try {
+        chrome.storage.local.get(['zoomToEnabled'], (result) => {
+            if (chrome.runtime.lastError) {
+                console.warn("[Zoom-To] Could not load settings:", chrome.runtime.lastError);
+                return;
+            }
+            isEnabled = result.zoomToEnabled !== false; // Default true
+            console.log(`[Zoom-To] Initial State: ${isEnabled ? 'Enabled' : 'Disabled'}`);
+        });
+    } catch (e) {
+        console.warn("[Zoom-To] Storage API not available:", e);
+    }
+
+    // Listen for setting changes
+    chrome.storage.onChanged.addListener((changes, area) => {
+        if (area === 'local' && changes.zoomToEnabled) {
+            isEnabled = changes.zoomToEnabled.newValue;
+            console.log(`[Zoom-To] State changed to: ${isEnabled ? 'Enabled' : 'Disabled'}`);
+        }
+    });
+
     // Find the best container element
     function findContentContainer(element) {
         // Skip interactive elements
@@ -50,6 +74,9 @@
 
     // Double-click handler
     function handleDblClick(event) {
+        // Check if feature is enabled
+        if (!isEnabled) return;
+
         // Clear text selection
         const selection = window.getSelection();
         if (selection) {
@@ -148,12 +175,6 @@
                         // Calculate target scrollY based on previous ratio
                         const targetCenterY = centerRatioY * newDocHeight;
                         const targetScrollY = targetCenterY - (newViewportHeight / 2);
-
-                        // For X axis, native zoom usually keeps it logical, 
-                        // but if we were aligned left, we might want to center or keep ratio.
-                        // Let's rely on browser's native horizontal handling or just keep current X ratio?
-                        // Simple approach: Keep X scroll proportional too if possible, 
-                        // or just let browser handle X (usually fine).
 
                         // Actually, calculating Ratio is better.
                         window.scrollTo({

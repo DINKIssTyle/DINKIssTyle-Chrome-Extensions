@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Zoom-To Settings</title>
+    <link rel="stylesheet" href="popup.css">
+</head>
+
+<body>
+    <div class="container">
+        <div class="header">
+            <img src="icons/icon48.png" alt="Logo" class="logo">
+            <div class="title-group">
+                <h1>Zoom-To</h1>
+                <p class="subtitle">Smart Native Zoom</p>
+            </div>
+        </div>
+
+        <div class="control-group">
+            <div class="label-group">
+                <span class="label">Enable Feature</span>
+                <span class="desc">Double-click to smart zoom</span>
+            </div>
+            <label class="switch">
+                <input type="checkbox" id="toggleZoom">
+                <span class="slider round"></span>
+            </label>
+        </div>
+
+        <div class="footer">
+            <span id="statusText" class="status-indicator">Active</span>
+        </div>
+    </div>
+    <script src="popup.js"></script>
+</body>
+
+</html>
