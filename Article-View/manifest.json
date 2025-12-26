@@ -7,7 +7,8 @@
         "contextMenus",
         "activeTab",
         "storage",
-        "scripting"
+        "scripting",
+        "system.display"
     ],
     "host_permissions": [
         "<all_urls>"

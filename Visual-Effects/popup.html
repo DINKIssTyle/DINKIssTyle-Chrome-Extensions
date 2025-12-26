@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Visual Effects</title>
+    <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>✨ Visual Effects</h1>
+            <p class="subtitle">Page Transition Effects</p>
+        </header>
+
+        <div class="toggle-section">
+            <label class="toggle-label">
+                <span>Enable Effects</span>
+                <label class="switch">
+                    <input type="checkbox" id="enableToggle" checked>
+                    <span class="slider"></span>
+                </label>
+            </label>
+        </div>
+
+        <div class="settings-section">
+            <div class="setting-group">
+                <label for="effectSelect">Effect Type</label>
+                <select id="effectSelect">
+                    <option value="slide">📱 Slide</option>
+                    <option value="fade">🌫️ Fade</option>
+                    <option value="curl">📄 Page Curl</option>
+                    <option value="flip">🔄 Flip</option>
+                    <option value="zoom">🔍 Zoom</option>
+                </select>
+            </div>
+
+            <div class="setting-group" id="directionGroup">
+                <label for="directionSelect">Direction</label>
+                <select id="directionSelect">
+                    <option value="left">← Left</option>
+                    <option value="right">→ Right</option>
+                    <option value="up">↑ Up</option>
+                    <option value="down">↓ Down</option>
+                </select>
+            </div>
+
+            <div class="setting-group">
+                <label for="durationRange">Duration: <span id="durationValue">400</span>ms</label>
+                <input type="range" id="durationRange" min="200" max="1000" step="50" value="400">
+            </div>
+        </div>
+
+        <div class="preview-section">
+            <button id="previewBtn" class="preview-btn">Preview Effect</button>
+            <div id="previewBox" class="preview-box">
+                <div class="preview-content">Preview</div>
+            </div>
+        </div>
+
+        <footer>
+            <p>Click any link to see the effect!</p>
+        </footer>
+    </div>
+    <script src="popup.js"></script>
+</body>
+</html>

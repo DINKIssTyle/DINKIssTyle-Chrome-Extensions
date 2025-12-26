@@ -48,13 +48,29 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
         // Store the extracted content
         await chrome.storage.session.set({ articleData: response });
 
-        // Open reader window
+        // Open reader window centered on screen
         const readerUrl = chrome.runtime.getURL("reader.html");
+        const width = 800;
+        const height = 900;
+
+        // Get display info to center the window
+        const displays = await chrome.system.display.getInfo();
+        const primaryDisplay = displays.find(d => d.isPrimary) || displays[0];
+        const screenWidth = primaryDisplay.workArea.width;
+        const screenHeight = primaryDisplay.workArea.height;
+        const screenLeft = primaryDisplay.workArea.left;
+        const screenTop = primaryDisplay.workArea.top;
+
+        const left = Math.round(screenLeft + (screenWidth - width) / 2);
+        const top = Math.round(screenTop + (screenHeight - height) / 2);
+
         chrome.windows.create({
             url: readerUrl,
             type: "popup",
-            width: 800,
-            height: 900
+            width: width,
+            height: height,
+            left: left,
+            top: top
         });
     } catch (e) {
         console.error("[Article View] Error:", e);
