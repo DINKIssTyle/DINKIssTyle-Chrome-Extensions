@@ -105,19 +105,24 @@ async function convertBlobToType(inputBlob, mime, quality = 0.92) {
   return await canvas.convertToBlob({ type: mime, quality });
 }
 
+// Service Worker에서는 URL.createObjectURL을 사용할 수 없으므로
+// Blob을 Data URL로 변환하여 다운로드
+function blobToDataURL(blob) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => resolve(reader.result);
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
+}
+
 async function downloadBlob(blob, filename) {
-  const url = URL.createObjectURL(blob);
-  try {
-    await chrome.downloads.download({
-      url,
-      filename,
-      saveAs: true
-    });
-  } finally {
-    // 다운로드가 시작된 이후에도 revoke는 보통 문제 없지만,
-    // 안전하게 약간 지연을 둘 수도 있음
-    setTimeout(() => URL.revokeObjectURL(url), 10_000);
-  }
+  const dataUrl = await blobToDataURL(blob);
+  await chrome.downloads.download({
+    url: dataUrl,
+    filename,
+    saveAs: true
+  });
 }
 
 async function downloadOriginal(url, baseName) {
