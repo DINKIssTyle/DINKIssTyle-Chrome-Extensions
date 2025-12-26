@@ -51,6 +51,18 @@
         }
     });
 
+    // All available effects for random selection
+    const ALL_EFFECTS = [
+        'slide', 'fade', 'zoom', 'push',
+        'flip', 'curl', 'cube', 'rotate', 'swing', 'fold', 'cards',
+        'blur', 'shrink', 'newspaper', 'glitch', 'bounce', 'iris', 'flash', 'morph', 'split'
+    ];
+
+    // Get a random effect
+    function getRandomEffect() {
+        return ALL_EFFECTS[Math.floor(Math.random() * ALL_EFFECTS.length)];
+    }
+
     // Get opposite direction
     function getOppositeDirection(direction) {
         const opposites = {
@@ -62,9 +74,22 @@
         return opposites[direction] || direction;
     }
 
+    // Track current random effect for consistent out/in animations
+    let currentRandomEffect = null;
+
     // Get animation class based on effect and direction
     function getAnimationClass(direction, isOut = true) {
-        const effect = settings.effect;
+        let effect = settings.effect;
+
+        // Handle random effect
+        if (effect === 'random') {
+            if (isOut) {
+                // Generate new random effect for 'out' animation
+                currentRandomEffect = getRandomEffect();
+            }
+            effect = currentRandomEffect || getRandomEffect();
+        }
+
         const suffix = isOut ? 'out' : 'in';
 
         // Effects with direction support

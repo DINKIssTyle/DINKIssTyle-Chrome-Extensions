@@ -48,10 +48,27 @@ document.addEventListener('DOMContentLoaded', async () => {
         updateDirectionVisibility();
     }
 
+    // All available effects for random selection
+    const ALL_EFFECTS = [
+        'slide', 'fade', 'zoom', 'push',
+        'flip', 'curl', 'cube', 'rotate', 'swing', 'fold', 'cards',
+        'blur', 'shrink', 'newspaper', 'glitch', 'bounce', 'iris', 'flash', 'morph', 'split'
+    ];
+
+    // Get a random effect
+    function getRandomEffect() {
+        return ALL_EFFECTS[Math.floor(Math.random() * ALL_EFFECTS.length)];
+    }
+
     // Update direction visibility based on effect
     function updateDirectionVisibility() {
         const effectsWithDirection = ['slide', 'push', 'curl'];
-        directionGroup.style.display = effectsWithDirection.includes(settings.effect) ? 'block' : 'none';
+        // Hide direction for 'random' since it will change randomly
+        if (settings.effect === 'random') {
+            directionGroup.style.display = 'none';
+        } else {
+            directionGroup.style.display = effectsWithDirection.includes(settings.effect) ? 'block' : 'none';
+        }
     }
 
     // Save settings
@@ -94,7 +111,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     // Preview animation
     previewBtn.addEventListener('click', () => {
         const content = previewBox.querySelector('.preview-content');
-        const effect = settings.effect;
+        // Use random effect if 'random' is selected
+        const effect = settings.effect === 'random' ? getRandomEffect() : settings.effect;
         const duration = settings.duration;
 
         // Reset
