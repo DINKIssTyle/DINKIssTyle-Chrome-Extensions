@@ -63,23 +63,45 @@
     }
 
     // Get animation class based on effect and direction
-    function getAnimationClass(direction) {
+    function getAnimationClass(direction, isOut = true) {
         const effect = settings.effect;
+        const suffix = isOut ? 'out' : 'in';
 
-        switch (effect) {
-            case 'slide':
-                return `ve-slide-out-${direction}`;
-            case 'fade':
-                return 've-fade-out';
-            case 'flip':
-                return 've-flip-out';
-            case 'zoom':
-                return 've-zoom-out';
-            case 'curl':
-                return direction === 'left' || direction === 'up' ? 've-curl-out' : 've-curl-out-reverse';
-            default:
-                return 've-fade-out';
+        // Effects with direction support
+        const directionalEffects = {
+            slide: `ve-slide-${suffix}-${direction}`,
+            push: `ve-push-${suffix}-${direction}`,
+            curl: (isOut ?
+                (direction === 'left' || direction === 'up' ? 've-curl-out' : 've-curl-out-reverse') :
+                (direction === 'left' || direction === 'up' ? 've-curl-in' : 've-curl-in-reverse'))
+        };
+
+        // Effects without direction
+        const simpleEffects = {
+            fade: `ve-fade-${suffix}`,
+            flip: `ve-flip-${suffix}`,
+            zoom: `ve-zoom-${suffix}`,
+            rotate: `ve-rotate-${suffix}`,
+            swing: `ve-swing-${suffix}`,
+            blur: `ve-blur-${suffix}`,
+            shrink: `ve-shrink-${suffix}`,
+            newspaper: `ve-newspaper-${suffix}`,
+            cube: `ve-cube-${suffix}`,
+            glitch: `ve-glitch-${suffix}`,
+            bounce: `ve-bounce-${suffix}`,
+            cards: `ve-cards-${suffix}`,
+            iris: `ve-iris-${suffix}`,
+            flash: `ve-flash-${suffix}`,
+            fold: `ve-fold-${suffix}`,
+            morph: `ve-morph-${suffix}`,
+            split: `ve-split-${suffix}`
+        };
+
+        if (directionalEffects[effect]) {
+            return directionalEffects[effect];
         }
+
+        return simpleEffects[effect] || `ve-fade-${suffix}`;
     }
 
     // Play exit animation on the current page body

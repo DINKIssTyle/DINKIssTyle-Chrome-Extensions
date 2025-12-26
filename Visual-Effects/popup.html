@@ -1,11 +1,13 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Visual Effects</title>
     <link rel="stylesheet" href="popup.css">
 </head>
+
 <body>
     <div class="container">
         <header>
@@ -27,11 +29,32 @@
             <div class="setting-group">
                 <label for="effectSelect">Effect Type</label>
                 <select id="effectSelect">
-                    <option value="slide">📱 Slide</option>
-                    <option value="fade">🌫️ Fade</option>
-                    <option value="curl">📄 Page Curl</option>
-                    <option value="flip">🔄 Flip</option>
-                    <option value="zoom">🔍 Zoom</option>
+                    <optgroup label="Basic">
+                        <option value="slide">📱 Slide</option>
+                        <option value="fade">🌫️ Fade</option>
+                        <option value="zoom">🔍 Zoom</option>
+                        <option value="push">📲 Push 3D</option>
+                    </optgroup>
+                    <optgroup label="3D Effects">
+                        <option value="flip">🔄 Flip</option>
+                        <option value="curl">📄 Page Curl</option>
+                        <option value="cube">🎲 Cube</option>
+                        <option value="rotate">🌀 Rotate 3D</option>
+                        <option value="swing">🚪 Swing Door</option>
+                        <option value="fold">📋 Paper Fold</option>
+                        <option value="cards">🃏 Cards</option>
+                    </optgroup>
+                    <optgroup label="Creative">
+                        <option value="blur">💨 Blur</option>
+                        <option value="shrink">⭕ Shrink</option>
+                        <option value="newspaper">📰 Newspaper Spin</option>
+                        <option value="glitch">⚡ Glitch</option>
+                        <option value="bounce">🏀 Bounce</option>
+                        <option value="iris">🎯 Iris</option>
+                        <option value="flash">💥 Flash</option>
+                        <option value="morph">🔮 Morph</option>
+                        <option value="split">✂️ Split</option>
+                    </optgroup>
                 </select>
             </div>
 
@@ -64,4 +87,5 @@
     </div>
     <script src="popup.js"></script>
 </body>
+
 </html>

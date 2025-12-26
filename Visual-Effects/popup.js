@@ -50,7 +50,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // Update direction visibility based on effect
     function updateDirectionVisibility() {
-        const effectsWithDirection = ['slide'];
+        const effectsWithDirection = ['slide', 'push', 'curl'];
         directionGroup.style.display = effectsWithDirection.includes(settings.effect) ? 'block' : 'none';
     }
 
@@ -101,32 +101,31 @@ document.addEventListener('DOMContentLoaded', async () => {
         content.className = 'preview-content';
         content.style.animationDuration = `${duration}ms`;
 
-        // Get animation classes
-        let outClass = '';
-        let inClass = '';
+        // Animation mapping for all effects
+        const animations = {
+            slide: ['slide-out-left', 'slide-in-left'],
+            fade: ['fade-out', 'fade-in'],
+            curl: ['curl-out', 'curl-in'],
+            flip: ['flip-out', 'flip-in'],
+            zoom: ['zoom-out', 'zoom-in'],
+            push: ['push-out', 'push-in'],
+            rotate: ['rotate-out', 'rotate-in'],
+            swing: ['swing-out', 'swing-in'],
+            blur: ['blur-out', 'blur-in'],
+            shrink: ['shrink-out', 'shrink-in'],
+            newspaper: ['newspaper-out', 'newspaper-in'],
+            cube: ['cube-out', 'cube-in'],
+            glitch: ['glitch-out', 'glitch-in'],
+            bounce: ['bounce-out', 'bounce-in'],
+            cards: ['cards-out', 'cards-in'],
+            iris: ['iris-out', 'iris-in'],
+            flash: ['flash-out', 'flash-in'],
+            fold: ['fold-out', 'fold-in'],
+            morph: ['morph-out', 'morph-in'],
+            split: ['split-out', 'split-in']
+        };
 
-        switch (effect) {
-            case 'slide':
-                outClass = 'slide-out-left';
-                inClass = 'slide-in-left';
-                break;
-            case 'fade':
-                outClass = 'fade-out';
-                inClass = 'fade-in';
-                break;
-            case 'curl':
-                outClass = 'curl-out';
-                inClass = 'curl-in';
-                break;
-            case 'flip':
-                outClass = 'flip-out';
-                inClass = 'flip-in';
-                break;
-            case 'zoom':
-                outClass = 'zoom-out';
-                inClass = 'zoom-in';
-                break;
-        }
+        const [outClass, inClass] = animations[effect] || ['fade-out', 'fade-in'];
 
         // Play out animation
         requestAnimationFrame(() => {
@@ -144,3 +143,4 @@ document.addEventListener('DOMContentLoaded', async () => {
     // Initialize UI
     applySettingsToUI();
 });
+
