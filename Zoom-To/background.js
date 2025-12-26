@@ -1,5 +1,9 @@
+// Created by DINKIssTyle on 2025. Copyright (C) 2025 DINKI'ssTyle. All rights reserved.
 // background.js for Zoom-To
 // Handles native browser zoom requests from content script
+
+// Store previous zoom levels per tab for accurate toggle
+const tabZoomState = new Map();
 
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     // Return true to indicate async response
@@ -19,20 +23,20 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         (async () => {
             try {
                 const currentZoom = await chrome.tabs.getZoom(tabId);
+                const state = tabZoomState.get(tabId);
 
                 // Smart Zoom Logic:
-                // If current zoom is close to target zoom, restore to default (0 means default).
-                // Otherwise, set to target zoom.
+                // If we have a saved state and we're currently zoomed, restore to previous.
+                // Otherwise, save current zoom and zoom to target.
 
-                const epsilon = 0.1;
-
-                if (Math.abs(currentZoom - targetRatio) < epsilon) {
-                    // We are roughly at target -> Restore
-                    // Setting zoom to 0 resets to default zoom factor defined in settings
-                    await chrome.tabs.setZoom(tabId, 0);
+                if (state && state.isZoomed) {
+                    // Restore to previous zoom level
+                    await chrome.tabs.setZoom(tabId, state.previousZoom);
+                    tabZoomState.set(tabId, { isZoomed: false, previousZoom: null });
                     sendResponse({ status: 'restored' });
                 } else {
-                    // Zoom to target
+                    // Save current zoom and zoom to target
+                    tabZoomState.set(tabId, { isZoomed: true, previousZoom: currentZoom });
                     await chrome.tabs.setZoom(tabId, targetRatio);
                     sendResponse({ status: 'zoomed' });
                 }
@@ -43,5 +47,17 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         })();
 
         return true;
+    }
+});
+
+// Clean up state when tab is closed
+chrome.tabs.onRemoved.addListener((tabId) => {
+    tabZoomState.delete(tabId);
+});
+
+// Clean up state when tab navigates to a new page
+chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
+    if (changeInfo.status === 'loading') {
+        tabZoomState.delete(tabId);
     }
 });
