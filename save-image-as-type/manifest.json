@@ -3,11 +3,30 @@
   "name": "Save image as type",
   "version": "1.0.0",
   "description": "Right-click to save the image under the cursor as JPG/PNG/WebP or original (even if covered by layers).",
-  "permissions": ["contextMenus", "downloads", "storage", "activeTab"],
-  "host_permissions": ["<all_urls>"],
-  "background": { "service_worker": "background.js", "type": "module" },
+  "permissions": [
+    "contextMenus",
+    "downloads",
+    "storage",
+    "activeTab",
+    "scripting"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
   "content_scripts": [
-    { "matches": ["<all_urls>"], "js": ["content.js"], "run_at": "document_start" }
+    {
+      "matches": [
+        "<all_urls>"
+      ],
+      "js": [
+        "content.js"
+      ],
+      "run_at": "document_start"
+    }
   ],
   "icons": {
     "16": "icons/icon16.png",

@@ -3,11 +3,30 @@
   "name": "Image Information",
   "version": "1.0.0",
   "description": "Right-click on an image to view detailed information (filename, type, size, dimensions, alt text, URL) and preview.",
-  "permissions": ["contextMenus", "downloads", "storage", "activeTab"],
-  "host_permissions": ["<all_urls>"],
-  "background": { "service_worker": "background.js", "type": "module" },
+  "permissions": [
+    "contextMenus",
+    "downloads",
+    "storage",
+    "activeTab",
+    "scripting"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
   "content_scripts": [
-    { "matches": ["<all_urls>"], "js": ["content.js"], "run_at": "document_start" }
+    {
+      "matches": [
+        "<all_urls>"
+      ],
+      "js": [
+        "content.js"
+      ],
+      "run_at": "document_start"
+    }
   ],
   "icons": {
     "16": "icons/icon16.png",

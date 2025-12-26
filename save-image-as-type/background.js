@@ -139,7 +139,16 @@ async function downloadOriginal(url, baseName) {
 chrome.contextMenus.onClicked.addListener(async (info, tab) => {
   try {
     const hit = await getLastHit();
-    if (!hit?.url) return;
+    if (!hit?.url) {
+      // Show alert when no image is detected
+      if (tab?.id) {
+        chrome.scripting.executeScript({
+          target: { tabId: tab.id },
+          func: () => alert("Please right-click on an image to use this feature.")
+        });
+      }
+      return;
+    }
 
     const targetUrl = hit.url;
     const baseName = hit.baseName || "image";

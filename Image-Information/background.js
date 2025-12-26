@@ -36,7 +36,12 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
 
         if (!hit || !hit.url) {
             // 이미지가 없으면 알림
-            console.log("[Image Information] No image found under cursor");
+            if (tab?.id) {
+                chrome.scripting.executeScript({
+                    target: { tabId: tab.id },
+                    func: () => alert("Please right-click on an image to use this feature.")
+                });
+            }
             return;
         }
 

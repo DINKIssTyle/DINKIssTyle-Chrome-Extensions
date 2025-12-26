@@ -22,3 +22,5 @@ Since these are unpacked extensions, you need to install them via Chrome's Devel
 *   **Article-View**: Extract articles and posts into a clean, ad-free reader window with zoom controls, font toggle (Serif/Sans), theme modes (Light/Dark/Auto), advanced settings (custom font, line spacing), fullscreen, and Save as PDF.
 *   **Image-Information**: Right-click on any image (even those behind layers) to view detailed metadata like filename, MIME type, size, and dimensions.
 *   **save-image-as-type**: Context menu options to save images as different formats (JPG, PNG, WebP) or the original.
+*   **Visual-Effects**: Apply various visual effects and page transitions to web pages via a menu.
+*   **Zoom-To**: Double-click on empty space within a content container to smart zoom the entire page to fit that content using native browser zoom. Double-click again to restore.
