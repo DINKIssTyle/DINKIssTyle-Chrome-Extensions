@@ -1,0 +1,44 @@
+<!--
+    Created by DINKIssTyle on 2026.
+    Copyright (C) 2026 DINKI'ssTyle. All rights reserved.
+-->
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LM Studio Chat</title>
+    <link rel="stylesheet" href="chat.css">
+</head>
+
+<body>
+    <!-- Header -->
+    <header class="header">
+        <div class="header-left">
+            <img src="icons/icon48.png" alt="Logo" class="logo">
+            <h1>LM Studio</h1>
+        </div>
+        <div class="header-right">
+            <button id="copyBtn" class="header-btn" title="Copy Last Response">📋</button>
+            <button id="clearBtn" class="header-btn" title="Clear Chat">🗑️</button>
+        </div>
+    </header>
+
+    <!-- Chat Content -->
+    <main class="chat-content" id="chatContent">
+        <!-- Chat bubbles will be added here -->
+    </main>
+
+    <!-- Footer Input -->
+    <footer class="footer">
+        <div class="input-container">
+            <textarea id="messageInput" placeholder="Send additional message..." rows="1"></textarea>
+            <button id="sendBtn" class="send-btn" title="Send">➤</button>
+        </div>
+    </footer>
+
+    <script src="chat.js"></script>
+</body>
+
+</html>

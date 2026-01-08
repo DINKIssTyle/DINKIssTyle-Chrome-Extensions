@@ -1,0 +1,77 @@
+<!--
+    Created by DINKIssTyle on 2026.
+    Copyright (C) 2026 DINKI'ssTyle. All rights reserved.
+-->
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>LM Studio Settings</title>
+    <link rel="stylesheet" href="popup.css">
+</head>
+
+<body>
+    <div class="container">
+        <div class="header">
+            <img src="icons/icon48.png" alt="Logo" class="logo">
+            <div class="title-group">
+                <h1>LM Studio</h1>
+                <p class="subtitle">Text Processing with Local LLM</p>
+            </div>
+        </div>
+
+        <div class="settings-group">
+            <div class="setting-item">
+                <label for="serverAddress">Server Address</label>
+                <input type="text" id="serverAddress" placeholder="localhost:1234">
+                <span class="hint">Address:Port only (no http:// or /v1)</span>
+            </div>
+
+            <div class="setting-row">
+                <div class="setting-item half">
+                    <label for="maxTokens">Max Tokens</label>
+                    <input type="number" id="maxTokens" placeholder="2048" min="1" max="32768">
+                </div>
+                <div class="setting-item half">
+                    <label for="temperature">Temperature</label>
+                    <input type="number" id="temperature" placeholder="0.7" min="0" max="2" step="0.1">
+                </div>
+            </div>
+
+            <div class="setting-row">
+                <div class="setting-item half">
+                    <label for="maxHistory">Max History</label>
+                    <input type="number" id="maxHistory" placeholder="10" min="1" max="50">
+                </div>
+                <div class="setting-item half toggle-item">
+                    <label for="useStreaming">Streaming</label>
+                    <label class="switch">
+                        <input type="checkbox" id="useStreaming">
+                        <span class="slider round"></span>
+                    </label>
+                </div>
+            </div>
+
+            <div class="setting-item">
+                <label for="systemRole">System Role</label>
+                <textarea id="systemRole" rows="3" placeholder="You are an expert..."></textarea>
+            </div>
+
+            <div class="setting-item">
+                <label for="userRequest">Request Prefix</label>
+                <textarea id="userRequest" rows="2" placeholder="Summarize the following text in Korean:"></textarea>
+                <span class="hint">Prefix added before selected text</span>
+            </div>
+        </div>
+
+        <button id="saveBtn" class="save-btn">Save Settings</button>
+
+        <div class="footer">
+            <span id="statusText" class="status-indicator">Ready</span>
+        </div>
+    </div>
+    <script src="popup.js"></script>
+</body>
+
+</html>
