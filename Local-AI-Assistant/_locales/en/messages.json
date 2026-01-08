@@ -166,5 +166,25 @@
     "enhancementError": {
         "message": "Failed to connect to AI server. Please check if the server is running.",
         "description": "Error message when text enhancement fails"
+    },
+    "previewTitle": {
+        "message": "AI Text Enhancement Preview",
+        "description": "Preview modal title"
+    },
+    "previewOriginal": {
+        "message": "Original:",
+        "description": "Preview modal original text label"
+    },
+    "previewEnhanced": {
+        "message": "Enhanced:",
+        "description": "Preview modal enhanced text label"
+    },
+    "previewCancel": {
+        "message": "Cancel",
+        "description": "Preview modal cancel button"
+    },
+    "previewConfirm": {
+        "message": "Apply",
+        "description": "Preview modal confirm button"
     }
 }

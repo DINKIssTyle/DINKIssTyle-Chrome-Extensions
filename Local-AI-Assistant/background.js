@@ -128,15 +128,139 @@ async function handleImageSelection(srcUrl, tab) {
     await openChatWindow();
 }
 
+// Extract protected content (emo codes, special formats) and replace with placeholders
+function extractProtectedContent(text) {
+    const protectedItems = [];
+    let processedText = text;
+
+    // Protect {emo:...} format
+    processedText = processedText.replace(/\{emo:[^}]+\}/g, (match) => {
+        const id = protectedItems.length;
+        protectedItems.push(match);
+        return `[[EMO_${id}]]`;
+    });
+
+    // Protect [http...] or [https...] format
+    processedText = processedText.replace(/\[https?:\/\/[^\]]+\]/g, (match) => {
+        const id = protectedItems.length;
+        protectedItems.push(match);
+        return `[[URL_BRACKET_${id}]]`;
+    });
+
+    // Protect other special formats like {img:...}, {link:...}, etc.
+    processedText = processedText.replace(/\{(img|link|video|audio|file):[^}]+\}/g, (match) => {
+        const id = protectedItems.length;
+        protectedItems.push(match);
+        return `[[SPECIAL_${id}]]`;
+    });
+
+    return { processedText, protectedItems };
+}
+
+// Restore protected content from placeholders
+function restoreProtectedContent(enhancedText, protectedItems) {
+    let result = enhancedText;
+    protectedItems.forEach((original, index) => {
+        // Match EMO, URL_BRACKET, and SPECIAL placeholders
+        result = result.replace(new RegExp(`\\[\\[(EMO|URL_BRACKET|SPECIAL)_${index}\\]\\]`, 'g'), original);
+    });
+    return result;
+}
+
+// Simple Diff implementation for visualization (LCS based)
+// Returns HTML string with highlighted changes
+// mode: 'original' (mark deletions) or 'enhanced' (mark insertions)
+function computeDiffHtml(original, enhanced, mode = 'original') {
+    const O = original;
+    const N = enhanced;
+    // Limit diff computation for very large texts to avoid freezing
+    if (O.length * N.length > 5000000) {
+        return escapeHtmlForDiff(mode === 'original' ? O : N); // Too large, fallback to plain text
+    }
+
+    const dp = Array(O.length + 1).fill(0).map(() => Array(N.length + 1).fill(0));
+
+    // LCS length calculation
+    for (let i = 1; i <= O.length; i++) {
+        for (let j = 1; j <= N.length; j++) {
+            if (O[i - 1] === N[j - 1]) {
+                dp[i][j] = dp[i - 1][j - 1] + 1;
+            } else {
+                dp[i][j] = Math.max(dp[i - 1][j], dp[i][j - 1]);
+            }
+        }
+    }
+
+    // Backtrack to find diff
+    let i = O.length;
+    let j = N.length;
+    let stack = [];
+
+    while (i > 0 || j > 0) {
+        if (i > 0 && j > 0 && O[i - 1] === N[j - 1]) {
+            // Equal
+            stack.push({ type: 'eq', char: O[i - 1] });
+            i--; j--;
+        } else {
+            if (j > 0 && (i === 0 || dp[i][j - 1] >= dp[i - 1][j])) {
+                // Insert (in enhanced)
+                stack.push({ type: 'ins', char: N[j - 1] });
+                j--;
+            } else if (i > 0 && (j === 0 || dp[i][j - 1] < dp[i - 1][j])) {
+                // Delete (from original)
+                stack.push({ type: 'del', char: O[i - 1] });
+                i--;
+            }
+        }
+    }
+
+    // Process from start (stack pop)
+    let currentHtml = '';
+    while (stack.length > 0) {
+        let op = stack.pop();
+        if (op.type === 'eq') {
+            currentHtml += escapeHtmlForDiff(op.char);
+        } else if (op.type === 'del') {
+            if (mode === 'original') {
+                // Original view: show deletions
+                if (/^\s$/.test(op.char)) {
+                    currentHtml += escapeHtmlForDiff(op.char);
+                } else {
+                    currentHtml += `<s style="color:#ff6b6b;text-decoration-color:#ff6b6b;text-decoration-thickness:2px;opacity:0.8;">${escapeHtmlForDiff(op.char)}</s>`;
+                }
+            }
+            // In enhanced view, deletions are ignored (not shown)
+        } else if (op.type === 'ins') {
+            if (mode === 'enhanced') {
+                // Enhanced view: show insertions
+                if (/^\s$/.test(op.char)) {
+                    currentHtml += escapeHtmlForDiff(op.char);
+                } else {
+                    // White text for insertions in enhanced view
+                    currentHtml += `<span style="color:#ffffff;font-weight:bold;">${escapeHtmlForDiff(op.char)}</span>`;
+                }
+            }
+            // In original view, insertions are ignored (not shown)
+        }
+    }
+    return currentHtml;
+}
+
+function escapeHtmlForDiff(text) {
+    return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
+}
+
 async function handleTextEnhancement(tab) {
     const settings = await chrome.storage.sync.get(getDefaultSettings());
 
-    // Get the text from the active element (editable field)
+    // Get the text from the active element (editable field) and mark it
     const results = await chrome.scripting.executeScript({
         target: { tabId: tab.id },
         func: () => {
             const activeElement = document.activeElement;
             if (activeElement && (activeElement.tagName === 'INPUT' || activeElement.tagName === 'TEXTAREA' || activeElement.isContentEditable)) {
+                // Mark this element for later reference
+                activeElement.dataset.aiEnhanceTarget = 'true';
                 if (activeElement.isContentEditable) {
                     return { text: activeElement.innerText, isContentEditable: true };
                 } else {
@@ -152,6 +276,9 @@ async function handleTextEnhancement(tab) {
         console.log('[Local AI Assistant] No text found in editable field');
         return;
     }
+
+    // Extract protected content before sending to AI
+    const { processedText, protectedItems } = extractProtectedContent(result.text);
 
     // Create AbortController for cancellation
     const abortController = new AbortController();
@@ -262,28 +389,254 @@ async function handleTextEnhancement(tab) {
     });
 
     try {
-        // Call LLM for text enhancement
-        const enhancedText = await callLLMForEnhancement(result.text, settings, abortController.signal, tab.id);
+        // Call LLM for text enhancement with processed text
+        const enhancedRaw = await callLLMForEnhancement(processedText, settings, abortController.signal, tab.id, protectedItems.length > 0);
 
-        // Replace the text in the editable field and remove overlay
+        // Restore protected content
+        const enhancedText = restoreProtectedContent(enhancedRaw, protectedItems);
+
+        // Remove loading overlay
         await chrome.scripting.executeScript({
             target: { tabId: tab.id },
-            func: (newText, isContentEditable) => {
-                // Remove overlay
+            func: () => {
                 const overlay = document.getElementById('ai-enhancement-overlay');
                 if (overlay) overlay.remove();
-
-                const activeElement = document.activeElement;
-                if (isContentEditable) {
-                    activeElement.innerText = newText;
-                } else {
-                    activeElement.value = newText;
-                }
-                // Trigger input event to ensure frameworks detect the change
-                activeElement.dispatchEvent(new Event('input', { bubbles: true }));
-            },
-            args: [enhancedText, result.isContentEditable]
+            }
         });
+
+        // Compute diff HTML for visualizations
+        const originalDiffHtml = computeDiffHtml(result.text, enhancedText, 'original');
+        const enhancedDiffHtml = computeDiffHtml(result.text, enhancedText, 'enhanced');
+
+        // Show preview modal for user confirmation
+        const previewResults = await chrome.scripting.executeScript({
+            target: { tabId: tab.id },
+            func: (original, enhanced, labels) => {
+                return new Promise((resolve) => {
+                    // Escape HTML for safe display
+                    const escapeHtml = (text) => {
+                        const div = document.createElement('div');
+                        div.textContent = text;
+                        return div.innerHTML;
+                    };
+
+                    // Create modal overlay
+                    const modal = document.createElement('div');
+                    modal.id = 'ai-preview-modal';
+                    modal.style.cssText = `
+                        position: fixed;
+                        top: 0;
+                        left: 0;
+                        width: 100%;
+                        height: 100%;
+                        background: rgba(0, 0, 0, 0.6);
+                        display: flex;
+                        justify-content: center;
+                        align-items: center;
+                        z-index: 999999;
+                    `;
+
+                    // Create modal content
+                    const content = document.createElement('div');
+                    content.style.cssText = `
+                        background: #1e1e1e;
+                        padding: 24px;
+                        border-radius: 12px;
+                        max-width: 700px;
+                        width: 90%;
+                        max-height: 80vh;
+                        display: flex;
+                        flex-direction: column;
+                        box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+                    `;
+
+                    // Title
+                    const title = document.createElement('h3');
+                    title.textContent = labels.title;
+                    title.style.cssText = `
+                        color: #fff;
+                        margin: 0 0 16px 0;
+                        font-family: sans-serif;
+                        font-size: 18px;
+                        font-weight: 600;
+                    `;
+
+                    // Scrollable content container
+                    const scrollContainer = document.createElement('div');
+                    scrollContainer.style.cssText = `
+                        flex: 1;
+                        overflow-y: auto;
+                        margin-bottom: 16px;
+                    `;
+
+                    // Original text section
+                    const originalLabel = document.createElement('div');
+                    originalLabel.textContent = labels.original;
+                    originalLabel.style.cssText = 'color: #888; font-size: 13px; margin-bottom: 8px; font-family: sans-serif;';
+
+                    const originalBox = document.createElement('pre');
+                    // Use innerHTML directly as original is now safe HTML string with diff tags
+                    originalBox.innerHTML = original;
+                    originalBox.style.cssText = `
+                        background: #2a2a2a;
+                        padding: 12px;
+                        border-radius: 8px;
+                        color: #ccc;
+                        font-size: 13px;
+                        font-family: inherit;
+                        white-space: pre-wrap;
+                        word-break: break-word;
+                        max-height: 150px;
+                        overflow-y: auto;
+                        margin: 0 0 16px 0;
+                        border: 1px solid #333;
+                    `;
+
+                    // Enhanced text section
+                    const enhancedLabel = document.createElement('div');
+                    enhancedLabel.textContent = labels.enhanced;
+                    enhancedLabel.style.cssText = 'color: #888; font-size: 13px; margin-bottom: 8px; font-family: sans-serif;';
+
+                    const enhancedBox = document.createElement('pre');
+                    enhancedBox.innerHTML = enhanced; // Already HTML string from diff
+                    enhancedBox.style.cssText = `
+                        background: #2a2a2a;
+                        padding: 12px;
+                        border-radius: 8px;
+                        color: #ccc;
+                        font-size: 13px;
+                        font-family: inherit;
+                        white-space: pre-wrap;
+                        word-break: break-word;
+                        max-height: 200px;
+                        overflow-y: auto;
+                        margin: 0;
+                        border: 1px solid #333;
+                    `;
+
+                    scrollContainer.appendChild(originalLabel);
+                    scrollContainer.appendChild(originalBox);
+                    scrollContainer.appendChild(enhancedLabel);
+                    scrollContainer.appendChild(enhancedBox);
+
+                    // Button container
+                    const buttonContainer = document.createElement('div');
+                    buttonContainer.style.cssText = `
+                        display: flex;
+                        gap: 12px;
+                        justify-content: flex-end;
+                    `;
+
+                    // Cancel button
+                    const cancelBtn = document.createElement('button');
+                    cancelBtn.textContent = labels.cancel;
+                    cancelBtn.style.cssText = `
+                        padding: 10px 24px;
+                        background: #444;
+                        color: #fff;
+                        border: none;
+                        border-radius: 8px;
+                        cursor: pointer;
+                        font-size: 14px;
+                        font-family: sans-serif;
+                        transition: background 0.2s;
+                    `;
+                    cancelBtn.onmouseover = () => cancelBtn.style.background = '#555';
+                    cancelBtn.onmouseout = () => cancelBtn.style.background = '#444';
+                    cancelBtn.onclick = () => {
+                        modal.remove();
+                        resolve(false);
+                    };
+
+                    // Confirm button
+                    const confirmBtn = document.createElement('button');
+                    confirmBtn.textContent = labels.confirm;
+                    confirmBtn.style.cssText = `
+                        padding: 10px 24px;
+                        background: #6366f1;
+                        color: #fff;
+                        border: none;
+                        border-radius: 8px;
+                        cursor: pointer;
+                        font-size: 14px;
+                        font-family: sans-serif;
+                        transition: background 0.2s;
+                    `;
+                    confirmBtn.onmouseover = () => confirmBtn.style.background = '#5558e3';
+                    confirmBtn.onmouseout = () => confirmBtn.style.background = '#6366f1';
+                    confirmBtn.onclick = () => {
+                        modal.remove();
+                        resolve(true);
+                    };
+
+                    buttonContainer.appendChild(cancelBtn);
+                    buttonContainer.appendChild(confirmBtn);
+
+                    content.appendChild(title);
+                    content.appendChild(scrollContainer);
+                    content.appendChild(buttonContainer);
+                    modal.appendChild(content);
+                    document.body.appendChild(modal);
+
+                    // Close on escape key
+                    const handleKeydown = (e) => {
+                        if (e.key === 'Escape') {
+                            modal.remove();
+                            document.removeEventListener('keydown', handleKeydown);
+                            resolve(false);
+                        } else if (e.key === 'Enter') {
+                            modal.remove();
+                            document.removeEventListener('keydown', handleKeydown);
+                            resolve(true);
+                        }
+                    };
+                    document.addEventListener('keydown', handleKeydown);
+                });
+            },
+            args: [originalDiffHtml, enhancedDiffHtml, {
+                title: chrome.i18n.getMessage('previewTitle') || 'AI Text Enhancement Preview',
+                original: chrome.i18n.getMessage('previewOriginal') || 'Original:',
+                enhanced: chrome.i18n.getMessage('previewEnhanced') || 'Enhanced:',
+                cancel: chrome.i18n.getMessage('previewCancel') || 'Cancel',
+                confirm: chrome.i18n.getMessage('previewConfirm') || 'Apply'
+            }]
+        });
+
+        const confirmed = previewResults[0]?.result;
+
+        if (confirmed) {
+            // Apply the enhanced text to the marked element
+            await chrome.scripting.executeScript({
+                target: { tabId: tab.id },
+                func: (newText, isContentEditable) => {
+                    // Find the marked element
+                    const targetElement = document.querySelector('[data-ai-enhance-target="true"]');
+                    if (targetElement) {
+                        if (isContentEditable) {
+                            targetElement.innerText = newText;
+                        } else {
+                            targetElement.value = newText;
+                        }
+                        // Trigger input event to ensure frameworks detect the change
+                        targetElement.dispatchEvent(new Event('input', { bubbles: true }));
+                        // Remove the marker
+                        delete targetElement.dataset.aiEnhanceTarget;
+                    }
+                },
+                args: [enhancedText, result.isContentEditable]
+            });
+        } else {
+            // User cancelled, remove the marker
+            await chrome.scripting.executeScript({
+                target: { tabId: tab.id },
+                func: () => {
+                    const targetElement = document.querySelector('[data-ai-enhance-target="true"]');
+                    if (targetElement) {
+                        delete targetElement.dataset.aiEnhanceTarget;
+                    }
+                }
+            });
+        }
     } catch (error) {
         if (error.name === 'AbortError') {
             console.log('[Local AI Assistant] Enhancement aborted');
@@ -296,6 +649,8 @@ async function handleTextEnhancement(tab) {
             func: (errorMsg) => {
                 const overlay = document.getElementById('ai-enhancement-overlay');
                 if (overlay) overlay.remove();
+                const modal = document.getElementById('ai-preview-modal');
+                if (modal) modal.remove();
 
                 // Show error notification
                 const toast = document.createElement('div');
@@ -322,7 +677,13 @@ async function handleTextEnhancement(tab) {
     }
 }
 
-async function callLLMForEnhancement(text, settings, signal = null, tabId = null) {
+async function callLLMForEnhancement(text, settings, signal = null, tabId = null, hasProtectedContent = false) {
+    // Build system message with placeholder preservation instruction if needed
+    let systemMessage = 'You are a helpful writing assistant. Always respond with valid JSON containing only the "enhanced_text" key.';
+    if (hasProtectedContent) {
+        systemMessage += ' CRITICAL: The text contains special placeholders like [[EMO_0]], [[URL_BRACKET_0]], [[SPECIAL_0]], etc. You MUST preserve these placeholders exactly as they appear. Do not modify, remove, translate, or explain them. They must appear in your enhanced_text output exactly as they were in the input.';
+    }
+
     const prompt = `${settings.textEnhancementPrompt}\n\n${text}`;
     console.log('[Local AI Assistant] Starting enhancement request...');
 
@@ -332,7 +693,7 @@ async function callLLMForEnhancement(text, settings, signal = null, tabId = null
         body: JSON.stringify({
             model: settings.modelKey || 'local-model',
             messages: [
-                { role: 'system', content: 'You are a helpful writing assistant. Always respond with valid JSON.' },
+                { role: 'system', content: systemMessage },
                 { role: 'user', content: prompt }
             ],
             max_tokens: settings.maxTokens,

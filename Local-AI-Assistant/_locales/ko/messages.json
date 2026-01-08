@@ -166,5 +166,25 @@
     "enhancementError": {
         "message": "AI 서버 연결 실패. 서버가 실행 중인지 확인해 주세요.",
         "description": "Error message when text enhancement fails"
+    },
+    "previewTitle": {
+        "message": "AI 텍스트 향상 미리보기",
+        "description": "Preview modal title"
+    },
+    "previewOriginal": {
+        "message": "원본:",
+        "description": "Preview modal original text label"
+    },
+    "previewEnhanced": {
+        "message": "향상된 텍스트:",
+        "description": "Preview modal enhanced text label"
+    },
+    "previewCancel": {
+        "message": "취소",
+        "description": "Preview modal cancel button"
+    },
+    "previewConfirm": {
+        "message": "적용",
+        "description": "Preview modal confirm button"
     }
 }
