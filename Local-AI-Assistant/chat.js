@@ -5,6 +5,7 @@
 
 const DEFAULT_SETTINGS = {
     serverAddress: 'localhost:1234',
+    modelKey: '',
     maxTokens: 2048,
     temperature: 0.7,
     maxHistory: 10,
@@ -123,7 +124,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         } catch (error) {
             assistantBubble.classList.remove('streaming');
             assistantBubble.classList.add('error');
-            assistantBubble.innerHTML = renderMarkdown(`**Error**\n\n${error.message}\n\nPlease check if LM Studio is running.`);
+            assistantBubble.innerHTML = renderMarkdown(`**Error**\n\n${error.message}\n\nPlease check if Local AI Assistant is running.`);
             lastAssistantResponse = error.message;
         } finally {
             isProcessing = false;
@@ -138,7 +139,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-                model: 'local-model',
+                model: settings.modelKey || 'local-model',
                 messages: messages,
                 max_tokens: settings.maxTokens,
                 temperature: settings.temperature,
@@ -168,7 +169,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-                model: 'local-model',
+                model: settings.modelKey || 'local-model',
                 messages: messages,
                 max_tokens: settings.maxTokens,
                 temperature: settings.temperature,

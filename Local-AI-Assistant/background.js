@@ -7,6 +7,7 @@ const MENU_ID = 'lm-studio-process';
 
 const DEFAULT_SETTINGS = {
     serverAddress: 'localhost:1234',
+    modelKey: '',
     maxTokens: 2048,
     temperature: 0.7,
     maxHistory: 10,
@@ -24,7 +25,7 @@ chrome.runtime.onInstalled.addListener(() => {
     chrome.contextMenus.removeAll(() => {
         chrome.contextMenus.create({
             id: MENU_ID,
-            title: 'Process with LM Studio',
+            title: 'Process with Local AI Assistant (LLM)',
             contexts: ['selection']
         });
     });
@@ -65,6 +66,6 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
             top: top
         });
     } catch (e) {
-        console.error('[LM Studio] Error:', e);
+        console.error('[Local AI Assistant] Error:', e);
     }
 });

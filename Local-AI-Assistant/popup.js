@@ -5,6 +5,7 @@
 
 const DEFAULT_SETTINGS = {
     serverAddress: 'localhost:1234',
+    modelKey: '',
     maxTokens: 2048,
     temperature: 0.7,
     maxHistory: 10,
@@ -15,6 +16,7 @@ const DEFAULT_SETTINGS = {
 
 document.addEventListener('DOMContentLoaded', () => {
     const serverAddressInput = document.getElementById('serverAddress');
+    const modelKeyInput = document.getElementById('modelKey');
     const maxTokensInput = document.getElementById('maxTokens');
     const temperatureInput = document.getElementById('temperature');
     const maxHistoryInput = document.getElementById('maxHistory');
@@ -27,6 +29,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // Load saved settings
     chrome.storage.sync.get(DEFAULT_SETTINGS, (settings) => {
         serverAddressInput.value = settings.serverAddress;
+        modelKeyInput.value = settings.modelKey;
         maxTokensInput.value = settings.maxTokens;
         temperatureInput.value = settings.temperature;
         maxHistoryInput.value = settings.maxHistory;
@@ -40,6 +43,7 @@ document.addEventListener('DOMContentLoaded', () => {
     saveBtn.addEventListener('click', () => {
         const settings = {
             serverAddress: serverAddressInput.value.trim() || DEFAULT_SETTINGS.serverAddress,
+            modelKey: modelKeyInput.value.trim(),
             maxTokens: parseInt(maxTokensInput.value) || DEFAULT_SETTINGS.maxTokens,
             temperature: parseFloat(temperatureInput.value) || DEFAULT_SETTINGS.temperature,
             maxHistory: parseInt(maxHistoryInput.value) || DEFAULT_SETTINGS.maxHistory,
