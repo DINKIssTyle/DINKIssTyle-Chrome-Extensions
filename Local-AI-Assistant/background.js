@@ -265,17 +265,6 @@ async function handleTextEnhancement(tab) {
         // Call LLM for text enhancement
         const enhancedText = await callLLMForEnhancement(result.text, settings, abortController.signal, tab.id);
 
-        // Check if cancelled
-        const cancelCheck = await chrome.scripting.executeScript({
-            target: { tabId: tab.id },
-            func: () => window.aiEnhancementCancelled
-        });
-
-        if (cancelCheck[0]?.result) {
-            console.log('[Local AI Assistant] Enhancement cancelled by user');
-            return;
-        }
-
         // Replace the text in the editable field and remove overlay
         await chrome.scripting.executeScript({
             target: { tabId: tab.id },
@@ -301,13 +290,34 @@ async function handleTextEnhancement(tab) {
             return;
         }
         console.error('[Local AI Assistant] Enhancement error:', error);
-        // Remove overlay on error
+        // Remove overlay and show error message
         await chrome.scripting.executeScript({
             target: { tabId: tab.id },
-            func: () => {
+            func: (errorMsg) => {
                 const overlay = document.getElementById('ai-enhancement-overlay');
                 if (overlay) overlay.remove();
-            }
+
+                // Show error notification
+                const toast = document.createElement('div');
+                toast.style.cssText = `
+                    position: fixed;
+                    top: 20px;
+                    right: 20px;
+                    background: #ef4444;
+                    color: white;
+                    padding: 12px 20px;
+                    border-radius: 8px;
+                    font-family: sans-serif;
+                    font-size: 14px;
+                    z-index: 999999;
+                    box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+                    animation: fadeIn 0.3s ease;
+                `;
+                toast.textContent = errorMsg;
+                document.body.appendChild(toast);
+                setTimeout(() => toast.remove(), 5000);
+            },
+            args: [chrome.i18n.getMessage('enhancementError') || 'Failed to connect to AI server. Please check if the server is running.']
         });
     }
 }

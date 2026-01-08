@@ -162,5 +162,9 @@
     "clearChat": {
         "message": "Clear Chat",
         "description": "Clear button title"
+    },
+    "enhancementError": {
+        "message": "Failed to connect to AI server. Please check if the server is running.",
+        "description": "Error message when text enhancement fails"
     }
 }
