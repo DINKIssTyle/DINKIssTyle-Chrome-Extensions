@@ -324,6 +324,7 @@ async function handleTextEnhancement(tab) {
 
 async function callLLMForEnhancement(text, settings, signal = null, tabId = null) {
     const prompt = `${settings.textEnhancementPrompt}\n\n${text}`;
+    console.log('[Local AI Assistant] Starting enhancement request...');
 
     const fetchOptions = {
         method: 'POST',
@@ -345,13 +346,16 @@ async function callLLMForEnhancement(text, settings, signal = null, tabId = null
         fetchOptions.signal = signal;
     }
 
+    console.log('[Local AI Assistant] Sending fetch to:', `http://${settings.serverAddress}/v1/chat/completions`);
     const response = await fetch(`http://${settings.serverAddress}/v1/chat/completions`, fetchOptions);
+    console.log('[Local AI Assistant] Fetch response received, status:', response.status);
 
     if (!response.ok) {
         throw new Error(`HTTP Error: ${response.status}`);
     }
 
     const data = await response.json();
+    console.log('[Local AI Assistant] Response data received');
     const content = data.choices?.[0]?.message?.content || '';
 
     // Try to parse JSON response
@@ -364,6 +368,7 @@ async function callLLMForEnhancement(text, settings, signal = null, tabId = null
         }
 
         const parsed = JSON.parse(jsonStr.trim());
+        console.log('[Local AI Assistant] JSON parsed successfully');
         return parsed.enhanced_text || content;
     } catch (e) {
         // If JSON parsing fails, return the raw content
