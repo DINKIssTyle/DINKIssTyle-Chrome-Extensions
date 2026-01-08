@@ -8,6 +8,36 @@ function i18n(key, fallback = '') {
     return chrome.i18n.getMessage(key) || fallback;
 }
 
+// Apply i18n translations
+function applyI18n() {
+    // Apply text content translations
+    document.querySelectorAll('[data-i18n]').forEach(element => {
+        const key = element.getAttribute('data-i18n');
+        const message = chrome.i18n.getMessage(key);
+        if (message) {
+            element.textContent = message;
+        }
+    });
+
+    // Apply placeholder translations
+    document.querySelectorAll('[data-i18n-placeholder]').forEach(element => {
+        const key = element.getAttribute('data-i18n-placeholder');
+        const message = chrome.i18n.getMessage(key);
+        if (message) {
+            element.placeholder = message;
+        }
+    });
+
+    // Apply title translations
+    document.querySelectorAll('[data-i18n-title]').forEach(element => {
+        const key = element.getAttribute('data-i18n-title');
+        const message = chrome.i18n.getMessage(key);
+        if (message) {
+            element.title = message;
+        }
+    });
+}
+
 // Default settings with i18n support
 function getDefaultSettings() {
     return {
@@ -34,6 +64,9 @@ let currentImageData = null;
 let isVisionMode = false;
 
 document.addEventListener('DOMContentLoaded', async () => {
+    // Apply i18n translations
+    applyI18n();
+
     const chatContent = document.getElementById('chatContent');
     const messageInput = document.getElementById('messageInput');
     const sendBtn = document.getElementById('sendBtn');

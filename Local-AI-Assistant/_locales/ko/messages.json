@@ -4,7 +4,7 @@
         "description": "Extension name"
     },
     "extDescription": {
-        "message": "로컬 AI 어시스턴트 API로 선택한 텍스트 처리",
+        "message": "로컬 LLM을 사용한 AI 텍스트 처리, 이미지 분석, 텍스트 향상",
         "description": "Extension description"
     },
     "serverAddress": {
@@ -146,5 +146,21 @@
     "enhancingText": {
         "message": "AI로 텍스트 향상 중...",
         "description": "Loading message for text enhancement"
+    },
+    "sendAdditionalMessage": {
+        "message": "추가 메시지 보내기...",
+        "description": "Chat input placeholder"
+    },
+    "send": {
+        "message": "보내기",
+        "description": "Send button title"
+    },
+    "copyLastResponse": {
+        "message": "마지막 응답 복사",
+        "description": "Copy button title"
+    },
+    "clearChat": {
+        "message": "채팅 지우기",
+        "description": "Clear button title"
     }
 }

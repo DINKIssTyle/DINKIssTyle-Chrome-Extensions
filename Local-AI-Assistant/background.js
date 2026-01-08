@@ -77,6 +77,17 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
     }
 });
 
+// Listen for cancel enhancement message
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    if (message.action === 'cancelEnhancement') {
+        if (globalThis.currentEnhancementAbort) {
+            globalThis.currentEnhancementAbort.abort();
+            globalThis.currentEnhancementAbort = null;
+            console.log('[Local AI Assistant] Enhancement request aborted');
+        }
+    }
+});
+
 chrome.contextMenus.onClicked.addListener(async (info, tab) => {
     try {
         if (info.menuItemId === MENU_ID_TEXT && info.selectionText) {
@@ -145,6 +156,9 @@ async function handleTextEnhancement(tab) {
     // Create AbortController for cancellation
     const abortController = new AbortController();
 
+    // Store abort controller globally for message-based cancellation
+    globalThis.currentEnhancementAbort = abortController;
+
     // Show loading indicator with spinner overlay
     await chrome.scripting.executeScript({
         target: { tabId: tab.id },
@@ -209,7 +223,8 @@ async function handleTextEnhancement(tab) {
             cancelBtn.onmouseover = () => cancelBtn.style.background = '#dc2626';
             cancelBtn.onmouseout = () => cancelBtn.style.background = '#ef4444';
             cancelBtn.onclick = () => {
-                window.aiEnhancementCancelled = true;
+                // Send cancel message to background
+                chrome.runtime.sendMessage({ action: 'cancelEnhancement' });
                 overlay.remove();
             };
 
@@ -242,9 +257,6 @@ async function handleTextEnhancement(tab) {
             spinnerContainer.appendChild(text);
             overlay.appendChild(spinnerContainer);
             document.body.appendChild(overlay);
-
-            // Reset cancel flag
-            window.aiEnhancementCancelled = false;
         },
         args: [chrome.i18n.getMessage('enhancingText') || 'Enhancing text with AI...']
     });
@@ -318,6 +330,11 @@ async function callLLMForEnhancement(text, settings, signal = null, tabId = null
         })
     };
 
+    // Add signal for abort support
+    if (signal) {
+        fetchOptions.signal = signal;
+    }
+
     const response = await fetch(`http://${settings.serverAddress}/v1/chat/completions`, fetchOptions);
 
     if (!response.ok) {
@@ -346,55 +363,82 @@ async function callLLMForEnhancement(text, settings, signal = null, tabId = null
 }
 
 async function convertImageToBase64(srcUrl, tab) {
-    // Use content script to convert image to PNG base64
-    const results = await chrome.scripting.executeScript({
-        target: { tabId: tab.id },
-        func: async (imageUrl) => {
-            try {
-                // Create an image element to load the source
-                const img = new Image();
-                img.crossOrigin = 'anonymous';
+    try {
+        // First, try to fetch directly from background (bypasses CORS)
+        const response = await fetch(srcUrl);
+        if (!response.ok) {
+            throw new Error(`HTTP error: ${response.status}`);
+        }
 
-                const loadPromise = new Promise((resolve, reject) => {
-                    img.onload = () => resolve(img);
-                    img.onerror = () => reject(new Error('Failed to load image'));
+        const blob = await response.blob();
+        const originalDataUrl = await new Promise((resolve) => {
+            const reader = new FileReader();
+            reader.onloadend = () => resolve(reader.result);
+            reader.readAsDataURL(blob);
+        });
+
+        // If it's already PNG or JPEG, return as-is
+        const mimeType = blob.type;
+        if (mimeType === 'image/png' || mimeType === 'image/jpeg') {
+            return originalDataUrl;
+        }
+
+        // For other formats (WebP, etc.), convert to PNG using content script
+        const results = await chrome.scripting.executeScript({
+            target: { tabId: tab.id },
+            func: async (dataUrl) => {
+                return new Promise((resolve) => {
+                    const img = new Image();
+                    img.onload = () => {
+                        const canvas = document.createElement('canvas');
+                        canvas.width = img.naturalWidth;
+                        canvas.height = img.naturalHeight;
+                        const ctx = canvas.getContext('2d');
+                        ctx.drawImage(img, 0, 0);
+                        resolve(canvas.toDataURL('image/png'));
+                    };
+                    img.onerror = () => resolve(dataUrl); // Return original if conversion fails
+                    img.src = dataUrl;
                 });
+            },
+            args: [originalDataUrl]
+        });
 
-                img.src = imageUrl;
-                await loadPromise;
+        return results[0]?.result || originalDataUrl;
 
-                // Create canvas and draw the image
-                const canvas = document.createElement('canvas');
-                canvas.width = img.naturalWidth;
-                canvas.height = img.naturalHeight;
+    } catch (e) {
+        console.error('[Local AI Assistant] Background fetch failed, trying content script:', e);
 
-                const ctx = canvas.getContext('2d');
-                ctx.drawImage(img, 0, 0);
-
-                // Convert to PNG data URL
-                const pngDataUrl = canvas.toDataURL('image/png');
-                return pngDataUrl;
-            } catch (e) {
-                console.error('Failed to convert image:', e);
-                // Fallback: try direct fetch
+        // Fallback: try content script method (for same-origin images)
+        const results = await chrome.scripting.executeScript({
+            target: { tabId: tab.id },
+            func: async (imageUrl) => {
                 try {
-                    const response = await fetch(imageUrl);
-                    const blob = await response.blob();
-                    return new Promise((resolve) => {
-                        const reader = new FileReader();
-                        reader.onloadend = () => resolve(reader.result);
-                        reader.readAsDataURL(blob);
+                    const img = new Image();
+                    img.crossOrigin = 'anonymous';
+
+                    await new Promise((resolve, reject) => {
+                        img.onload = resolve;
+                        img.onerror = reject;
+                        img.src = imageUrl;
                     });
-                } catch (fetchError) {
-                    console.error('Fallback fetch also failed:', fetchError);
+
+                    const canvas = document.createElement('canvas');
+                    canvas.width = img.naturalWidth;
+                    canvas.height = img.naturalHeight;
+                    const ctx = canvas.getContext('2d');
+                    ctx.drawImage(img, 0, 0);
+                    return canvas.toDataURL('image/png');
+                } catch (err) {
+                    console.error('Content script image conversion failed:', err);
                     return null;
                 }
-            }
-        },
-        args: [srcUrl]
-    });
+            },
+            args: [srcUrl]
+        });
 
-    return results[0]?.result || null;
+        return results[0]?.result || null;
+    }
 }
 
 async function openChatWindow() {

@@ -17,11 +17,12 @@
     <header class="header">
         <div class="header-left">
             <img src="icons/icon48.png" alt="Logo" class="logo">
-            <h1>Local AI Assistant (LLM)</h1>
+            <h1 data-i18n="extName">Local AI Assistant (LLM)</h1>
         </div>
         <div class="header-right">
-            <button id="copyBtn" class="header-btn" title="Copy Last Response">📋</button>
-            <button id="clearBtn" class="header-btn" title="Clear Chat">🗑️</button>
+            <button id="copyBtn" class="header-btn" data-i18n-title="copyLastResponse"
+                title="Copy Last Response">📋</button>
+            <button id="clearBtn" class="header-btn" data-i18n-title="clearChat" title="Clear Chat">🗑️</button>
         </div>
     </header>
 
@@ -33,8 +34,9 @@
     <!-- Footer Input -->
     <footer class="footer">
         <div class="input-container">
-            <textarea id="messageInput" placeholder="Send additional message..." rows="1"></textarea>
-            <button id="sendBtn" class="send-btn" title="Send">➤</button>
+            <textarea id="messageInput" data-i18n-placeholder="sendAdditionalMessage"
+                placeholder="Send additional message..." rows="1"></textarea>
+            <button id="sendBtn" class="send-btn" data-i18n-title="send" title="Send">➤</button>
         </div>
     </footer>
 

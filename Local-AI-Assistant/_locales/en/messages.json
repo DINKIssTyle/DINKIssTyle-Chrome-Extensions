@@ -4,7 +4,7 @@
         "description": "Extension name"
     },
     "extDescription": {
-        "message": "Process selected text with Local AI Assistant API",
+        "message": "AI-powered text processing, image analysis, and text enhancement using local LLM",
         "description": "Extension description"
     },
     "serverAddress": {
@@ -146,5 +146,21 @@
     "enhancingText": {
         "message": "Enhancing text with AI...",
         "description": "Loading message for text enhancement"
+    },
+    "sendAdditionalMessage": {
+        "message": "Send additional message...",
+        "description": "Chat input placeholder"
+    },
+    "send": {
+        "message": "Send",
+        "description": "Send button title"
+    },
+    "copyLastResponse": {
+        "message": "Copy Last Response",
+        "description": "Copy button title"
+    },
+    "clearChat": {
+        "message": "Clear Chat",
+        "description": "Clear button title"
     }
 }
