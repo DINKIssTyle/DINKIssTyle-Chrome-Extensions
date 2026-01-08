@@ -1,0 +1,150 @@
+{
+    "extName": {
+        "message": "로컬 AI 어시스턴트 (LLM)",
+        "description": "Extension name"
+    },
+    "extDescription": {
+        "message": "로컬 AI 어시스턴트 API로 선택한 텍스트 처리",
+        "description": "Extension description"
+    },
+    "serverAddress": {
+        "message": "서버 주소",
+        "description": "Server address label"
+    },
+    "serverAddressHint": {
+        "message": "주소:포트만 입력 (http:// 또는 /v1 제외)",
+        "description": "Server address hint"
+    },
+    "modelKey": {
+        "message": "모델 키",
+        "description": "Model key label"
+    },
+    "modelKeyHint": {
+        "message": "여러 모델이 로드된 경우 모델 이름 지정",
+        "description": "Model key hint"
+    },
+    "maxTokens": {
+        "message": "최대 토큰",
+        "description": "Max tokens label"
+    },
+    "temperature": {
+        "message": "Temperature",
+        "description": "Temperature label"
+    },
+    "maxHistory": {
+        "message": "최대 히스토리",
+        "description": "Max history label"
+    },
+    "streaming": {
+        "message": "스트리밍",
+        "description": "Streaming label"
+    },
+    "visionMode": {
+        "message": "비전 모드",
+        "description": "Vision mode label"
+    },
+    "visionPrompt": {
+        "message": "비전 프롬프트",
+        "description": "Vision prompt label"
+    },
+    "visionPromptHint": {
+        "message": "이미지 분석 요청 시 사용할 프롬프트",
+        "description": "Vision prompt hint"
+    },
+    "textEnhancement": {
+        "message": "텍스트 향상",
+        "description": "Text enhancement label"
+    },
+    "enhancementPrompt": {
+        "message": "향상 프롬프트",
+        "description": "Enhancement prompt label"
+    },
+    "enhancementPromptHint": {
+        "message": "JSON 형식으로 'enhanced_text' 키로 응답 받음",
+        "description": "Enhancement prompt hint"
+    },
+    "systemRole": {
+        "message": "시스템 역할",
+        "description": "System role label"
+    },
+    "requestPrefix": {
+        "message": "요청 접두사",
+        "description": "Request prefix label"
+    },
+    "requestPrefixHint": {
+        "message": "선택한 텍스트 앞에 추가되는 접두사",
+        "description": "Request prefix hint"
+    },
+    "saveSettings": {
+        "message": "설정 저장",
+        "description": "Save button text"
+    },
+    "settingsLoaded": {
+        "message": "설정 로드됨",
+        "description": "Status message"
+    },
+    "saved": {
+        "message": "저장됨!",
+        "description": "Saved status message"
+    },
+    "subtitle": {
+        "message": "로컬 LLM으로 텍스트 처리",
+        "description": "Subtitle text"
+    },
+    "contextMenuProcess": {
+        "message": "로컬 AI 어시스턴트로 처리",
+        "description": "Context menu for text selection"
+    },
+    "contextMenuVision": {
+        "message": "비전 AI로 이미지 분석",
+        "description": "Context menu for image"
+    },
+    "contextMenuEnhance": {
+        "message": "AI로 텍스트 향상",
+        "description": "Context menu for editable text"
+    },
+    "noTextSelected": {
+        "message": "텍스트가 선택되지 않았습니다. 선택한 텍스트에서 컨텍스트 메뉴를 사용하세요.",
+        "description": "No text selected message"
+    },
+    "conversationCleared": {
+        "message": "대화가 삭제되었습니다. 새 메시지를 보내세요.",
+        "description": "Conversation cleared message"
+    },
+    "copiedToClipboard": {
+        "message": "클립보드에 복사됨!",
+        "description": "Copy success message"
+    },
+    "errorMessage": {
+        "message": "로컬 AI 어시스턴트가 실행 중인지 확인하세요.",
+        "description": "Error message hint"
+    },
+    "defaultVisionPrompt": {
+        "message": "이 이미지를 자세히 설명해 주세요.",
+        "description": "Default vision prompt"
+    },
+    "defaultEnhancementPrompt": {
+        "message": "다음 텍스트를 더 명확하고, 전문적이며, 잘 구조화되도록 개선해 주세요. \"enhanced_text\" 키를 가진 JSON 형식으로만 개선된 텍스트를 반환해 주세요:",
+        "description": "Default enhancement prompt"
+    },
+    "defaultSystemRole": {
+        "message": "당신은 웹 기사, 게시물 및 기타 콘텐츠를 처리하는 전문가입니다.",
+        "description": "Default system role"
+    },
+    "defaultUserRequest": {
+        "message": "다음 텍스트를 요약해 주세요:",
+        "description": "Default user request prefix"
+    },
+    "modelKeyPlaceholder": {
+        "message": "기본 모델 사용 시 비워두세요",
+        "description": "Model key input placeholder"
+    },
+    "enhancementPromptPlaceholder": {
+        "message": "다음 텍스트를 개선해 주세요...",
+        "description": "Enhancement prompt placeholder"
+    },
+    "enhancingText": {
+        "message": "AI로 텍스트 향상 중...",
+        "description": "Loading message for text enhancement"
+    }
+}

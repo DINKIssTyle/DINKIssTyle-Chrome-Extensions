@@ -1,8 +1,9 @@
 {
     "manifest_version": 3,
-    "name": "Local AI Assistant (LLM)",
-    "version": "1.1.0",
-    "description": "Process selected text with Local AI Assistant API",
+    "name": "__MSG_extName__",
+    "version": "1.2.0",
+    "description": "__MSG_extDescription__",
+    "default_locale": "en",
     "permissions": [
         "storage",
         "contextMenus",

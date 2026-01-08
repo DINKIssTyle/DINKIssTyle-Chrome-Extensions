@@ -345,3 +345,22 @@ body {
 ::-webkit-scrollbar-thumb:hover {
     background: #555;
 }
+
+/* Image Bubble Styles */
+.chat-bubble.image-bubble {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.chat-bubble .chat-image {
+    max-width: 100%;
+    max-height: 200px;
+    border-radius: 8px;
+    object-fit: contain;
+}
+
+.chat-bubble .image-text {
+    font-size: 13px;
+    opacity: 0.9;
+}

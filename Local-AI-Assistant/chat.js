@@ -3,21 +3,35 @@
     Copyright (C) 2026 DINKI'ssTyle. All rights reserved.
 */
 
-const DEFAULT_SETTINGS = {
-    serverAddress: 'localhost:1234',
-    modelKey: '',
-    maxTokens: 2048,
-    temperature: 0.7,
-    maxHistory: 10,
-    useStreaming: false,
-    systemRole: 'You are an expert at processing web articles, posts, and other content.',
-    userRequest: 'Summarize the following text in Korean:'
-};
+// Get i18n message helper
+function i18n(key, fallback = '') {
+    return chrome.i18n.getMessage(key) || fallback;
+}
+
+// Default settings with i18n support
+function getDefaultSettings() {
+    return {
+        serverAddress: 'localhost:1234',
+        modelKey: '',
+        maxTokens: 2048,
+        temperature: 0.7,
+        maxHistory: 10,
+        useStreaming: false,
+        useVisionMode: false,
+        visionPrompt: i18n('defaultVisionPrompt', 'Describe this image in detail.'),
+        useTextEnhancement: false,
+        textEnhancementPrompt: i18n('defaultEnhancementPrompt', 'Improve the following text to be more clear, professional, and well-structured. Return only the improved text in JSON format with key "enhanced_text":'),
+        systemRole: i18n('defaultSystemRole', 'You are an expert at processing web articles, posts, and other content.'),
+        userRequest: i18n('defaultUserRequest', 'Summarize the following text:')
+    };
+}
 
 let conversationHistory = [];
 let settings = {};
 let lastAssistantResponse = '';
 let isProcessing = false;
+let currentImageData = null;
+let isVisionMode = false;
 
 document.addEventListener('DOMContentLoaded', async () => {
     const chatContent = document.getElementById('chatContent');
@@ -27,24 +41,28 @@ document.addEventListener('DOMContentLoaded', async () => {
     const clearBtn = document.getElementById('clearBtn');
 
     // Load settings
-    settings = await chrome.storage.sync.get(DEFAULT_SETTINGS);
+    settings = await chrome.storage.sync.get(getDefaultSettings());
 
-    // Check for initial text
-    const sessionData = await chrome.storage.session.get(['selectedText', 'isNewConversation']);
+    // Check for initial text and image
+    const sessionData = await chrome.storage.session.get(['selectedText', 'isNewConversation', 'imageData']);
 
     if (sessionData.selectedText && sessionData.isNewConversation) {
         // Reset conversation for new request
         conversationHistory = [];
         chatContent.innerHTML = '';
+        currentImageData = sessionData.imageData || null;
+        isVisionMode = !!currentImageData;
 
         // Clear the flag
         await chrome.storage.session.set({ isNewConversation: false });
 
         // Send initial request
-        const initialMessage = `${settings.userRequest}\n\n${sessionData.selectedText}`;
+        const initialMessage = currentImageData
+            ? sessionData.selectedText
+            : `${settings.userRequest}\n\n${sessionData.selectedText}`;
         await sendMessage(initialMessage);
     } else {
-        addSystemMessage('No text selected. Use context menu on selected text.');
+        addSystemMessage(chrome.i18n.getMessage('noTextSelected') || 'No text selected. Use context menu on selected text.');
     }
 
     // Auto-resize textarea
@@ -66,7 +84,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     copyBtn.addEventListener('click', () => {
         if (lastAssistantResponse) {
             navigator.clipboard.writeText(lastAssistantResponse).then(() => {
-                showToast('Copied to clipboard!');
+                showToast(chrome.i18n.getMessage('copiedToClipboard') || 'Copied to clipboard!');
             });
         }
     });
@@ -75,7 +93,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         conversationHistory = [];
         chatContent.innerHTML = '';
         lastAssistantResponse = '';
-        addSystemMessage('Conversation cleared. Send a new message.');
+        currentImageData = null;
+        addSystemMessage(chrome.i18n.getMessage('conversationCleared') || 'Conversation cleared. Send a new message.');
     });
 
     async function sendAdditionalMessage() {
@@ -91,14 +110,29 @@ document.addEventListener('DOMContentLoaded', async () => {
         isProcessing = true;
         sendBtn.disabled = true;
 
-        // Add user bubble
-        addBubble(userMessage, 'user');
+        // Add user bubble (show image thumbnail if exists)
+        if (currentImageData && conversationHistory.length === 0) {
+            addImageBubble(currentImageData, userMessage);
+        } else {
+            addBubble(userMessage, 'user');
+        }
 
-        // Add user message to history
-        conversationHistory.push({
-            role: 'user',
-            content: userMessage
-        });
+        // Add user message to history (with image if exists)
+        if (currentImageData && conversationHistory.length === 0) {
+            // Use full data URL format: data:image/jpeg;base64,{base64_data}
+            conversationHistory.push({
+                role: 'user',
+                content: [
+                    { type: 'text', text: userMessage },
+                    { type: 'image_url', image_url: { url: currentImageData } }
+                ]
+            });
+        } else {
+            conversationHistory.push({
+                role: 'user',
+                content: userMessage
+            });
+        }
 
         // Trim history if needed
         const maxMessages = settings.maxHistory * 2;
@@ -110,8 +144,13 @@ document.addEventListener('DOMContentLoaded', async () => {
         const assistantBubble = addBubble('', 'assistant', true);
 
         try {
+            // Use vision-specific system role for image analysis
+            const systemContent = isVisionMode && conversationHistory.length <= 1
+                ? 'You are a helpful vision assistant that can analyze and describe images in detail. Respond in the same language as the user\'s request.'
+                : settings.systemRole;
+
             const messages = [
-                { role: 'system', content: settings.systemRole },
+                { role: 'system', content: systemContent },
                 ...conversationHistory
             ];
 
@@ -121,10 +160,13 @@ document.addEventListener('DOMContentLoaded', async () => {
                 await normalResponse(messages, assistantBubble);
             }
 
+            // Clear image data after first message
+            currentImageData = null;
+
         } catch (error) {
             assistantBubble.classList.remove('streaming');
             assistantBubble.classList.add('error');
-            assistantBubble.innerHTML = renderMarkdown(`**Error**\n\n${error.message}\n\nPlease check if Local AI Assistant is running.`);
+            assistantBubble.innerHTML = renderMarkdown(`**Error**\n\n${error.message}\n\n${chrome.i18n.getMessage('errorMessage') || 'Please check if Local AI Assistant is running.'}`);
             lastAssistantResponse = error.message;
         } finally {
             isProcessing = false;
@@ -237,6 +279,26 @@ document.addEventListener('DOMContentLoaded', async () => {
             bubble.innerHTML = role === 'user' ? escapeHtml(content) : renderMarkdown(content);
         }
 
+        chatContent.appendChild(bubble);
+        scrollToBottom();
+        return bubble;
+    }
+
+    function addImageBubble(imageData, text) {
+        const bubble = document.createElement('div');
+        bubble.className = 'chat-bubble user image-bubble';
+
+        const img = document.createElement('img');
+        img.src = imageData;
+        img.alt = 'Uploaded image';
+        img.className = 'chat-image';
+
+        const textDiv = document.createElement('div');
+        textDiv.className = 'image-text';
+        textDiv.textContent = text;
+
+        bubble.appendChild(img);
+        bubble.appendChild(textDiv);
         chatContent.appendChild(bubble);
         scrollToBottom();
         return bubble;

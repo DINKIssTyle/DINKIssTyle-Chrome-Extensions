@@ -16,42 +16,43 @@
         <div class="header">
             <img src="icons/icon48.png" alt="Logo" class="logo">
             <div class="title-group">
-                <h1>Local AI Assistant (LLM)</h1>
-                <p class="subtitle">Text Processing with Local LLM</p>
+                <h1 data-i18n="extName">Local AI Assistant (LLM)</h1>
+                <p class="subtitle" data-i18n="subtitle">Text Processing with Local LLM</p>
             </div>
         </div>
 
         <div class="settings-group">
             <div class="setting-item">
-                <label for="serverAddress">Server Address</label>
+                <label for="serverAddress" data-i18n="serverAddress">Server Address</label>
                 <input type="text" id="serverAddress" placeholder="localhost:1234">
-                <span class="hint">Address:Port only (no http:// or /v1)</span>
+                <span class="hint" data-i18n="serverAddressHint">Address:Port only (no http:// or /v1)</span>
             </div>
 
             <div class="setting-item">
-                <label for="modelKey">Model Key</label>
-                <input type="text" id="modelKey" placeholder="Leave empty for default model">
-                <span class="hint">Specify model name when multiple models are loaded</span>
+                <label for="modelKey" data-i18n="modelKey">Model Key</label>
+                <input type="text" id="modelKey" data-i18n-placeholder="modelKeyPlaceholder"
+                    placeholder="Leave empty for default model">
+                <span class="hint" data-i18n="modelKeyHint">Specify model name when multiple models are loaded</span>
             </div>
 
             <div class="setting-row">
                 <div class="setting-item half">
-                    <label for="maxTokens">Max Tokens</label>
+                    <label for="maxTokens" data-i18n="maxTokens">Max Tokens</label>
                     <input type="number" id="maxTokens" placeholder="2048" min="1" max="32768">
                 </div>
                 <div class="setting-item half">
-                    <label for="temperature">Temperature</label>
+                    <label for="temperature" data-i18n="temperature">Temperature</label>
                     <input type="number" id="temperature" placeholder="0.7" min="0" max="2" step="0.1">
                 </div>
             </div>
 
             <div class="setting-row">
                 <div class="setting-item half">
-                    <label for="maxHistory">Max History</label>
+                    <label for="maxHistory" data-i18n="maxHistory">Max History</label>
                     <input type="number" id="maxHistory" placeholder="10" min="1" max="50">
                 </div>
                 <div class="setting-item half toggle-item">
-                    <label for="useStreaming">Streaming</label>
+                    <label for="useStreaming" data-i18n="streaming">Streaming</label>
                     <label class="switch">
                         <input type="checkbox" id="useStreaming">
                         <span class="slider round"></span>
@@ -59,19 +60,53 @@
                 </div>
             </div>
 
-            <div class="setting-item">
-                <label for="systemRole">System Role</label>
-                <textarea id="systemRole" rows="3" placeholder="You are an expert..."></textarea>
+            <div class="setting-row">
+                <div class="setting-item half toggle-item">
+                    <label for="useVisionMode" data-i18n="visionMode">Vision Mode</label>
+                    <label class="switch">
+                        <input type="checkbox" id="useVisionMode">
+                        <span class="slider round"></span>
+                    </label>
+                </div>
+                <div class="setting-item half toggle-item">
+                    <label for="useTextEnhancement" data-i18n="textEnhancement">Text Enhancement</label>
+                    <label class="switch">
+                        <input type="checkbox" id="useTextEnhancement">
+                        <span class="slider round"></span>
+                    </label>
+                </div>
+            </div>
+
+            <div class="setting-item enhancement-prompt-container" id="visionPromptContainer">
+                <label for="visionPrompt" data-i18n="visionPrompt">Vision Prompt</label>
+                <textarea id="visionPrompt" rows="2" data-i18n-placeholder="defaultVisionPrompt"
+                    placeholder="Describe this image in detail."></textarea>
+                <span class="hint" data-i18n="visionPromptHint">Prompt to use when analyzing images</span>
+            </div>
+
+            <div class="setting-item enhancement-prompt-container" id="enhancementPromptContainer">
+                <label for="textEnhancementPrompt" data-i18n="enhancementPrompt">Enhancement Prompt</label>
+                <textarea id="textEnhancementPrompt" rows="3" data-i18n-placeholder="enhancementPromptPlaceholder"
+                    placeholder="Improve the following text..."></textarea>
+                <span class="hint" data-i18n="enhancementPromptHint">Response in JSON format with 'enhanced_text'
+                    key</span>
             </div>
 
             <div class="setting-item">
-                <label for="userRequest">Request Prefix</label>
-                <textarea id="userRequest" rows="2" placeholder="Summarize the following text in Korean:"></textarea>
-                <span class="hint">Prefix added before selected text</span>
+                <label for="systemRole" data-i18n="systemRole">System Role</label>
+                <textarea id="systemRole" rows="3" data-i18n-placeholder="defaultSystemRole"
+                    placeholder="You are an expert..."></textarea>
+            </div>
+
+            <div class="setting-item">
+                <label for="userRequest" data-i18n="requestPrefix">Request Prefix</label>
+                <textarea id="userRequest" rows="2" data-i18n-placeholder="defaultUserRequest"
+                    placeholder="Summarize the following text:"></textarea>
+                <span class="hint" data-i18n="requestPrefixHint">Prefix added before selected text</span>
             </div>
         </div>
 
-        <button id="saveBtn" class="save-btn">Save Settings</button>
+        <button id="saveBtn" class="save-btn" data-i18n="saveSettings">Save Settings</button>
 
         <div class="footer">
             <span id="statusText" class="status-indicator">Ready</span>

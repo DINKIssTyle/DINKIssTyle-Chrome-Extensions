@@ -1,0 +1,150 @@
+{
+    "extName": {
+        "message": "Local AI Assistant (LLM)",
+        "description": "Extension name"
+    },
+    "extDescription": {
+        "message": "Process selected text with Local AI Assistant API",
+        "description": "Extension description"
+    },
+    "serverAddress": {
+        "message": "Server Address",
+        "description": "Server address label"
+    },
+    "serverAddressHint": {
+        "message": "Address:Port only (no http:// or /v1)",
+        "description": "Server address hint"
+    },
+    "modelKey": {
+        "message": "Model Key",
+        "description": "Model key label"
+    },
+    "modelKeyHint": {
+        "message": "Specify model name when multiple models are loaded",
+        "description": "Model key hint"
+    },
+    "maxTokens": {
+        "message": "Max Tokens",
+        "description": "Max tokens label"
+    },
+    "temperature": {
+        "message": "Temperature",
+        "description": "Temperature label"
+    },
+    "maxHistory": {
+        "message": "Max History",
+        "description": "Max history label"
+    },
+    "streaming": {
+        "message": "Streaming",
+        "description": "Streaming label"
+    },
+    "visionMode": {
+        "message": "Vision Mode",
+        "description": "Vision mode label"
+    },
+    "visionPrompt": {
+        "message": "Vision Prompt",
+        "description": "Vision prompt label"
+    },
+    "visionPromptHint": {
+        "message": "Prompt to use when analyzing images",
+        "description": "Vision prompt hint"
+    },
+    "textEnhancement": {
+        "message": "Text Enhancement",
+        "description": "Text enhancement label"
+    },
+    "enhancementPrompt": {
+        "message": "Enhancement Prompt",
+        "description": "Enhancement prompt label"
+    },
+    "enhancementPromptHint": {
+        "message": "Response in JSON format with 'enhanced_text' key",
+        "description": "Enhancement prompt hint"
+    },
+    "systemRole": {
+        "message": "System Role",
+        "description": "System role label"
+    },
+    "requestPrefix": {
+        "message": "Request Prefix",
+        "description": "Request prefix label"
+    },
+    "requestPrefixHint": {
+        "message": "Prefix added before selected text",
+        "description": "Request prefix hint"
+    },
+    "saveSettings": {
+        "message": "Save Settings",
+        "description": "Save button text"
+    },
+    "settingsLoaded": {
+        "message": "Settings loaded",
+        "description": "Status message"
+    },
+    "saved": {
+        "message": "Saved!",
+        "description": "Saved status message"
+    },
+    "subtitle": {
+        "message": "Text Processing with Local LLM",
+        "description": "Subtitle text"
+    },
+    "contextMenuProcess": {
+        "message": "Process with Local AI Assistant (LLM)",
+        "description": "Context menu for text selection"
+    },
+    "contextMenuVision": {
+        "message": "Analyze Image with Vision AI",
+        "description": "Context menu for image"
+    },
+    "contextMenuEnhance": {
+        "message": "Enhance Text with AI",
+        "description": "Context menu for editable text"
+    },
+    "noTextSelected": {
+        "message": "No text selected. Use context menu on selected text.",
+        "description": "No text selected message"
+    },
+    "conversationCleared": {
+        "message": "Conversation cleared. Send a new message.",
+        "description": "Conversation cleared message"
+    },
+    "copiedToClipboard": {
+        "message": "Copied to clipboard!",
+        "description": "Copy success message"
+    },
+    "errorMessage": {
+        "message": "Please check if Local AI Assistant is running.",
+        "description": "Error message hint"
+    },
+    "defaultVisionPrompt": {
+        "message": "Describe this image in detail.",
+        "description": "Default vision prompt"
+    },
+    "defaultEnhancementPrompt": {
+        "message": "Improve the following text to be more clear, professional, and well-structured. Return only the improved text in JSON format with key \"enhanced_text\":",
+        "description": "Default enhancement prompt"
+    },
+    "defaultSystemRole": {
+        "message": "You are an expert at processing web articles, posts, and other content.",
+        "description": "Default system role"
+    },
+    "defaultUserRequest": {
+        "message": "Summarize the following text:",
+        "description": "Default user request prefix"
+    },
+    "modelKeyPlaceholder": {
+        "message": "Leave empty for default model",
+        "description": "Model key input placeholder"
+    },
+    "enhancementPromptPlaceholder": {
+        "message": "Improve the following text...",
+        "description": "Enhancement prompt placeholder"
+    },
+    "enhancingText": {
+        "message": "Enhancing text with AI...",
+        "description": "Loading message for text enhancement"
+    }
+}
