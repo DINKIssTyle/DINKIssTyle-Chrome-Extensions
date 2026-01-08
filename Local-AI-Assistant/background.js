@@ -30,16 +30,21 @@ function getDefaultSettings() {
     };
 }
 
-async function createContextMenus() {
+// Track current selection state for menu creation
+let currentHasSelection = false;
+
+async function createContextMenus(includeTextMenu = true) {
     const settings = await chrome.storage.sync.get(getDefaultSettings());
 
     chrome.contextMenus.removeAll(() => {
-        // Always create text selection menu
-        chrome.contextMenus.create({
-            id: MENU_ID_TEXT,
-            title: chrome.i18n.getMessage('contextMenuProcess') || 'Process with Local AI Assistant (LLM)',
-            contexts: ['selection']
-        });
+        // Create text selection menu only if there's a valid selection
+        if (includeTextMenu) {
+            chrome.contextMenus.create({
+                id: MENU_ID_TEXT,
+                title: chrome.i18n.getMessage('contextMenuProcess') || 'Process with Local AI Assistant (LLM)',
+                contexts: ['selection']
+            });
+        }
 
         // Create image menu if vision mode is enabled
         if (settings.useVisionMode) {
@@ -77,7 +82,7 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
     }
 });
 
-// Listen for cancel enhancement message
+// Listen for messages from content script and popup
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message.action === 'cancelEnhancement') {
         if (globalThis.currentEnhancementAbort) {
@@ -85,12 +90,18 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             globalThis.currentEnhancementAbort = null;
             console.log('[Local AI Assistant] Enhancement request aborted');
         }
+    } else if (message.action === 'selectionChanged') {
+        // Recreate menus based on selection state to avoid submenu grouping
+        if (currentHasSelection !== message.hasSelection) {
+            currentHasSelection = message.hasSelection;
+            createContextMenus(message.hasSelection);
+        }
     }
 });
 
 chrome.contextMenus.onClicked.addListener(async (info, tab) => {
     try {
-        if (info.menuItemId === MENU_ID_TEXT && info.selectionText) {
+        if (info.menuItemId === MENU_ID_TEXT && info.selectionText && info.selectionText.trim()) {
             await handleTextSelection(info.selectionText);
         } else if (info.menuItemId === MENU_ID_IMAGE && info.srcUrl) {
             await handleImageSelection(info.srcUrl, tab);
