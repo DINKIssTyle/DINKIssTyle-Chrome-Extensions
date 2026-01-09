@@ -732,19 +732,49 @@ async function callLLMForEnhancement(text, settings, signal = null, tabId = null
 
     // Try to parse JSON response
     try {
-        // Handle potential markdown code blocks
         let jsonStr = content;
+
+        // Handle potential markdown code blocks (```json ... ``` or ``` ... ```)
         const jsonMatch = content.match(/```(?:json)?\s*([\s\S]*?)```/);
         if (jsonMatch) {
             jsonStr = jsonMatch[1];
+        } else {
+            // Try to find JSON object pattern in the response
+            const jsonObjectMatch = content.match(/\{[\s\S]*"enhanced_text"[\s\S]*\}/);
+            if (jsonObjectMatch) {
+                jsonStr = jsonObjectMatch[0];
+            }
         }
 
         const parsed = JSON.parse(jsonStr.trim());
         console.log('[Local AI Assistant] JSON parsed successfully');
-        return parsed.enhanced_text || content;
+
+        if (parsed.enhanced_text) {
+            return parsed.enhanced_text;
+        }
+
+        // Fallback: return raw content if enhanced_text key not found
+        console.log('[Local AI Assistant] enhanced_text key not found in parsed JSON');
+        return content;
     } catch (e) {
-        // If JSON parsing fails, return the raw content
-        console.log('[Local AI Assistant] Could not parse JSON, using raw content');
+        console.log('[Local AI Assistant] Could not parse JSON:', e.message);
+
+        // Try regex extraction as last resort
+        const textMatch = content.match(/"enhanced_text"\s*:\s*"((?:[^"\\]|\\.)*)"/);
+        if (textMatch) {
+            // Unescape JSON string
+            const extracted = textMatch[1]
+                .replace(/\\n/g, '\n')
+                .replace(/\\r/g, '\r')
+                .replace(/\\t/g, '\t')
+                .replace(/\\"/g, '"')
+                .replace(/\\\\/g, '\\');
+            console.log('[Local AI Assistant] Extracted enhanced_text via regex');
+            return extracted;
+        }
+
+        // If all parsing fails, return the raw content
+        console.log('[Local AI Assistant] Using raw content as fallback');
         return content;
     }
 }
