@@ -107,6 +107,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     // Send on Enter (Shift+Enter for new line)
     messageInput.addEventListener('keydown', (e) => {
         if (e.key === 'Enter' && !e.shiftKey) {
+            // Prevent sending if IME composition is active (for Korean/CJK)
+            if (e.isComposing || e.nativeEvent?.isComposing) {
+                return;
+            }
             e.preventDefault();
             sendAdditionalMessage();
         }
