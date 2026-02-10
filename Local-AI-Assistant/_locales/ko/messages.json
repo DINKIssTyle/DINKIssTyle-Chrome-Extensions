@@ -15,6 +15,18 @@
         "message": "주소:포트만 입력 (http:// 또는 /v1 제외)",
         "description": "Server address hint"
     },
+    "apiKey": {
+        "message": "API 키 (선택)",
+        "description": "API key label"
+    },
+    "apiKeyPlaceholder": {
+        "message": "sk-...",
+        "description": "API key placeholder"
+    },
+    "apiKeyHint": {
+        "message": "필요하지 않은 경우 비워두세요",
+        "description": "API key hint"
+    },
     "modelKey": {
         "message": "모델 키",
         "description": "Model key label"

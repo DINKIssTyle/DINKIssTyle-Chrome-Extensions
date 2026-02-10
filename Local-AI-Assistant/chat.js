@@ -42,6 +42,7 @@ function applyI18n() {
 function getDefaultSettings() {
     return {
         serverAddress: 'localhost:1234',
+        apiKey: '',
         modelKey: '',
         maxTokens: 2048,
         temperature: 0.7,
@@ -216,7 +217,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     async function normalResponse(messages, bubble) {
         const response = await fetch(`http://${settings.serverAddress}/v1/chat/completions`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: {
+                'Content-Type': 'application/json',
+                ...(settings.apiKey ? { 'Authorization': `Bearer ${settings.apiKey}` } : {})
+            },
             body: JSON.stringify({
                 model: settings.modelKey || 'local-model',
                 messages: messages,
@@ -246,7 +250,10 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         const response = await fetch(`http://${settings.serverAddress}/v1/chat/completions`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: {
+                'Content-Type': 'application/json',
+                ...(settings.apiKey ? { 'Authorization': `Bearer ${settings.apiKey}` } : {})
+            },
             body: JSON.stringify({
                 model: settings.modelKey || 'local-model',
                 messages: messages,

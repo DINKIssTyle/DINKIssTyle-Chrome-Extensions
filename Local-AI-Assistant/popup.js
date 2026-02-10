@@ -12,6 +12,7 @@ function i18n(key, fallback = '') {
 function getDefaultSettings() {
     return {
         serverAddress: 'localhost:1234',
+        apiKey: '',
         modelKey: '',
         maxTokens: 4096,
         temperature: 0.7,
@@ -52,6 +53,7 @@ document.addEventListener('DOMContentLoaded', () => {
     applyI18n();
 
     const serverAddressInput = document.getElementById('serverAddress');
+    const apiKeyInput = document.getElementById('apiKey');
     const modelKeyInput = document.getElementById('modelKey');
     const maxTokensInput = document.getElementById('maxTokens');
     const temperatureInput = document.getElementById('temperature');
@@ -90,6 +92,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const defaults = getDefaultSettings();
     chrome.storage.sync.get(defaults, (settings) => {
         serverAddressInput.value = settings.serverAddress;
+        apiKeyInput.value = settings.apiKey;
         modelKeyInput.value = settings.modelKey;
         maxTokensInput.value = settings.maxTokens;
         temperatureInput.value = settings.temperature;
@@ -111,6 +114,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const defaults = getDefaultSettings();
         const settings = {
             serverAddress: serverAddressInput.value.trim() || defaults.serverAddress,
+            apiKey: apiKeyInput.value.trim(),
             modelKey: modelKeyInput.value.trim(),
             maxTokens: parseInt(maxTokensInput.value) || defaults.maxTokens,
             temperature: parseFloat(temperatureInput.value) || defaults.temperature,

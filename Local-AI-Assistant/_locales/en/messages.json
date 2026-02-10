@@ -15,6 +15,18 @@
         "message": "Address:Port only (no http:// or /v1)",
         "description": "Server address hint"
     },
+    "apiKey": {
+        "message": "API Key (Optional)",
+        "description": "API key label"
+    },
+    "apiKeyPlaceholder": {
+        "message": "sk-...",
+        "description": "API key placeholder"
+    },
+    "apiKeyHint": {
+        "message": "Leave empty if not required",
+        "description": "API key hint"
+    },
     "modelKey": {
         "message": "Model Key",
         "description": "Model key label"
