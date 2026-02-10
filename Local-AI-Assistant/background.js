@@ -860,6 +860,20 @@ async function convertImageToBase64(srcUrl, tab) {
 
 async function openChatWindow() {
     const chatUrl = chrome.runtime.getURL('chat.html');
+
+    // Check if the chat window is already open
+    const tabs = await chrome.tabs.query({ url: chatUrl + '*' });
+
+    if (tabs.length > 0) {
+        // If found, focus the existing window
+        const tab = tabs[0];
+        await chrome.windows.update(tab.windowId, { focused: true });
+
+        // Notify the tab to check for new session data
+        await chrome.tabs.sendMessage(tab.id, { action: 'newInitialMessage' });
+        return;
+    }
+
     const width = 500;
     const height = 650;
 

@@ -77,26 +77,38 @@ document.addEventListener('DOMContentLoaded', async () => {
     // Load settings
     settings = await chrome.storage.sync.get(getDefaultSettings());
 
-    // Check for initial text and image
-    const sessionData = await chrome.storage.session.get(['selectedText', 'isNewConversation', 'imageData']);
+    // Initial check for message
+    await checkInitialMessage();
 
-    if (sessionData.selectedText && sessionData.isNewConversation) {
-        // Reset conversation for new request
-        conversationHistory = [];
-        chatContent.innerHTML = '';
-        currentImageData = sessionData.imageData || null;
-        isVisionMode = !!currentImageData;
+    // Listen for new message triggers (from background.js when window is reused)
+    chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+        if (message.action === 'newInitialMessage') {
+            checkInitialMessage();
+        }
+    });
 
-        // Clear the flag
-        await chrome.storage.session.set({ isNewConversation: false });
+    async function checkInitialMessage() {
+        // Load settings in case they changed
+        settings = await chrome.storage.sync.get(getDefaultSettings());
 
-        // Send initial request
-        const initialMessage = currentImageData
-            ? sessionData.selectedText
-            : `${settings.userRequest}\n\n${sessionData.selectedText}`;
-        await sendMessage(initialMessage);
-    } else {
-        addSystemMessage(chrome.i18n.getMessage('noTextSelected') || 'No text selected. Use context menu on selected text.');
+        const sessionData = await chrome.storage.session.get(['selectedText', 'isNewConversation', 'imageData']);
+
+        if (sessionData.selectedText && sessionData.isNewConversation) {
+            // Append to conversation for new request
+            currentImageData = sessionData.imageData || null;
+            isVisionMode = isVisionMode || !!currentImageData; // Update vision mode if image is present
+
+            // Clear the flag
+            await chrome.storage.session.set({ isNewConversation: false });
+
+            // Send initial request
+            const initialMessage = currentImageData
+                ? sessionData.selectedText
+                : `${settings.userRequest}\n\n${sessionData.selectedText}`;
+            await sendMessage(initialMessage);
+        } else if (conversationHistory.length === 0 && chatContent.innerHTML === '') {
+            addSystemMessage(chrome.i18n.getMessage('noTextSelected') || 'No text selected. Use context menu on selected text.');
+        }
     }
 
     // Auto-resize textarea
@@ -293,7 +305,31 @@ document.addEventListener('DOMContentLoaded', async () => {
                                 isFirstChunk = false;
                             }
                             fullContent += delta;
-                            bubble.innerHTML = renderMarkdown(fullContent);
+
+                            // UI Display Logic - ALWAYS hide <think> content from bubble
+                            let displayText = fullContent;
+
+                            // Remove complete <think>...</think> blocks
+                            displayText = displayText.replace(/<think>[\s\S]*?<\/think>/g, '');
+
+                            // Show reasoning status if currently inside <think>
+                            if (fullContent.includes('<think>') && !fullContent.includes('</think>')) {
+                                const thinkContent = fullContent.split('<think>').pop();
+                                showReasoningStatus(bubble, thinkContent);
+                            } else if (fullContent.includes('</think>')) {
+                                showReasoningStatus(bubble, null, true);
+                            }
+
+                            // Handle case where </think> exists without opening tag (rare during streaming)
+                            if (displayText.includes('</think>')) {
+                                displayText = displayText.split('</think>').pop().trim();
+                            }
+                            // Handle incomplete <think> tag (still being streamed)
+                            if (displayText.includes('<think>')) {
+                                displayText = displayText.split('<think>')[0];
+                            }
+
+                            bubble.innerHTML = renderMarkdown(displayText);
                             scrollToBottom();
                         }
                     } catch (e) {
@@ -308,9 +344,49 @@ document.addEventListener('DOMContentLoaded', async () => {
             bubble.innerHTML = renderMarkdown(fullContent);
         }
 
+        // Add to history (including reasoning if any)
         conversationHistory.push({ role: 'assistant', content: fullContent });
         lastAssistantResponse = fullContent;
         bubble.classList.remove('streaming');
+        showReasoningStatus(bubble, null, true);
+    }
+
+    // Show/Hide Reasoning Status Helper
+    function showReasoningStatus(bubble, text, isFinal = false) {
+        let statusId = bubble.hasAttribute('data-reasoning-id')
+            ? bubble.getAttribute('data-reasoning-id')
+            : null;
+
+        let statusEl = statusId ? document.getElementById(statusId) : null;
+
+        if (isFinal) {
+            if (statusEl) statusEl.remove();
+            return;
+        }
+
+        if (!statusEl) {
+            statusId = 'reasoning-' + Date.now();
+            bubble.setAttribute('data-reasoning-id', statusId);
+            statusEl = document.createElement('div');
+            statusEl.id = statusId;
+            statusEl.className = 'reasoning-status';
+            // Insert after the bubble or at the bottom of the bubble's parent
+            bubble.appendChild(statusEl);
+        }
+
+        const MAX_DISPLAY_LENGTH = 150;
+        const prefix = '💭 Thinking: ';
+
+        if (text) {
+            let cleanText = text.replace(/[\r\n]+/g, ' ').trim();
+            const truncated = cleanText.length > MAX_DISPLAY_LENGTH
+                ? '...' + cleanText.slice(-MAX_DISPLAY_LENGTH)
+                : cleanText;
+            statusEl.textContent = prefix + (truncated || '...');
+        } else {
+            statusEl.textContent = prefix + '...';
+        }
+        scrollToBottom();
     }
 
     function addBubble(content, role, isLoading = false) {
