@@ -16,6 +16,7 @@ function i18n(key, fallback = '') {
 function getDefaultSettings() {
     return {
         serverAddress: 'localhost:1234',
+        apiKey: '',
         modelKey: '',
         maxTokens: 4096,
         temperature: 0.7,
@@ -700,7 +701,10 @@ async function callLLMForEnhancement(text, settings, signal = null, tabId = null
 
     const fetchOptions = {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+            'Content-Type': 'application/json',
+            ...(settings.apiKey ? { 'Authorization': `Bearer ${settings.apiKey}` } : {})
+        },
         body: JSON.stringify({
             model: settings.modelKey || 'local-model',
             messages: [
