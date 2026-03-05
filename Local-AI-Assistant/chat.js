@@ -48,6 +48,8 @@ function getDefaultSettings() {
         temperature: 0.7,
         maxHistory: 10,
         useStreaming: false,
+        useThinking: false,
+        useMcpTools: false,
         useVisionMode: false,
         visionPrompt: i18n('defaultVisionPrompt', 'Describe this image in detail.'),
         useTextEnhancement: false,
@@ -64,6 +66,10 @@ let isProcessing = false;
 let currentImageData = null;
 let isVisionMode = false;
 
+// Scroll state
+let userScrolledUp = false;
+let scrollRafId = null;
+
 document.addEventListener('DOMContentLoaded', async () => {
     // Apply i18n translations
     applyI18n();
@@ -77,6 +83,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     // Load settings
     settings = await chrome.storage.sync.get(getDefaultSettings());
 
+    // Detect if user manually scrolled up — if so, pause auto-scroll
+    chatContent.addEventListener('scroll', () => {
+        const distanceFromBottom = chatContent.scrollHeight - chatContent.scrollTop - chatContent.clientHeight;
+        userScrolledUp = distanceFromBottom > 80;
+    });
+
     // Initial check for message
     await checkInitialMessage();
 
@@ -84,6 +96,15 @@ document.addEventListener('DOMContentLoaded', async () => {
     chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         if (message.action === 'newInitialMessage') {
             checkInitialMessage();
+        }
+    });
+
+    // Sync settings in real-time if they change in other windows
+    chrome.storage.onChanged.addListener((changes, areaName) => {
+        if (areaName === 'sync') {
+            for (let [key, { newValue }] of Object.entries(changes)) {
+                settings[key] = newValue;
+            }
         }
     });
 
@@ -151,12 +172,17 @@ document.addEventListener('DOMContentLoaded', async () => {
         const message = messageInput.value.trim();
         if (!message || isProcessing) return;
 
+        // Reset scroll lock when user sends a new message
+        userScrolledUp = false;
+
         messageInput.value = '';
         messageInput.style.height = 'auto';
         await sendMessage(message);
     }
 
     async function sendMessage(userMessage) {
+        // Always reset scroll lock when a new response starts
+        userScrolledUp = false;
         isProcessing = true;
         sendBtn.disabled = true;
 
@@ -227,19 +253,40 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     async function normalResponse(messages, bubble) {
+        const requestBody = {
+            model: settings.modelKey || 'local-model',
+            messages: messages,
+            max_tokens: settings.maxTokens,
+            temperature: settings.temperature,
+            stream: false
+        };
+
+        // Add tools parameter if MCP Tools is enabled
+        if (settings.useMcpTools) {
+            requestBody.tools = [{
+                type: "function",
+                function: {
+                    name: "use_mcp_tool",
+                    description: "Use a Model Context Protocol (MCP) tool to perform an action",
+                    parameters: {
+                        type: "object",
+                        properties: {
+                            query: { type: "string" }
+                        },
+                        required: ["query"]
+                    }
+                }
+            }];
+            requestBody.tool_choice = 'auto';
+        }
+
         const response = await fetch(`http://${settings.serverAddress}/v1/chat/completions`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
                 ...(settings.apiKey ? { 'Authorization': `Bearer ${settings.apiKey}` } : {})
             },
-            body: JSON.stringify({
-                model: settings.modelKey || 'local-model',
-                messages: messages,
-                max_tokens: settings.maxTokens,
-                temperature: settings.temperature,
-                stream: false
-            })
+            body: JSON.stringify(requestBody)
         });
 
         if (!response.ok) {
@@ -260,19 +307,40 @@ document.addEventListener('DOMContentLoaded', async () => {
         bubble.classList.add('streaming');
         bubble.innerHTML = '<div class="typing-indicator"><span></span><span></span><span></span></div>';
 
+        const requestBody = {
+            model: settings.modelKey || 'local-model',
+            messages: messages,
+            max_tokens: settings.maxTokens,
+            temperature: settings.temperature,
+            stream: true
+        };
+
+        // Add tools parameter if MCP Tools is enabled
+        if (settings.useMcpTools) {
+            requestBody.tools = [{
+                type: "function",
+                function: {
+                    name: "use_mcp_tool",
+                    description: "Use a Model Context Protocol (MCP) tool to perform an action",
+                    parameters: {
+                        type: "object",
+                        properties: {
+                            query: { type: "string" }
+                        },
+                        required: ["query"]
+                    }
+                }
+            }];
+            requestBody.tool_choice = 'auto';
+        }
+
         const response = await fetch(`http://${settings.serverAddress}/v1/chat/completions`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
                 ...(settings.apiKey ? { 'Authorization': `Bearer ${settings.apiKey}` } : {})
             },
-            body: JSON.stringify({
-                model: settings.modelKey || 'local-model',
-                messages: messages,
-                max_tokens: settings.maxTokens,
-                temperature: settings.temperature,
-                stream: true
-            })
+            body: JSON.stringify(requestBody)
         });
 
         if (!response.ok) {
@@ -282,7 +350,22 @@ document.addEventListener('DOMContentLoaded', async () => {
         const reader = response.body.getReader();
         const decoder = new TextDecoder();
         let fullContent = '';
+        let fullReasoning = ''; // Keep track of reasoning separately if sent in reasoning_content field
         let isFirstChunk = true;
+
+        // Helper to strip thinking tags and content for display
+        function stripThinking(text) {
+            if (!text) return '';
+            let cleaned = text.replace(/<think>[\s\S]*?<\/think>/gi, '');
+            // Handle partial blocks
+            if (cleaned.includes('<think>')) {
+                cleaned = cleaned.split(/<think>/i)[0];
+            }
+            if (cleaned.includes('</think>')) {
+                cleaned = cleaned.split(/<\/think>/i).pop();
+            }
+            return cleaned.trim();
+        }
 
         while (true) {
             const { done, value } = await reader.read();
@@ -298,39 +381,44 @@ document.addEventListener('DOMContentLoaded', async () => {
 
                     try {
                         const parsed = JSON.parse(data);
-                        const delta = parsed.choices?.[0]?.delta?.content || '';
-                        if (delta) {
+                        const delta = parsed.choices?.[0]?.delta || {};
+                        const content = delta.content || '';
+                        const reasoning = delta.reasoning_content || ''; // Support for Ollama/DeepSeek reasoning field
+
+                        if (content || reasoning) {
                             if (isFirstChunk) {
-                                bubble.innerHTML = '';
+                                bubble.innerHTML = '<div class="streaming-text"></div>';
                                 isFirstChunk = false;
                             }
-                            fullContent += delta;
 
-                            // UI Display Logic - ALWAYS hide <think> content from bubble
-                            let displayText = fullContent;
+                            if (content) fullContent += content;
+                            if (reasoning) fullReasoning += reasoning;
 
-                            // Remove complete <think>...</think> blocks
-                            displayText = displayText.replace(/<think>[\s\S]*?<\/think>/g, '');
-
-                            // Show reasoning status if currently inside <think>
-                            if (fullContent.includes('<think>') && !fullContent.includes('</think>')) {
-                                const thinkContent = fullContent.split('<think>').pop();
-                                showReasoningStatus(bubble, thinkContent);
-                            } else if (fullContent.includes('</think>')) {
-                                showReasoningStatus(bubble, null, true);
+                            // --- Thinking Box Update ---
+                            // If reasoning is in reasoning_content, use that. 
+                            // If it's in content tags, extract it.
+                            let currentReasoning = fullReasoning;
+                            if (fullContent.includes('<think>')) {
+                                if (fullContent.includes('</think>')) {
+                                    currentReasoning = fullContent.match(/<think>([\s\S]*?)<\/think>/i)[1];
+                                } else {
+                                    currentReasoning = fullContent.split(/<think>/i).pop();
+                                }
                             }
 
-                            // Handle case where </think> exists without opening tag (rare during streaming)
-                            if (displayText.includes('</think>')) {
-                                displayText = displayText.split('</think>').pop().trim();
-                            }
-                            // Handle incomplete <think> tag (still being streamed)
-                            if (displayText.includes('<think>')) {
-                                displayText = displayText.split('<think>')[0];
+                            if (currentReasoning || fullContent.includes('<think>')) {
+                                const isDone = fullContent.includes('</think>');
+                                showReasoningStatus(bubble, currentReasoning, false, settings.useThinking, isDone);
                             }
 
-                            bubble.innerHTML = renderMarkdown(displayText);
-                            scrollToBottom();
+                            // --- Main Bubble Display ---
+                            let displayText = stripThinking(fullContent);
+
+                            const streamingEl = bubble.querySelector('.streaming-text');
+                            if (streamingEl) {
+                                streamingEl.textContent = displayText;
+                            }
+                            scrollToBottom(true);
                         }
                     } catch (e) {
                         // Skip invalid JSON
@@ -341,18 +429,26 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         if (!fullContent) {
             fullContent = 'No response received.';
-            bubble.innerHTML = renderMarkdown(fullContent);
         }
+
+        // Final render: prioritize stripped content
+        let finalDisplay = stripThinking(fullContent);
+
+        // If after stripping we have nothing, it means the entire response was thinking
+        // In that case, we show an empty string or a small hint, but NOT the raw <think> tags
+        bubble.innerHTML = renderMarkdown(finalDisplay);
 
         // Add to history (including reasoning if any)
         conversationHistory.push({ role: 'assistant', content: fullContent });
         lastAssistantResponse = fullContent;
         bubble.classList.remove('streaming');
-        showReasoningStatus(bubble, null, true);
+        showReasoningStatus(bubble, null, true, settings.useThinking);
     }
 
     // Show/Hide Reasoning Status Helper
-    function showReasoningStatus(bubble, text, isFinal = false) {
+    // isDone=true: thinking complete, collapse box with elapsed time
+    // isFinal=true: stream done, remove element entirely
+    function showReasoningStatus(bubble, text, isFinal = false, useThinking = false, isDone = false) {
         let statusId = bubble.hasAttribute('data-reasoning-id')
             ? bubble.getAttribute('data-reasoning-id')
             : null;
@@ -364,29 +460,54 @@ document.addEventListener('DOMContentLoaded', async () => {
             return;
         }
 
+        // Do not show reasoning at all if useThinking is off
+        if (!useThinking) return;
+
         if (!statusEl) {
             statusId = 'reasoning-' + Date.now();
             bubble.setAttribute('data-reasoning-id', statusId);
+            bubble.dataset.thinkStart = Date.now();
+
             statusEl = document.createElement('div');
             statusEl.id = statusId;
-            statusEl.className = 'reasoning-status';
-            // Insert after the bubble or at the bottom of the bubble's parent
-            bubble.appendChild(statusEl);
+            statusEl.className = 'reasoning-status thinking-expanded';
+            statusEl.innerHTML = `
+                <div class="reasoning-header">
+                    <span class="reasoning-icon">💭</span> Thinking...
+                </div>
+                <div class="reasoning-body"></div>`;
+            // Insert BEFORE the bubble so it appears on top of the final response
+            // This prevents scroll jumping because the expanding element pushes the chat down
+            bubble.parentNode.insertBefore(statusEl, bubble);
         }
 
-        const MAX_DISPLAY_LENGTH = 150;
-        const prefix = '💭 Thinking: ';
-
-        if (text) {
-            let cleanText = text.replace(/[\r\n]+/g, ' ').trim();
-            const truncated = cleanText.length > MAX_DISPLAY_LENGTH
-                ? '...' + cleanText.slice(-MAX_DISPLAY_LENGTH)
-                : cleanText;
-            statusEl.textContent = prefix + (truncated || '...');
+        if (isDone) {
+            // Collapse with elapsed time, transition upward
+            const elapsed = bubble.dataset.thinkStart
+                ? ((Date.now() - parseInt(bubble.dataset.thinkStart)) / 1000).toFixed(1)
+                : '?';
+            statusEl.innerHTML = `
+                <div class="reasoning-header reasoning-done-header">
+                    ✓ Thought for ${elapsed}s
+                </div>`;
+            statusEl.className = 'reasoning-status thinking-done';
         } else {
-            statusEl.textContent = prefix + '...';
+            // Update inner body text (accumulate, scroll to bottom inside box)
+            const bodyEl = statusEl.querySelector('.reasoning-body');
+            if (bodyEl) {
+                bodyEl.textContent = (text || '').trimStart();
+                // Auto-scroll inner box to bottom so latest text is visible
+                bodyEl.scrollTop = bodyEl.scrollHeight;
+            }
         }
-        scrollToBottom();
+
+        // Scroll the thinking element into view after layout
+        // scrollIntoView is more reliable than scrollTop after DOM insertion
+        requestAnimationFrame(() => {
+            if (statusEl && statusEl.parentNode) {
+                statusEl.scrollIntoView({ block: 'nearest', behavior: 'instant' });
+            }
+        });
     }
 
     function addBubble(content, role, isLoading = false) {
@@ -432,8 +553,21 @@ document.addEventListener('DOMContentLoaded', async () => {
         chatContent.appendChild(div);
     }
 
-    function scrollToBottom() {
-        chatContent.scrollTop = chatContent.scrollHeight;
+    function scrollToBottom(force = false) {
+        // Skip if user has scrolled up, unless forced
+        if (userScrolledUp && !force) return;
+
+        // Use a small delay and double rAF to guarantee layout computation is fully complete after DOM insertion
+        // especially important for elements with CSS transitions or new images
+        if (scrollRafId) clearTimeout(scrollRafId);
+        scrollRafId = setTimeout(() => {
+            requestAnimationFrame(() => {
+                requestAnimationFrame(() => {
+                    chatContent.scrollTop = chatContent.scrollHeight;
+                    scrollRafId = null;
+                });
+            });
+        }, 10);
     }
 });
 

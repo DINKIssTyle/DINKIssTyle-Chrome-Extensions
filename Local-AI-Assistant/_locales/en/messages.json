@@ -179,6 +179,22 @@
         "message": "Failed to connect to AI server. Please check if the server is running.",
         "description": "Error message when text enhancement fails"
     },
+    "thinking": {
+        "message": "Thinking",
+        "description": "Thinking mode label"
+    },
+    "thinkingHint": {
+        "message": "Display reasoning process paragraph by paragraph",
+        "description": "Thinking mode hint"
+    },
+    "useMcpTools": {
+        "message": "Use MCP Tools",
+        "description": "MCP Tools label"
+    },
+    "useMcpToolsHint": {
+        "message": "Enable MCP tool usage in requests",
+        "description": "MCP Tools hint"
+    },
     "previewTitle": {
         "message": "AI Text Enhancement Preview",
         "description": "Preview modal title"

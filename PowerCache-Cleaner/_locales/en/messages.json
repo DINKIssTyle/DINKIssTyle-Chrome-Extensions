@@ -1,0 +1,20 @@
+{
+    "appName": {
+        "message": "PowerCache-Cleaner"
+    },
+    "appDesc": {
+        "message": "Powerfully clear website cache and service workers."
+    },
+    "clearCache": {
+        "message": "Power Clear Cache"
+    },
+    "clearCacheSuccess": {
+        "message": "Cache cleared successfully!"
+    },
+    "clearCacheError": {
+        "message": "Error clearing cache."
+    },
+    "reloading": {
+        "message": "Reloading..."
+    }
+}

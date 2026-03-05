@@ -72,6 +72,9 @@ body {
     display: flex;
     flex-direction: column;
     gap: 12px;
+    overscroll-behavior: contain;
+    /* Native scroll anchoring to keep things visible as they expand */
+    overflow-anchor: auto;
 }
 
 /* Chat Bubbles */
@@ -112,6 +115,12 @@ body {
 
 .chat-bubble.assistant.streaming {
     border: 1px solid #6366f1;
+}
+
+.streaming-text {
+    white-space: pre-wrap;
+    word-break: break-word;
+    line-height: 1.6;
 }
 
 .chat-bubble.error {
@@ -361,27 +370,100 @@ body {
 }
 
 
-/* Think UI Styles */
+/* ── Thinking Box ─────────────────────────────────── */
 .reasoning-status {
+    margin-bottom: 6px;
+    border-radius: 8px;
+    border: 1px solid rgba(99, 102, 241, 0.25);
+    background: rgba(99, 102, 241, 0.06);
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    /* Collapse animation: transition max-height for slide-up effect */
+    max-height: 200px;
+    transition: max-height 0.4s cubic-bezier(0.4, 0, 0.2, 1),
+        opacity 0.4s ease,
+        border-color 0.4s ease,
+        background 0.4s ease;
+    animation: fadeIn 0.25s ease-out;
+}
+
+/* Expanded: thinking in progress */
+.reasoning-status.thinking-expanded {
+    height: 200px;
+    /* Force strict height */
+    max-height: 200px;
+    border-color: rgba(99, 102, 241, 0.35);
+    background: rgba(99, 102, 241, 0.07);
+}
+
+/* Done: collapse to single header row */
+.reasoning-status.thinking-done {
+    max-height: 36px;
+    border-color: rgba(99, 102, 241, 0.12);
+    background: transparent;
+}
+
+/* Header bar inside thinking box */
+.reasoning-header {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 7px 12px;
     font-size: 12px;
-    color: #a0a0a0;
-    font-style: italic;
-    margin-top: 8px;
-    padding: 6px 12px;
-    background: rgba(255, 255, 255, 0.05);
-    border-radius: 6px;
-    border-left: 2px solid #6366f1;
-    animation: fadeIn 0.3s ease-out;
+    font-weight: 600;
+    color: #8b8ec7;
+    letter-spacing: 0.2px;
+    user-select: none;
+    border-bottom: 1px solid rgba(99, 102, 241, 0.12);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.reasoning-icon {
+    font-size: 13px;
+}
+
+/* Collapsed done header: dimmer */
+.reasoning-done-header {
+    color: #5a5a7a;
+    font-weight: 500;
+    border-bottom: none;
+}
+
+/* Scrollable body: fixed height, text accumulates & scrolls up */
+.reasoning-body {
+    flex: 1;
+    height: 150px;
+    min-height: 150px;
+    overflow-y: auto;
+    padding: 10px 14px;
+    font-size: 12px;
+    color: #a0a0b8;
+    line-height: 1.65;
     white-space: pre-wrap;
     word-break: break-word;
+    /* Fade top edge so text visually disappears scrolling upward */
+    -webkit-mask-image: linear-gradient(to bottom, transparent 0%, black 18%);
+    mask-image: linear-gradient(to bottom, transparent 0%, black 18%);
+    scrollbar-width: none;
+    /* hide scrollbar */
+}
+
+.reasoning-body::-webkit-scrollbar {
+    display: none;
 }
 
 @keyframes fadeIn {
     from {
         opacity: 0;
+        transform: translateY(6px);
     }
 
     to {
         opacity: 1;
+        transform: translateY(0);
     }
 }

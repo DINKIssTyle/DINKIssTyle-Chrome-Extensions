@@ -18,6 +18,8 @@ function getDefaultSettings() {
         temperature: 0.7,
         maxHistory: 10,
         useStreaming: false,
+        useThinking: false,
+        useMcpTools: false,
         useVisionMode: false,
         visionPrompt: i18n('defaultVisionPrompt', 'Describe this image in detail.'),
         useTextEnhancement: false,
@@ -59,6 +61,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const temperatureInput = document.getElementById('temperature');
     const maxHistoryInput = document.getElementById('maxHistory');
     const useStreamingInput = document.getElementById('useStreaming');
+    const useThinkingInput = document.getElementById('useThinking');
+    const useMcpToolsInput = document.getElementById('useMcpTools');
     const useVisionModeInput = document.getElementById('useVisionMode');
     const visionPromptInput = document.getElementById('visionPrompt');
     const visionPromptContainer = document.getElementById('visionPromptContainer');
@@ -98,6 +102,8 @@ document.addEventListener('DOMContentLoaded', () => {
         temperatureInput.value = settings.temperature;
         maxHistoryInput.value = settings.maxHistory;
         useStreamingInput.checked = settings.useStreaming;
+        useThinkingInput.checked = settings.useThinking;
+        useMcpToolsInput.checked = settings.useMcpTools;
         useVisionModeInput.checked = settings.useVisionMode;
         visionPromptInput.value = settings.visionPrompt;
         useTextEnhancementInput.checked = settings.useTextEnhancement;
@@ -120,6 +126,8 @@ document.addEventListener('DOMContentLoaded', () => {
             temperature: parseFloat(temperatureInput.value) || defaults.temperature,
             maxHistory: parseInt(maxHistoryInput.value) || defaults.maxHistory,
             useStreaming: useStreamingInput.checked,
+            useThinking: useThinkingInput.checked,
+            useMcpTools: useMcpToolsInput.checked,
             useVisionMode: useVisionModeInput.checked,
             visionPrompt: visionPromptInput.value.trim() || defaults.visionPrompt,
             useTextEnhancement: useTextEnhancementInput.checked,

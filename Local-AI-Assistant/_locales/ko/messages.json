@@ -179,6 +179,22 @@
         "message": "AI 서버 연결 실패. 서버가 실행 중인지 확인해 주세요.",
         "description": "Error message when text enhancement fails"
     },
+    "thinking": {
+        "message": "Thinking",
+        "description": "Thinking mode label"
+    },
+    "thinkingHint": {
+        "message": "추론 과정을 문단별로 표시",
+        "description": "Thinking mode hint"
+    },
+    "useMcpTools": {
+        "message": "MCP 도구 사용",
+        "description": "MCP Tools label"
+    },
+    "useMcpToolsHint": {
+        "message": "요청 시 MCP 도구 사용 활성화",
+        "description": "MCP Tools hint"
+    },
     "previewTitle": {
         "message": "AI 텍스트 향상 미리보기",
         "description": "Preview modal title"

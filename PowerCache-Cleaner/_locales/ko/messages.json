@@ -1,0 +1,20 @@
+{
+    "appName": {
+        "message": "PowerCache-Cleaner"
+    },
+    "appDesc": {
+        "message": "웹사이트의 캐시와 서비스 워커를 강력하게 제거합니다."
+    },
+    "clearCache": {
+        "message": "캐시 강력 삭제"
+    },
+    "clearCacheSuccess": {
+        "message": "캐시가 성공적으로 삭제되었습니다!"
+    },
+    "clearCacheError": {
+        "message": "캐시 삭제 중 오류가 발생했습니다."
+    },
+    "reloading": {
+        "message": "새로고침 중..."
+    }
+}

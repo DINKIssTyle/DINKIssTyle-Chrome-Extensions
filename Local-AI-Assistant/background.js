@@ -22,6 +22,8 @@ function getDefaultSettings() {
         temperature: 0.7,
         maxHistory: 10,
         useStreaming: false,
+        useThinking: false,
+        useMcpTools: false,
         useVisionMode: false,
         visionPrompt: i18n('defaultVisionPrompt', 'Describe this image in detail.'),
         useTextEnhancement: false,
