@@ -25,6 +25,7 @@ Since these are unpacked extensions, you need to install them via Chrome's Devel
 *   **save-image-as-type**: Context menu options to save images as different formats (JPG, PNG, WebP) or the original.
 *   **Visual-Effects**: Apply various visual effects and page transitions to web pages via a menu.
 *   **Zoom-To**: Double-click on empty space within a content container to smart zoom the entire page to fit that content using native browser zoom. Double-click again to restore.
+*   **PowerCache-Cleaner**: Powerfully clear website cache (Cache Storage) and unregister Service Workers with a single click to reset the site to its initial state.
 
 ---
 
@@ -55,3 +56,4 @@ Since these are unpacked extensions, you need to install them via Chrome's Devel
 *   **save-image-as-type**: 우클릭 메뉴 옵션을 통해 이미지를 다양한 형식(JPG, PNG, WebP) 또는 원본으로 저장합니다.
 *   **Visual-Effects**: 메뉴를 통해 웹 페이지에 다양한 시각 효과와 페이지 전환 효과를 적용합니다.
 *   **Zoom-To**: 콘텐츠 컨테이너 내의 빈 공간을 더블 클릭하면 브라우저의 기본 줌 기능을 사용하여 해당 콘텐츠에 맞춰 페이지 전체를 스마트 줌 합니다. 다시 더블 클릭하면 복원됩니다.
+*   **PowerCache-Cleaner**: 클릭 한 번으로 웹사이트의 캐시(Cache Storage)를 강력하게 삭제하고 등록된 서비스 워커를 해제하여 사이트를 초기 상태로 되돌립니다.
