@@ -96,9 +96,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     // Detect if user manually scrolled up — if so, pause auto-scroll
+    // But NOT during active streaming (isProcessing), since content growth triggers scroll events
     chatContent.addEventListener('scroll', () => {
+        if (isProcessing) return; // Don't interfere during streaming
         const distanceFromBottom = chatContent.scrollHeight - chatContent.scrollTop - chatContent.clientHeight;
-        userScrolledUp = distanceFromBottom > 80;
+        userScrolledUp = distanceFromBottom > 120;
     });
 
     // Initial check for message
@@ -600,16 +602,14 @@ document.addEventListener('DOMContentLoaded', async () => {
                                 showReasoningStatus(bubble, currentReasoning, false, settings.useThinking, isDone);
                             }
 
-                            // --- Main Bubble Display ---
+                            // --- Main Bubble Display (real-time markdown rendering) ---
                             let displayText = stripThinking(fullContent);
 
                             if (displayText) {
                                 bubble.innerHTML = renderMarkdown(displayText);
-                            } else if (!bubble.querySelector('.typing-indicator')) {
-                                bubble.innerHTML = '<div class="typing-indicator"><span></span><span></span><span></span></div>';
                             }
-
-                            scrollToBottom(true);
+                            // Force immediate scroll during streaming
+                            chatContent.scrollTop = chatContent.scrollHeight;
                         }
                     } catch (e) {
                         // Skip invalid JSON
@@ -822,12 +822,15 @@ function renderMarkdown(text) {
     // Horizontal rule
     html = html.replace(/^---$/gm, '<hr>');
 
-    // Lists
+    // Unordered lists
     html = html.replace(/^\* (.+)$/gm, '<li>$1</li>');
     html = html.replace(/^- (.+)$/gm, '<li>$1</li>');
-    html = html.replace(/^\d+\. (.+)$/gm, '<li>$0</li>'); // Preserve the number
     html = html.replace(/(<li>.*?<\/li>)/gs, '<ul>$1</ul>');
     html = html.replace(/<\/ul>\s*<ul>/g, '');
+
+    // Ordered lists (numbered)
+    html = html.replace(/^\d+\. (.+)$/gm, '<ol><li>$1</li></ol>');
+    html = html.replace(/<\/ol>\s*<ol>/g, '');
 
     // Links
     html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');

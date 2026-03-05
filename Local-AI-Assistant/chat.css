@@ -112,22 +112,20 @@ body {
 }
 
 .chat-bubble.assistant {
-    align-self: flex-start;
-    background: #2a2a4a;
+    align-self: stretch;
+    background: transparent;
     color: #e0e0e0;
-    border-bottom-left-radius: 4px;
-    margin-bottom: 8px;
-    /* Extra breathing room */
-    /* Ensure the bubble itself feels 'fuller' as a block element */
-    width: fit-content;
-    min-width: 60px;
+    border-radius: 0;
+    max-width: 100%;
+    width: 100%;
+    padding: 14px 4px;
+    border: none;
+    margin-bottom: 4px;
 }
 
 .chat-bubble.assistant.streaming {
-    transition: opacity 0.2s;
     min-height: 1.5em;
-    /* Force bubble to take up full available space during streaming for stability */
-    width: 85%;
+    border-left-color: #a78bfa;
 }
 
 .chat-bubble.error {
