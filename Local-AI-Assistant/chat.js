@@ -700,6 +700,8 @@ document.addEventListener('DOMContentLoaded', async () => {
                             if (isFirstContent) {
                                 bubble.innerHTML = '';
                                 isFirstContent = false;
+                                // Remove any leftover progress indicators when real content starts
+                                bubble.querySelectorAll('.progress-status, .model-load-status').forEach(el => el.remove());
                             }
                             fullContent += content;
                             bubble.innerHTML = renderMarkdown(fullContent);
@@ -773,18 +775,31 @@ document.addEventListener('DOMContentLoaded', async () => {
                     }
 
                     case 'model_load.start':
-                        bubble.innerHTML = '<div class="typing-indicator"><span></span><span></span><span></span></div> Loading model...';
+                        showInlineProgress(bubble, 'model-load', 'Loading Model...');
                         break;
 
                     case 'model_load.progress': {
                         const pct = Math.round((eventData.progress || 0) * 100);
-                        bubble.innerHTML = `<div class="typing-indicator"><span></span><span></span><span></span></div> Loading model... ${pct}%`;
+                        showInlineProgress(bubble, 'model-load', `Loading Model... ${pct}%`, pct);
                         break;
                     }
 
+                    case 'model_load.end':
+                        showInlineProgress(bubble, 'model-load', '✓ Model Loaded', 100, true);
+                        break;
+
                     case 'prompt_processing.start':
-                    case 'prompt_processing.progress':
-                        // Could show processing status but not critical
+                        showInlineProgress(bubble, 'prompt-proc', 'Processing Prompt...');
+                        break;
+
+                    case 'prompt_processing.progress': {
+                        const pct = Math.round((eventData.progress || 0) * 100);
+                        showInlineProgress(bubble, 'prompt-proc', `Processing Prompt... ${pct}%`, pct);
+                        break;
+                    }
+
+                    case 'prompt_processing.end':
+                        showInlineProgress(bubble, 'prompt-proc', '✓ Prompt Processed', 100, true);
                         break;
 
                     case 'error': {
@@ -810,6 +825,49 @@ document.addEventListener('DOMContentLoaded', async () => {
         lastAssistantResponse = fullContent;
         bubble.classList.remove('streaming');
         showReasoningStatus(bubble, null, true, settings.useThinking);
+    }
+    // Show/Hide Inline Progress Helper
+    function showInlineProgress(bubble, type, text, pct = 0, isDone = false) {
+        const statusClass = type === 'model-load' ? 'model-load-status' : 'progress-status';
+        const statusId = `${type}-${bubble.id || Date.now()}`;
+        let statusEl = document.getElementById(statusId);
+
+        if (isDone) {
+            if (statusEl) {
+                const bar = statusEl.querySelector('.progress-bar-fill');
+                const textEl = statusEl.querySelector('.status-label');
+                if (bar) bar.style.width = '100%';
+                if (textEl && text) textEl.textContent = text;
+                setTimeout(() => {
+                    if (statusEl && statusEl.parentNode) statusEl.remove();
+                }, 1500);
+            }
+            return;
+        }
+
+        if (!statusEl) {
+            statusEl = document.createElement('div');
+            statusEl.id = statusId;
+            statusEl.className = statusClass;
+            statusEl.innerHTML = `
+                <div class="status-text">
+                    <span class="status-label">${text}</span>
+                    <span class="status-percent">${pct}%</span>
+                </div>
+                <div class="progress-bar-container">
+                    <div class="progress-bar-fill" style="width: ${pct}%"></div>
+                </div>
+            `;
+            bubble.appendChild(statusEl);
+        } else {
+            const bar = statusEl.querySelector('.progress-bar-fill');
+            const label = statusEl.querySelector('.status-label');
+            const percent = statusEl.querySelector('.status-percent');
+            if (bar) bar.style.width = `${pct}%`;
+            if (label) label.textContent = text;
+            if (percent) percent.textContent = `${pct}%`;
+        }
+        chatContent.scrollTop = chatContent.scrollHeight;
     }
 
     // Show/Hide Reasoning Status Helper
@@ -880,6 +938,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     function addBubble(content, role, isLoading = false) {
         const bubble = document.createElement('div');
         bubble.className = `chat-bubble ${role}`;
+        bubble.id = `msg-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
 
         if (isLoading) {
             bubble.innerHTML = '<div class="typing-indicator"><span></span><span></span><span></span></div>';

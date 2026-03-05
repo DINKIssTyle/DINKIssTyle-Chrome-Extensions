@@ -408,6 +408,41 @@ body {
 }
 
 /* Image Bubble Styles */
+/* --- Inline Progress & Model Loading --- */
+.progress-status,
+.model-load-status {
+    font-size: 11px;
+    color: #888;
+    margin-top: 4px;
+    margin-bottom: 4px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    animation: fadeIn 0.3s ease-out;
+}
+
+.progress-bar-container {
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 4px;
+    height: 4px;
+    width: 100%;
+    overflow: hidden;
+}
+
+.progress-bar-fill {
+    background: linear-gradient(90deg, #6366f1, #818cf8);
+    height: 100%;
+    width: 0%;
+    transition: width 0.3s ease;
+    box-shadow: 0 0 8px rgba(99, 102, 241, 0.5);
+}
+
+.status-text {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
 .chat-bubble.image-bubble {
     display: flex;
     flex-direction: column;
