@@ -19,7 +19,8 @@ function getDefaultSettings() {
         maxHistory: 10,
         useStreaming: false,
         useThinking: false,
-        useMcpTools: false,
+        llmMode: 'openai',
+        mcpServerLabel: '',
         useVisionMode: false,
         useSidePanel: false,
         showSummarizeBtn: true,
@@ -65,7 +66,10 @@ document.addEventListener('DOMContentLoaded', () => {
     const maxHistoryInput = document.getElementById('maxHistory');
     const useStreamingInput = document.getElementById('useStreaming');
     const useThinkingInput = document.getElementById('useThinking');
-    const useMcpToolsInput = document.getElementById('useMcpTools');
+    const llmModeInput = document.getElementById('llmMode');
+    const mcpServerLabelInput = document.getElementById('mcpServerLabel');
+    const mcpServerLabelContainer = document.getElementById('mcpServerLabelContainer');
+    const maxHistoryContainer = document.getElementById('maxHistoryContainer');
     const useVisionModeInput = document.getElementById('useVisionMode');
     const useSidePanelInput = document.getElementById('useSidePanel');
     const showSummarizeBtnInput = document.getElementById('showSummarizeBtn');
@@ -82,18 +86,46 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Toggle prompt visibility based on toggle states
     function updatePromptVisibility() {
-        if (useVisionModeInput.checked) {
-            visionPromptContainer.classList.add('visible');
-        } else {
-            visionPromptContainer.classList.remove('visible');
+        if (useVisionModeInput && visionPromptContainer) {
+            if (useVisionModeInput.checked) {
+                visionPromptContainer.classList.add('visible');
+            } else {
+                visionPromptContainer.classList.remove('visible');
+            }
         }
 
-        if (useTextEnhancementInput.checked) {
-            enhancementPromptContainer.classList.add('visible');
-        } else {
-            enhancementPromptContainer.classList.remove('visible');
+        if (useTextEnhancementInput && enhancementPromptContainer) {
+            if (useTextEnhancementInput.checked) {
+                enhancementPromptContainer.classList.add('visible');
+            } else {
+                enhancementPromptContainer.classList.remove('visible');
+            }
         }
     }
+
+    // Toggle visibility of mode-specific settings
+    function updateModeVisibility() {
+        if (!llmModeInput) return;
+
+        const isLmStudio = llmModeInput.value === 'lmstudio';
+
+        if (mcpServerLabelContainer) {
+            if (isLmStudio) {
+                mcpServerLabelContainer.classList.add('visible');
+            } else {
+                mcpServerLabelContainer.classList.remove('visible');
+            }
+        }
+
+        if (maxHistoryContainer) {
+            if (isLmStudio) {
+                maxHistoryContainer.classList.remove('visible');
+            } else {
+                maxHistoryContainer.classList.add('visible');
+            }
+        }
+    }
+    if (llmModeInput) llmModeInput.addEventListener('change', updateModeVisibility);
 
     useVisionModeInput.addEventListener('change', updatePromptVisibility);
     useTextEnhancementInput.addEventListener('change', updatePromptVisibility);
@@ -101,63 +133,71 @@ document.addEventListener('DOMContentLoaded', () => {
     // Load saved settings
     const defaults = getDefaultSettings();
     chrome.storage.sync.get(defaults, (settings) => {
-        serverAddressInput.value = settings.serverAddress;
-        apiKeyInput.value = settings.apiKey;
-        modelKeyInput.value = settings.modelKey;
-        maxTokensInput.value = settings.maxTokens;
-        temperatureInput.value = settings.temperature;
-        maxHistoryInput.value = settings.maxHistory;
-        useStreamingInput.checked = settings.useStreaming;
-        useThinkingInput.checked = settings.useThinking;
-        useMcpToolsInput.checked = settings.useMcpTools;
-        useVisionModeInput.checked = settings.useVisionMode;
-        useSidePanelInput.checked = settings.useSidePanel;
-        showSummarizeBtnInput.checked = settings.showSummarizeBtn;
-        visionPromptInput.value = settings.visionPrompt;
-        useTextEnhancementInput.checked = settings.useTextEnhancement;
-        textEnhancementPromptInput.value = settings.textEnhancementPrompt;
-        systemRoleInput.value = settings.systemRole;
-        userRequestInput.value = settings.userRequest;
-        summarizePromptInput.value = settings.summarizePrompt;
-        statusText.textContent = i18n('settingsLoaded');
+        if (serverAddressInput) serverAddressInput.value = settings.serverAddress;
+        if (apiKeyInput) apiKeyInput.value = settings.apiKey;
+        if (modelKeyInput) modelKeyInput.value = settings.modelKey;
+        if (maxTokensInput) maxTokensInput.value = settings.maxTokens;
+        if (temperatureInput) temperatureInput.value = settings.temperature;
+        if (maxHistoryInput) maxHistoryInput.value = settings.maxHistory;
+        if (useStreamingInput) useStreamingInput.checked = settings.useStreaming;
+        if (useThinkingInput) useThinkingInput.checked = settings.useThinking;
+        if (llmModeInput) llmModeInput.value = settings.llmMode || 'openai';
+        if (mcpServerLabelInput) mcpServerLabelInput.value = settings.mcpServerLabel || '';
+        if (useVisionModeInput) useVisionModeInput.checked = settings.useVisionMode;
+        if (useSidePanelInput) useSidePanelInput.checked = settings.useSidePanel;
+        if (showSummarizeBtnInput) showSummarizeBtnInput.checked = settings.showSummarizeBtn;
+        if (visionPromptInput) visionPromptInput.value = settings.visionPrompt;
+        if (useTextEnhancementInput) useTextEnhancementInput.checked = settings.useTextEnhancement;
+        if (textEnhancementPromptInput) textEnhancementPromptInput.value = settings.textEnhancementPrompt;
+        if (systemRoleInput) systemRoleInput.value = settings.systemRole;
+        if (userRequestInput) userRequestInput.value = settings.userRequest;
+        if (summarizePromptInput) summarizePromptInput.value = settings.summarizePrompt;
+
+        if (statusText) statusText.textContent = i18n('settingsLoaded');
 
         updatePromptVisibility();
+        updateModeVisibility();
     });
 
     // Save settings
-    saveBtn.addEventListener('click', () => {
-        const defaults = getDefaultSettings();
-        const settings = {
-            serverAddress: serverAddressInput.value.trim() || defaults.serverAddress,
-            apiKey: apiKeyInput.value.trim(),
-            modelKey: modelKeyInput.value.trim(),
-            maxTokens: parseInt(maxTokensInput.value) || defaults.maxTokens,
-            temperature: parseFloat(temperatureInput.value) || defaults.temperature,
-            maxHistory: parseInt(maxHistoryInput.value) || defaults.maxHistory,
-            useStreaming: useStreamingInput.checked,
-            useThinking: useThinkingInput.checked,
-            useMcpTools: useMcpToolsInput.checked,
-            useVisionMode: useVisionModeInput.checked,
-            useSidePanel: useSidePanelInput.checked,
-            showSummarizeBtn: showSummarizeBtnInput.checked,
-            visionPrompt: visionPromptInput.value.trim() || defaults.visionPrompt,
-            useTextEnhancement: useTextEnhancementInput.checked,
-            textEnhancementPrompt: textEnhancementPromptInput.value.trim() || defaults.textEnhancementPrompt,
-            systemRole: systemRoleInput.value.trim() || defaults.systemRole,
-            userRequest: userRequestInput.value.trim() || defaults.userRequest,
-            summarizePrompt: summarizePromptInput.value.trim() || defaults.summarizePrompt
-        };
+    if (saveBtn) {
+        saveBtn.addEventListener('click', () => {
+            const defaults = getDefaultSettings();
+            const settings = {
+                serverAddress: serverAddressInput ? (serverAddressInput.value.trim() || defaults.serverAddress) : defaults.serverAddress,
+                apiKey: apiKeyInput ? apiKeyInput.value.trim() : '',
+                modelKey: modelKeyInput ? modelKeyInput.value.trim() : '',
+                maxTokens: maxTokensInput ? (parseInt(maxTokensInput.value) || defaults.maxTokens) : defaults.maxTokens,
+                temperature: temperatureInput ? (parseFloat(temperatureInput.value) || defaults.temperature) : defaults.temperature,
+                maxHistory: maxHistoryInput ? (parseInt(maxHistoryInput.value) || defaults.maxHistory) : defaults.maxHistory,
+                useStreaming: useStreamingInput ? useStreamingInput.checked : defaults.useStreaming,
+                useThinking: useThinkingInput ? useThinkingInput.checked : defaults.useThinking,
+                llmMode: llmModeInput ? llmModeInput.value : defaults.llmMode,
+                mcpServerLabel: mcpServerLabelInput ? mcpServerLabelInput.value.trim() : defaults.mcpServerLabel,
+                useVisionMode: useVisionModeInput ? useVisionModeInput.checked : defaults.useVisionMode,
+                useSidePanel: useSidePanelInput ? useSidePanelInput.checked : defaults.useSidePanel,
+                showSummarizeBtn: showSummarizeBtnInput ? showSummarizeBtnInput.checked : defaults.showSummarizeBtn,
+                visionPrompt: visionPromptInput ? (visionPromptInput.value.trim() || defaults.visionPrompt) : defaults.visionPrompt,
+                useTextEnhancement: useTextEnhancementInput ? useTextEnhancementInput.checked : defaults.useTextEnhancement,
+                textEnhancementPrompt: textEnhancementPromptInput ? (textEnhancementPromptInput.value.trim() || defaults.textEnhancementPrompt) : defaults.textEnhancementPrompt,
+                systemRole: systemRoleInput ? (systemRoleInput.value.trim() || defaults.systemRole) : defaults.systemRole,
+                userRequest: userRequestInput ? (userRequestInput.value.trim() || defaults.userRequest) : defaults.userRequest,
+                summarizePrompt: summarizePromptInput ? (summarizePromptInput.value.trim() || defaults.summarizePrompt) : defaults.summarizePrompt
+            };
 
-        chrome.storage.sync.set(settings, () => {
-            statusText.textContent = i18n('saved');
-            statusText.classList.add('saved');
+            chrome.storage.sync.set(settings, () => {
+                if (statusText) {
+                    statusText.textContent = i18n('saved');
+                    statusText.classList.add('saved');
 
-            setTimeout(() => {
-                statusText.textContent = i18n('settingsLoaded');
-                statusText.classList.remove('saved');
-            }, 2000);
+                    setTimeout(() => {
+                        statusText.textContent = i18n('settingsLoaded');
+                        statusText.classList.remove('saved');
+                    }, 2000);
+                }
+            });
         });
-    });
+    }
 
     // Open chat window instantly from popup
     const openChatBtn = document.getElementById('openChatBtn');

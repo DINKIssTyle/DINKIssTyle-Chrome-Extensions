@@ -49,7 +49,8 @@ function getDefaultSettings() {
         maxHistory: 10,
         useStreaming: false,
         useThinking: false,
-        useMcpTools: false,
+        llmMode: 'openai',
+        mcpServerLabel: '',
         useVisionMode: false,
         useSidePanel: false,
         showSummarizeBtn: true,
@@ -72,6 +73,7 @@ let isVisionMode = false;
 // Scroll state
 let userScrolledUp = false;
 let scrollRafId = null;
+let lastResponseId = null; // For LM Studio stateful chat
 
 document.addEventListener('DOMContentLoaded', async () => {
     // Apply i18n translations
@@ -285,6 +287,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         conversationHistory = [];
         chatContent.innerHTML = '';
         lastAssistantResponse = '';
+        lastResponseId = null;
         clearImageData();
         addSystemMessage(chrome.i18n.getMessage('conversationCleared') || 'Conversation cleared. Send a new message.');
     });
@@ -428,7 +431,10 @@ document.addEventListener('DOMContentLoaded', async () => {
                 ...conversationHistory
             ];
 
-            if (settings.useStreaming) {
+            if (settings.llmMode === 'lmstudio') {
+                // LM Studio native API: uses previous_response_id, no messages array
+                await lmStudioStreamResponse(userMessage, assistantBubble);
+            } else if (settings.useStreaming) {
                 await streamResponse(messages, assistantBubble);
             } else {
                 await normalResponse(messages, assistantBubble);
@@ -455,25 +461,6 @@ document.addEventListener('DOMContentLoaded', async () => {
             temperature: settings.temperature,
             stream: false
         };
-
-        // Add tools parameter if MCP Tools is enabled
-        if (settings.useMcpTools) {
-            requestBody.tools = [{
-                type: "function",
-                function: {
-                    name: "use_mcp_tool",
-                    description: "Use a Model Context Protocol (MCP) tool to perform an action",
-                    parameters: {
-                        type: "object",
-                        properties: {
-                            query: { type: "string" }
-                        },
-                        required: ["query"]
-                    }
-                }
-            }];
-            requestBody.tool_choice = 'auto';
-        }
 
         const response = await fetch(`http://${settings.serverAddress}/v1/chat/completions`, {
             method: 'POST',
@@ -509,25 +496,6 @@ document.addEventListener('DOMContentLoaded', async () => {
             temperature: settings.temperature,
             stream: true
         };
-
-        // Add tools parameter if MCP Tools is enabled
-        if (settings.useMcpTools) {
-            requestBody.tools = [{
-                type: "function",
-                function: {
-                    name: "use_mcp_tool",
-                    description: "Use a Model Context Protocol (MCP) tool to perform an action",
-                    parameters: {
-                        type: "object",
-                        properties: {
-                            query: { type: "string" }
-                        },
-                        required: ["query"]
-                    }
-                }
-            }];
-            requestBody.tool_choice = 'auto';
-        }
 
         const response = await fetch(`http://${settings.serverAddress}/v1/chat/completions`, {
             method: 'POST',
@@ -630,6 +598,214 @@ document.addEventListener('DOMContentLoaded', async () => {
         bubble.innerHTML = renderMarkdown(finalDisplay);
 
         // Add to history (including reasoning if any)
+        conversationHistory.push({ role: 'assistant', content: fullContent });
+        lastAssistantResponse = fullContent;
+        bubble.classList.remove('streaming');
+        showReasoningStatus(bubble, null, true, settings.useThinking);
+    }
+
+    // =========================================================================
+    // LM Studio Native API (/api/v1/chat) - Streaming with Named SSE Events
+    // =========================================================================
+    async function lmStudioStreamResponse(userMessage, bubble) {
+        bubble.classList.add('streaming');
+        bubble.innerHTML = '<div class="typing-indicator"><span></span><span></span><span></span></div>';
+
+        // Build request body
+        const requestBody = {
+            model: settings.modelKey || 'local-model',
+            input: userMessage,
+            stream: true,
+            temperature: settings.temperature,
+            max_output_tokens: settings.maxTokens,
+            store: true
+        };
+
+        // System prompt only on first message (no previous_response_id)
+        if (!lastResponseId) {
+            requestBody.system_prompt = settings.systemRole;
+        }
+
+        // Chain to previous response for multi-turn
+        if (lastResponseId) {
+            requestBody.previous_response_id = lastResponseId;
+        }
+
+        // MCP integrations
+        if (settings.mcpServerLabel) {
+            requestBody.integrations = [{
+                type: 'plugin',
+                id: `mcp/${settings.mcpServerLabel}`
+            }];
+        }
+
+        const response = await fetch(`http://${settings.serverAddress}/api/v1/chat`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                ...(settings.apiKey ? { 'Authorization': `Bearer ${settings.apiKey}` } : {})
+            },
+            body: JSON.stringify(requestBody)
+        });
+
+        if (!response.ok) {
+            const errorBody = await response.text();
+            throw new Error(`LM Studio API error (${response.status}): ${errorBody}`);
+        }
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let fullContent = '';
+        let buffer = '';
+        let currentEventType = null;
+        let isFirstContent = true;
+
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split('\n');
+            buffer = lines.pop() || '';
+
+            for (const line of lines) {
+                const trimmed = line.trim();
+                if (!trimmed) continue;
+
+                // Parse named SSE events: "event: <type>" followed by "data: <json>"
+                if (trimmed.startsWith('event:')) {
+                    currentEventType = trimmed.substring(6).trim();
+                    continue;
+                }
+
+                if (!trimmed.startsWith('data:')) continue;
+                const jsonStr = trimmed.substring(5).trim();
+                if (!jsonStr || jsonStr === '[DONE]') continue;
+
+                let eventData;
+                try {
+                    eventData = JSON.parse(jsonStr);
+                } catch (e) {
+                    continue;
+                }
+
+                // Use event type from named event or from data.type
+                const eventType = currentEventType || eventData.type;
+                currentEventType = null; // Reset after use
+
+                switch (eventType) {
+                    case 'message.delta': {
+                        const content = eventData.content || '';
+                        if (content) {
+                            if (isFirstContent) {
+                                bubble.innerHTML = '';
+                                isFirstContent = false;
+                            }
+                            fullContent += content;
+                            bubble.innerHTML = renderMarkdown(fullContent);
+                            chatContent.scrollTop = chatContent.scrollHeight;
+                        }
+                        break;
+                    }
+
+                    case 'reasoning.start':
+                        showReasoningStatus(bubble, '', false, settings.useThinking);
+                        break;
+
+                    case 'reasoning.delta': {
+                        const reasonContent = eventData.content || '';
+                        if (reasonContent) {
+                            showReasoningStatus(bubble, reasonContent, false, settings.useThinking);
+                        }
+                        break;
+                    }
+
+                    case 'reasoning.end':
+                        showReasoningStatus(bubble, null, false, settings.useThinking, true);
+                        break;
+
+                    case 'tool_call.start': {
+                        const toolName = eventData.tool || 'Tools';
+                        if (isFirstContent) {
+                            bubble.innerHTML = '';
+                            isFirstContent = false;
+                        }
+                        const toolEl = document.createElement('div');
+                        toolEl.className = 'tool-call-status';
+                        toolEl.id = `tool-${Date.now()}`;
+                        toolEl.innerHTML = `<span class="tool-icon">🔧</span> <strong>${toolName}</strong> <span class="tool-state">calling...</span>`;
+                        bubble.appendChild(toolEl);
+                        chatContent.scrollTop = chatContent.scrollHeight;
+                        break;
+                    }
+
+                    case 'tool_call.arguments':
+                        // Arguments are being streamed - could show them if desired
+                        break;
+
+                    case 'tool_call.success': {
+                        const toolEls = bubble.querySelectorAll('.tool-call-status');
+                        if (toolEls.length > 0) {
+                            const lastTool = toolEls[toolEls.length - 1];
+                            lastTool.querySelector('.tool-state').textContent = '✅ done';
+                            lastTool.classList.add('tool-success');
+                        }
+                        break;
+                    }
+
+                    case 'tool_call.failure': {
+                        const reason = eventData.reason || 'Unknown error';
+                        const toolElsFail = bubble.querySelectorAll('.tool-call-status');
+                        if (toolElsFail.length > 0) {
+                            const lastTool = toolElsFail[toolElsFail.length - 1];
+                            lastTool.querySelector('.tool-state').textContent = `❌ ${reason}`;
+                            lastTool.classList.add('tool-failure');
+                        }
+                        break;
+                    }
+
+                    case 'chat.end': {
+                        // Capture response_id for stateful chaining
+                        if (eventData.result && eventData.result.response_id) {
+                            lastResponseId = eventData.result.response_id;
+                        }
+                        break;
+                    }
+
+                    case 'model_load.start':
+                        bubble.innerHTML = '<div class="typing-indicator"><span></span><span></span><span></span></div> Loading model...';
+                        break;
+
+                    case 'model_load.progress': {
+                        const pct = Math.round((eventData.progress || 0) * 100);
+                        bubble.innerHTML = `<div class="typing-indicator"><span></span><span></span><span></span></div> Loading model... ${pct}%`;
+                        break;
+                    }
+
+                    case 'prompt_processing.start':
+                    case 'prompt_processing.progress':
+                        // Could show processing status but not critical
+                        break;
+
+                    case 'error': {
+                        const errMsg = eventData.error?.message || 'Unknown error';
+                        throw new Error(errMsg);
+                    }
+
+                    default:
+                        // chat.start, message.start, message.end, model_load.end, prompt_processing.end
+                        break;
+                }
+            }
+        }
+
+        // Final render
+        if (fullContent) {
+            bubble.innerHTML = renderMarkdown(fullContent);
+        } else if (isFirstContent) {
+            bubble.innerHTML = '<em>No response received</em>';
+        }
+
         conversationHistory.push({ role: 'assistant', content: fullContent });
         lastAssistantResponse = fullContent;
         bubble.classList.remove('streaming');

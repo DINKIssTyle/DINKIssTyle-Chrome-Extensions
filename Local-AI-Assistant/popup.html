@@ -56,8 +56,11 @@
 
             <div class="setting-row">
                 <div class="setting-item half">
-                    <label for="maxHistory" data-i18n="maxHistory">Max History</label>
-                    <input type="number" id="maxHistory" placeholder="10" min="1" max="50">
+                    <label for="llmMode" data-i18n="llmMode">LLM Mode</label>
+                    <select id="llmMode">
+                        <option value="openai">OpenAI Compatible</option>
+                        <option value="lmstudio">LM Studio</option>
+                    </select>
                 </div>
                 <div class="setting-item half toggle-item">
                     <label for="useStreaming" data-i18n="streaming">Streaming</label>
@@ -66,6 +69,19 @@
                         <span class="slider round"></span>
                     </label>
                 </div>
+            </div>
+
+            <div id="maxHistoryContainer" class="setting-item collapsible-container">
+                <label for="maxHistory" data-i18n="maxHistory">Max History</label>
+                <input type="number" id="maxHistory" placeholder="10" min="1" max="50">
+            </div>
+
+            <div id="mcpServerLabelContainer" class="setting-item collapsible-container">
+                <label for="mcpServerLabel" data-i18n="mcpServerLabel">MCP Server Label</label>
+                <input type="text" id="mcpServerLabel" placeholder="dinkisstyle-gateway"
+                    data-i18n-placeholder="mcpServerLabelPlaceholder">
+                <span class="hint" data-i18n="mcpServerLabelHint">MCP server label from LM Studio mcp.json (leave empty
+                    to disable MCP)</span>
             </div>
 
             <div class="setting-row">
@@ -94,9 +110,9 @@
                     </label>
                 </div>
                 <div class="setting-item half toggle-item">
-                    <label for="useMcpTools" data-i18n="useMcpTools">Use MCP Tools</label>
+                    <label for="useSidePanel" data-i18n="useSidePanel">Open in Side Panel</label>
                     <label class="switch">
-                        <input type="checkbox" id="useMcpTools">
+                        <input type="checkbox" id="useSidePanel">
                         <span class="slider round"></span>
                     </label>
                 </div>
@@ -104,19 +120,13 @@
 
             <div class="setting-row">
                 <div class="setting-item half toggle-item">
-                    <label for="useSidePanel" data-i18n="useSidePanel">Open in Side Panel</label>
-                    <label class="switch">
-                        <input type="checkbox" id="useSidePanel">
-                        <span class="slider round"></span>
-                    </label>
-                </div>
-                <div class="setting-item half toggle-item">
                     <label for="showSummarizeBtn" data-i18n="showSummarizeBtn">Show Summarize Button</label>
                     <label class="switch">
                         <input type="checkbox" id="showSummarizeBtn">
                         <span class="slider round"></span>
                     </label>
                 </div>
+                <div class="setting-item half"></div>
             </div>
 
             <div class="setting-item enhancement-prompt-container" id="visionPromptContainer">

@@ -138,8 +138,51 @@ body {
 .typing-indicator {
     display: flex;
     gap: 4px;
-    padding: 4px 0;
+    align-items: center;
+    padding: 8px 12px;
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 12px;
+    margin-bottom: 8px;
+    width: fit-content;
 }
+
+/* Tool Call Status */
+.tool-call-status {
+    background: rgba(167, 139, 250, 0.1);
+    border: 1px solid rgba(167, 139, 250, 0.3);
+    border-radius: 8px;
+    padding: 8px 12px;
+    margin: 8px 0;
+    font-size: 0.9em;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: #c4b5fd;
+    animation: fadeIn 0.3s ease;
+}
+
+.tool-icon {
+    font-size: 1.1em;
+}
+
+.tool-state {
+    font-style: italic;
+    opacity: 0.8;
+}
+
+.tool-success {
+    background: rgba(52, 211, 153, 0.1);
+    border-color: rgba(52, 211, 153, 0.3);
+    color: #6ee7b7;
+}
+
+.tool-failure {
+    background: rgba(248, 113, 113, 0.1);
+    border-color: rgba(248, 113, 113, 0.3);
+    color: #fca5a5;
+}
+
+
 
 .typing-indicator span {
     width: 8px;

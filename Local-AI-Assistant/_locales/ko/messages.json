@@ -187,13 +187,21 @@
         "message": "추론 과정을 문단별로 표시",
         "description": "Thinking mode hint"
     },
-    "useMcpTools": {
-        "message": "MCP 도구 사용",
-        "description": "MCP Tools label"
+    "llmMode": {
+        "message": "LLM 모드",
+        "description": "LLM Mode label"
     },
-    "useMcpToolsHint": {
-        "message": "요청 시 MCP 도구 사용 활성화",
-        "description": "MCP Tools hint"
+    "mcpServerLabel": {
+        "message": "MCP 서버 라벨",
+        "description": "MCP Server Label"
+    },
+    "mcpServerLabelPlaceholder": {
+        "message": "dinkisstyle-gateway",
+        "description": "MCP Server Label placeholder"
+    },
+    "mcpServerLabelHint": {
+        "message": "LM Studio의 mcp.json에 설정된 MCP 서버 라벨 (비워두면 MCP 비활성화)",
+        "description": "MCP Server Label hint"
     },
     "previewTitle": {
         "message": "AI 텍스트 향상 미리보기",

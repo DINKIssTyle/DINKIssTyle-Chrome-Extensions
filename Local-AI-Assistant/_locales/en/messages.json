@@ -187,13 +187,21 @@
         "message": "Display reasoning process paragraph by paragraph",
         "description": "Thinking mode hint"
     },
-    "useMcpTools": {
-        "message": "Use MCP Tools",
-        "description": "MCP Tools label"
+    "llmMode": {
+        "message": "LLM Mode",
+        "description": "LLM Mode label"
     },
-    "useMcpToolsHint": {
-        "message": "Enable MCP tool usage in requests",
-        "description": "MCP Tools hint"
+    "mcpServerLabel": {
+        "message": "MCP Server Label",
+        "description": "MCP Server Label"
+    },
+    "mcpServerLabelPlaceholder": {
+        "message": "dinkisstyle-gateway",
+        "description": "MCP Server Label placeholder"
+    },
+    "mcpServerLabelHint": {
+        "message": "MCP server label from LM Studio mcp.json (leave empty to disable MCP)",
+        "description": "MCP Server Label hint"
     },
     "previewTitle": {
         "message": "AI Text Enhancement Preview",
