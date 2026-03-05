@@ -51,6 +51,7 @@ function getDefaultSettings() {
         useThinking: false,
         useMcpTools: false,
         useVisionMode: false,
+        useSidePanel: false,
         visionPrompt: i18n('defaultVisionPrompt', 'Describe this image in detail.'),
         useTextEnhancement: false,
         textEnhancementPrompt: i18n('defaultEnhancementPrompt', 'Improve the following text to be more clear, professional, and well-structured. Return only the improved text in JSON format with key "enhanced_text":'),
@@ -79,6 +80,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     const sendBtn = document.getElementById('sendBtn');
     const copyBtn = document.getElementById('copyBtn');
     const clearBtn = document.getElementById('clearBtn');
+    const imagePreviewContainer = document.getElementById('imagePreviewContainer');
+    const imagePreview = document.getElementById('imagePreview');
+    const removeImageBtn = document.getElementById('removeImageBtn');
 
     // Load settings
     settings = await chrome.storage.sync.get(getDefaultSettings());
@@ -138,6 +142,110 @@ document.addEventListener('DOMContentLoaded', async () => {
         messageInput.style.height = Math.min(messageInput.scrollHeight, 120) + 'px';
     });
 
+    // Handle pasting images
+    messageInput.addEventListener('paste', (e) => {
+        const items = e.clipboardData?.items;
+        if (!items) return;
+
+        for (let i = 0; i < items.length; i++) {
+            if (items[i].type.indexOf('image/') !== -1) {
+                e.preventDefault(); // Prevent pasting text representation (e.g. filename)
+
+                const blob = items[i].getAsFile();
+                if (!blob) continue;
+
+                // For formats like WebP or others, use a canvas to enforce PNG/JPEG if necessary,
+                // but local LLMs usually handle base64 PNG/JPEG fine.
+                // We'll read it as a DataURL block.
+                const reader = new FileReader();
+                reader.onloadend = () => {
+                    const dataUrl = reader.result;
+
+                    // If it's already PNG/JPEG we can just use it, else we convert
+                    if (blob.type === 'image/png' || blob.type === 'image/jpeg') {
+                        setImageData(dataUrl);
+                    } else {
+                        // Convert to PNG via canvas
+                        const img = new Image();
+                        img.onload = () => {
+                            const canvas = document.createElement('canvas');
+                            canvas.width = img.naturalWidth;
+                            canvas.height = img.naturalHeight;
+                            const ctx = canvas.getContext('2d');
+                            ctx.drawImage(img, 0, 0);
+                            setImageData(canvas.toDataURL('image/png'));
+                        };
+                        img.src = dataUrl;
+                    }
+                };
+                reader.readAsDataURL(blob);
+
+                // Stop after the first image
+                break;
+            }
+        }
+    });
+
+    // Handle drag and drop images
+    document.body.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'copy';
+    });
+
+    document.body.addEventListener('drop', (e) => {
+        e.preventDefault();
+        const items = e.dataTransfer?.items;
+        if (!items) return;
+
+        for (let i = 0; i < items.length; i++) {
+            if (items[i].type.indexOf('image/') !== -1) {
+                const blob = items[i].getAsFile();
+                if (!blob) continue;
+
+                const reader = new FileReader();
+                reader.onloadend = () => {
+                    const dataUrl = reader.result;
+                    if (blob.type === 'image/png' || blob.type === 'image/jpeg') {
+                        setImageData(dataUrl);
+                    } else {
+                        const img = new Image();
+                        img.onload = () => {
+                            const canvas = document.createElement('canvas');
+                            canvas.width = img.naturalWidth;
+                            canvas.height = img.naturalHeight;
+                            const ctx = canvas.getContext('2d');
+                            ctx.drawImage(img, 0, 0);
+                            setImageData(canvas.toDataURL('image/png'));
+                        };
+                        img.src = dataUrl;
+                    }
+                };
+                reader.readAsDataURL(blob);
+                break;
+            }
+        }
+    });
+
+    // Function to set and preview image data
+    function setImageData(base64Url) {
+        currentImageData = base64Url;
+        isVisionMode = true; // Auto-activate vision mode when image is pasted
+        imagePreview.src = base64Url;
+        imagePreviewContainer.style.display = 'inline-block';
+        messageInput.focus();
+    }
+
+    // Function to clear image data
+    function clearImageData() {
+        currentImageData = null;
+        imagePreview.src = '';
+        imagePreviewContainer.style.display = 'none';
+    }
+
+    removeImageBtn.addEventListener('click', () => {
+        clearImageData();
+    });
+
     // Send on Enter (Shift+Enter for new line)
     messageInput.addEventListener('keydown', (e) => {
         if (e.key === 'Enter' && !e.shiftKey) {
@@ -164,20 +272,28 @@ document.addEventListener('DOMContentLoaded', async () => {
         conversationHistory = [];
         chatContent.innerHTML = '';
         lastAssistantResponse = '';
-        currentImageData = null;
+        clearImageData();
         addSystemMessage(chrome.i18n.getMessage('conversationCleared') || 'Conversation cleared. Send a new message.');
     });
 
     async function sendAdditionalMessage() {
         const message = messageInput.value.trim();
-        if (!message || isProcessing) return;
+        // Allow sending if there's an image even if there's no text (we'll use default prompt)
+        if ((!message && !currentImageData) || isProcessing) return;
 
         // Reset scroll lock when user sends a new message
         userScrolledUp = false;
 
         messageInput.value = '';
         messageInput.style.height = 'auto';
-        await sendMessage(message);
+
+        let finalMessage = message;
+        if (currentImageData && !finalMessage) {
+            // Use default prompt if image is attached but no text is provided
+            finalMessage = settings.visionPrompt;
+        }
+
+        await sendMessage(finalMessage);
     }
 
     async function sendMessage(userMessage) {
@@ -216,6 +332,9 @@ document.addEventListener('DOMContentLoaded', async () => {
             conversationHistory = conversationHistory.slice(-maxMessages);
         }
 
+        // Clear image data BEFORE sending, so UI updates instantly
+        clearImageData();
+
         // Create assistant bubble with loading indicator
         const assistantBubble = addBubble('', 'assistant', true);
 
@@ -235,9 +354,6 @@ document.addEventListener('DOMContentLoaded', async () => {
             } else {
                 await normalResponse(messages, assistantBubble);
             }
-
-            // Clear image data after first message
-            currentImageData = null;
 
         } catch (error) {
             assistantBubble.classList.remove('streaming');

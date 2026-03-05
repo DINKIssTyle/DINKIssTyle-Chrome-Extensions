@@ -25,6 +25,7 @@ function getDefaultSettings() {
         useThinking: false,
         useMcpTools: false,
         useVisionMode: false,
+        useSidePanel: false,
         visionPrompt: i18n('defaultVisionPrompt', 'Describe this image in detail.'),
         useTextEnhancement: false,
         textEnhancementPrompt: i18n('defaultEnhancementPrompt', 'Improve the following text to be more clear, professional, and well-structured. Return only the improved text in JSON format with key "enhanced_text":'),
@@ -35,6 +36,8 @@ function getDefaultSettings() {
 
 // Track current selection state for menu creation
 let currentHasSelection = false;
+let cachedSettings = getDefaultSettings();
+chrome.storage.sync.get(getDefaultSettings()).then(s => { cachedSettings = s; });
 
 async function createContextMenus(includeTextMenu = true) {
     const settings = await chrome.storage.sync.get(getDefaultSettings());
@@ -80,8 +83,13 @@ chrome.runtime.onInstalled.addListener(() => {
 
 // Update context menus when settings change
 chrome.storage.onChanged.addListener((changes, areaName) => {
-    if (areaName === 'sync' && (changes.useVisionMode || changes.useTextEnhancement)) {
-        createContextMenus();
+    if (areaName === 'sync') {
+        for (let [key, { newValue }] of Object.entries(changes)) {
+            cachedSettings[key] = newValue !== undefined ? newValue : getDefaultSettings()[key];
+        }
+        if (changes.useVisionMode || changes.useTextEnhancement) {
+            createContextMenus();
+        }
     }
 });
 
@@ -99,36 +107,55 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             currentHasSelection = message.hasSelection;
             createContextMenus(message.hasSelection);
         }
+    } else if (message.action === 'openChatFromPopup') {
+        chrome.tabs.query({ active: true, currentWindow: true }).then(tabs => {
+            const tab = tabs[0];
+            openChatWindow(tab);
+        });
     }
 });
 
-chrome.contextMenus.onClicked.addListener(async (info, tab) => {
+chrome.contextMenus.onClicked.addListener((info, tab) => {
+    // Open side panel synchronously to preserve user gesture token
+    if (cachedSettings && cachedSettings.useSidePanel && chrome.sidePanel && tab && tab.windowId) {
+        chrome.sidePanel.open({ windowId: tab.windowId }).catch(e => console.error('[Local AI Assistant] Failed to open side panel:', e));
+    }
+
     try {
         if (info.menuItemId === MENU_ID_TEXT && info.selectionText && info.selectionText.trim()) {
-            await handleTextSelection(info.selectionText);
+            // Run asynchronously without await
+            handleTextSelection(info.selectionText, tab);
         } else if (info.menuItemId === MENU_ID_IMAGE && info.srcUrl) {
-            await handleImageSelection(info.srcUrl, tab);
+            handleImageSelection(info.srcUrl, tab);
         } else if (info.menuItemId === MENU_ID_ENHANCE) {
-            await handleTextEnhancement(tab);
+            handleTextEnhancement(tab);
         }
     } catch (e) {
         console.error('[Local AI Assistant] Error:', e);
     }
 });
 
-async function handleTextSelection(selectedText) {
+async function handleTextSelection(selectedText, tab) {
+    // Open chat window first to preserve user gesture token
+    const opened = await openChatWindow(tab);
+
     await chrome.storage.session.set({
         selectedText: selectedText,
         isNewConversation: true,
         imageData: null
     });
 
-    await openChatWindow();
+    // If opened is true, it means we opened a side panel or window. We send a message
+    // just in case it was already open and needs to fetch new session data.
+    chrome.runtime.sendMessage({ action: 'newInitialMessage' });
 }
 
 async function handleImageSelection(srcUrl, tab) {
     // Get settings to use custom vision prompt
     const settings = await chrome.storage.sync.get(getDefaultSettings());
+
+    // Open chat window first to preserve user gesture token
+    await openChatWindow(tab);
 
     // Convert image to base64
     const imageData = await convertImageToBase64(srcUrl, tab);
@@ -139,7 +166,8 @@ async function handleImageSelection(srcUrl, tab) {
         imageData: imageData
     });
 
-    await openChatWindow();
+    // Notify that data is ready
+    chrome.runtime.sendMessage({ action: 'newInitialMessage' });
 }
 
 // Extract protected content (emo codes, special formats) and replace with placeholders
@@ -864,8 +892,16 @@ async function convertImageToBase64(srcUrl, tab) {
     }
 }
 
-async function openChatWindow() {
+async function openChatWindow(tab) {
     const chatUrl = chrome.runtime.getURL('chat.html');
+
+    const settings = await chrome.storage.sync.get(getDefaultSettings());
+    if (settings.useSidePanel && chrome.sidePanel) {
+        // We already opened the side panel synchronously in the onClicked listener.
+        // Broadcast the message so the already-open panel fetches the new session data.
+        chrome.runtime.sendMessage({ action: 'newInitialMessage' });
+        return true;
+    }
 
     // Check if the chat window is already open
     const tabs = await chrome.tabs.query({ url: chatUrl + '*' });

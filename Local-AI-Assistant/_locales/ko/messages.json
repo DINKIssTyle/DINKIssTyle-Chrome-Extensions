@@ -214,5 +214,17 @@
     "previewConfirm": {
         "message": "적용",
         "description": "Preview modal confirm button"
+    },
+    "useSidePanel": {
+        "message": "사이드 패널에서 열기",
+        "description": "Use side panel label"
+    },
+    "useSidePanelHint": {
+        "message": "팝업 창 대신 브라우저 사이드 패널에서 채팅 열기",
+        "description": "Use side panel hint"
+    },
+    "openChatBtn": {
+        "message": "채팅창 열기",
+        "description": "Button to open the chat window directly from popup"
     }
 }

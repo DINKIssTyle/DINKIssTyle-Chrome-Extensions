@@ -154,6 +154,28 @@ input:checked+.slider:before {
     transform: translateX(20px);
 }
 
+.open-chat-btn {
+    background: linear-gradient(135deg, #3b82f6, #6366f1);
+    border: none;
+    border-radius: 8px;
+    padding: 10px;
+    color: #fff;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: transform 0.1s, box-shadow 0.2s;
+    margin-bottom: 4px;
+}
+
+.open-chat-btn:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(99, 102, 241, 0.4);
+}
+
+.open-chat-btn:active {
+    transform: translateY(0);
+}
+
 .save-btn {
     background: linear-gradient(135deg, #6366f1, #8b5cf6);
     border: none;

@@ -214,5 +214,17 @@
     "previewConfirm": {
         "message": "Apply",
         "description": "Preview modal confirm button"
+    },
+    "useSidePanel": {
+        "message": "Open in Side Panel",
+        "description": "Use side panel label"
+    },
+    "useSidePanelHint": {
+        "message": "Open chat in the browser side panel instead of a popup window",
+        "description": "Use side panel hint"
+    },
+    "openChatBtn": {
+        "message": "Open Chat Window",
+        "description": "Button to open the chat window directly from popup"
     }
 }

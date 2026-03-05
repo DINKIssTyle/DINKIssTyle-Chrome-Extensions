@@ -21,6 +21,7 @@ function getDefaultSettings() {
         useThinking: false,
         useMcpTools: false,
         useVisionMode: false,
+        useSidePanel: false,
         visionPrompt: i18n('defaultVisionPrompt', 'Describe this image in detail.'),
         useTextEnhancement: false,
         textEnhancementPrompt: i18n('defaultEnhancementPrompt', 'Improve the following text to be more clear, professional, and well-structured. Return only the improved text in JSON format with key "enhanced_text":'),
@@ -64,6 +65,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const useThinkingInput = document.getElementById('useThinking');
     const useMcpToolsInput = document.getElementById('useMcpTools');
     const useVisionModeInput = document.getElementById('useVisionMode');
+    const useSidePanelInput = document.getElementById('useSidePanel');
     const visionPromptInput = document.getElementById('visionPrompt');
     const visionPromptContainer = document.getElementById('visionPromptContainer');
     const useTextEnhancementInput = document.getElementById('useTextEnhancement');
@@ -105,6 +107,7 @@ document.addEventListener('DOMContentLoaded', () => {
         useThinkingInput.checked = settings.useThinking;
         useMcpToolsInput.checked = settings.useMcpTools;
         useVisionModeInput.checked = settings.useVisionMode;
+        useSidePanelInput.checked = settings.useSidePanel;
         visionPromptInput.value = settings.visionPrompt;
         useTextEnhancementInput.checked = settings.useTextEnhancement;
         textEnhancementPromptInput.value = settings.textEnhancementPrompt;
@@ -129,6 +132,7 @@ document.addEventListener('DOMContentLoaded', () => {
             useThinking: useThinkingInput.checked,
             useMcpTools: useMcpToolsInput.checked,
             useVisionMode: useVisionModeInput.checked,
+            useSidePanel: useSidePanelInput.checked,
             visionPrompt: visionPromptInput.value.trim() || defaults.visionPrompt,
             useTextEnhancement: useTextEnhancementInput.checked,
             textEnhancementPrompt: textEnhancementPromptInput.value.trim() || defaults.textEnhancementPrompt,
@@ -146,4 +150,26 @@ document.addEventListener('DOMContentLoaded', () => {
             }, 2000);
         });
     });
+
+    // Open chat window instantly from popup
+    const openChatBtn = document.getElementById('openChatBtn');
+    if (openChatBtn) {
+        openChatBtn.addEventListener('click', () => {
+            if (useSidePanelInput && useSidePanelInput.checked && chrome.sidePanel) {
+                chrome.windows.getCurrent({ populate: false }, (win) => {
+                    chrome.sidePanel.open({ windowId: win.id }).then(() => {
+                        window.close();
+                    }).catch(e => {
+                        console.error('[Local AI Assistant] Failed to open side panel:', e);
+                        // In case of error, send message to background to handle popup fallback
+                        chrome.runtime.sendMessage({ action: 'openChatFromPopup' });
+                        window.close();
+                    });
+                });
+            } else {
+                chrome.runtime.sendMessage({ action: 'openChatFromPopup' });
+                window.close();
+            }
+        });
+    }
 });

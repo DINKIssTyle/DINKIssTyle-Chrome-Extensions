@@ -21,6 +21,8 @@
             </div>
         </div>
 
+        <button id="openChatBtn" class="open-chat-btn" data-i18n="openChatBtn">Open Chat Window</button>
+
         <div class="settings-group">
             <div class="setting-item">
                 <label for="serverAddress" data-i18n="serverAddress">Server Address</label>
@@ -98,6 +100,18 @@
                         <span class="slider round"></span>
                     </label>
                 </div>
+            </div>
+
+            <div class="setting-row">
+                <div class="setting-item half toggle-item">
+                    <label for="useSidePanel" data-i18n="useSidePanel">Open in Side Panel</label>
+                    <label class="switch">
+                        <input type="checkbox" id="useSidePanel">
+                        <span class="slider round"></span>
+                    </label>
+                </div>
+                <!-- Empty half for alignment -->
+                <div class="setting-item half"></div>
             </div>
 
             <div class="setting-item enhancement-prompt-container" id="visionPromptContainer">

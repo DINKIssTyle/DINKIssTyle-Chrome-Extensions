@@ -467,3 +467,46 @@ body {
         transform: translateY(0);
     }
 }
+
+/* ── Image Preview in Input ─────────────────────── */
+.image-preview-container {
+    position: relative;
+    display: inline-block;
+    margin-bottom: 8px;
+    border-radius: 8px;
+    background: #2a2a4a;
+    padding: 8px;
+    border: 1px solid #444;
+}
+
+.image-preview-container img {
+    max-height: 100px;
+    max-width: 200px;
+    border-radius: 4px;
+    display: block;
+    object-fit: contain;
+}
+
+.remove-image-btn {
+    position: absolute;
+    top: -8px;
+    right: -8px;
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    background: #ef4444;
+    color: white;
+    border: none;
+    font-size: 12px;
+    font-weight: bold;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+    transition: background 0.2s;
+}
+
+.remove-image-btn:hover {
+    background: #dc2626;
+}
