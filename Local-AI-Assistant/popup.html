@@ -110,8 +110,13 @@
                         <span class="slider round"></span>
                     </label>
                 </div>
-                <!-- Empty half for alignment -->
-                <div class="setting-item half"></div>
+                <div class="setting-item half toggle-item">
+                    <label for="showSummarizeBtn" data-i18n="showSummarizeBtn">Show Summarize Button</label>
+                    <label class="switch">
+                        <input type="checkbox" id="showSummarizeBtn">
+                        <span class="slider round"></span>
+                    </label>
+                </div>
             </div>
 
             <div class="setting-item enhancement-prompt-container" id="visionPromptContainer">
@@ -127,6 +132,13 @@
                     placeholder="Improve the following text..."></textarea>
                 <span class="hint" data-i18n="enhancementPromptHint">Response in JSON format with 'enhanced_text'
                     key</span>
+            </div>
+
+            <div class="setting-item">
+                <label for="summarizePrompt" data-i18n="summarizePromptLabel">Summarize Prompt</label>
+                <textarea id="summarizePrompt" rows="2" data-i18n-placeholder="defaultSummarizePrompt"
+                    placeholder="Summarize the following webpage content:"></textarea>
+                <span class="hint" data-i18n="summarizePromptHint">Prefix added before webpage text</span>
             </div>
 
             <div class="setting-item">

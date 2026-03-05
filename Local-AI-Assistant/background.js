@@ -26,11 +26,13 @@ function getDefaultSettings() {
         useMcpTools: false,
         useVisionMode: false,
         useSidePanel: false,
+        showSummarizeBtn: true,
         visionPrompt: i18n('defaultVisionPrompt', 'Describe this image in detail.'),
         useTextEnhancement: false,
         textEnhancementPrompt: i18n('defaultEnhancementPrompt', 'Improve the following text to be more clear, professional, and well-structured. Return only the improved text in JSON format with key "enhanced_text":'),
         systemRole: i18n('defaultSystemRole', 'You are an expert at processing web articles, posts, and other content.'),
-        userRequest: i18n('defaultUserRequest', 'Summarize the following text:')
+        userRequest: i18n('defaultUserRequest', 'Summarize the following text:'),
+        summarizePrompt: i18n('defaultSummarizePrompt', 'Summarize the following webpage content:')
     };
 }
 

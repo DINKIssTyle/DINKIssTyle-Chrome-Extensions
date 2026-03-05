@@ -22,11 +22,13 @@ function getDefaultSettings() {
         useMcpTools: false,
         useVisionMode: false,
         useSidePanel: false,
+        showSummarizeBtn: true,
         visionPrompt: i18n('defaultVisionPrompt', 'Describe this image in detail.'),
         useTextEnhancement: false,
         textEnhancementPrompt: i18n('defaultEnhancementPrompt', 'Improve the following text to be more clear, professional, and well-structured. Return only the improved text in JSON format with key "enhanced_text":'),
         systemRole: i18n('defaultSystemRole', 'You are an expert at processing web articles, posts, and other content.'),
-        userRequest: i18n('defaultUserRequest', 'Summarize the following text:')
+        userRequest: i18n('defaultUserRequest', 'Summarize the following text:'),
+        summarizePrompt: i18n('defaultSummarizePrompt', 'Summarize the following webpage content:')
     };
 }
 
@@ -66,6 +68,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const useMcpToolsInput = document.getElementById('useMcpTools');
     const useVisionModeInput = document.getElementById('useVisionMode');
     const useSidePanelInput = document.getElementById('useSidePanel');
+    const showSummarizeBtnInput = document.getElementById('showSummarizeBtn');
     const visionPromptInput = document.getElementById('visionPrompt');
     const visionPromptContainer = document.getElementById('visionPromptContainer');
     const useTextEnhancementInput = document.getElementById('useTextEnhancement');
@@ -73,6 +76,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const enhancementPromptContainer = document.getElementById('enhancementPromptContainer');
     const systemRoleInput = document.getElementById('systemRole');
     const userRequestInput = document.getElementById('userRequest');
+    const summarizePromptInput = document.getElementById('summarizePrompt');
     const saveBtn = document.getElementById('saveBtn');
     const statusText = document.getElementById('statusText');
 
@@ -108,11 +112,13 @@ document.addEventListener('DOMContentLoaded', () => {
         useMcpToolsInput.checked = settings.useMcpTools;
         useVisionModeInput.checked = settings.useVisionMode;
         useSidePanelInput.checked = settings.useSidePanel;
+        showSummarizeBtnInput.checked = settings.showSummarizeBtn;
         visionPromptInput.value = settings.visionPrompt;
         useTextEnhancementInput.checked = settings.useTextEnhancement;
         textEnhancementPromptInput.value = settings.textEnhancementPrompt;
         systemRoleInput.value = settings.systemRole;
         userRequestInput.value = settings.userRequest;
+        summarizePromptInput.value = settings.summarizePrompt;
         statusText.textContent = i18n('settingsLoaded');
 
         updatePromptVisibility();
@@ -133,11 +139,13 @@ document.addEventListener('DOMContentLoaded', () => {
             useMcpTools: useMcpToolsInput.checked,
             useVisionMode: useVisionModeInput.checked,
             useSidePanel: useSidePanelInput.checked,
+            showSummarizeBtn: showSummarizeBtnInput.checked,
             visionPrompt: visionPromptInput.value.trim() || defaults.visionPrompt,
             useTextEnhancement: useTextEnhancementInput.checked,
             textEnhancementPrompt: textEnhancementPromptInput.value.trim() || defaults.textEnhancementPrompt,
             systemRole: systemRoleInput.value.trim() || defaults.systemRole,
-            userRequest: userRequestInput.value.trim() || defaults.userRequest
+            userRequest: userRequestInput.value.trim() || defaults.userRequest,
+            summarizePrompt: summarizePromptInput.value.trim() || defaults.summarizePrompt
         };
 
         chrome.storage.sync.set(settings, () => {

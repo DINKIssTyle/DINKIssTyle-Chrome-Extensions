@@ -66,7 +66,7 @@ body {
 
 /* Chat Content */
 .chat-content {
-    flex: 1;
+    flex: 1 1 auto;
     overflow-y: auto;
     padding: 16px;
     display: flex;
@@ -75,6 +75,8 @@ body {
     overscroll-behavior: contain;
     /* Native scroll anchoring to keep things visible as they expand */
     overflow-anchor: auto;
+    min-height: 0;
+    /* Important for flex children scrolling */
 }
 
 /* Chat Bubbles */
@@ -85,6 +87,9 @@ body {
     line-height: 1.6;
     font-size: 14px;
     animation: bubble-in 0.2s ease-out;
+    word-break: break-word;
+    /* Ensure extremely long words/links don't overflow */
+    overflow-wrap: break-word;
 }
 
 @keyframes bubble-in {
@@ -111,16 +116,18 @@ body {
     background: #2a2a4a;
     color: #e0e0e0;
     border-bottom-left-radius: 4px;
+    margin-bottom: 8px;
+    /* Extra breathing room */
+    /* Ensure the bubble itself feels 'fuller' as a block element */
+    width: fit-content;
+    min-width: 60px;
 }
 
 .chat-bubble.assistant.streaming {
-    border: 1px solid #6366f1;
-}
-
-.streaming-text {
-    white-space: pre-wrap;
-    word-break: break-word;
-    line-height: 1.6;
+    transition: opacity 0.2s;
+    min-height: 1.5em;
+    /* Force bubble to take up full available space during streaming for stability */
+    width: 85%;
 }
 
 .chat-bubble.error {
@@ -190,6 +197,9 @@ body {
 
 .chat-bubble p {
     margin: 6px 0;
+    word-break: break-word;
+    /* Ensure extremely long words/links don't overflow */
+    overflow-wrap: break-word;
 }
 
 .chat-bubble ul,
@@ -208,6 +218,7 @@ body {
     border-radius: 4px;
     font-family: "SF Mono", Monaco, "Cascadia Code", monospace;
     font-size: 13px;
+    word-break: break-word;
 }
 
 .chat-bubble pre {
@@ -379,7 +390,10 @@ body {
     overflow: hidden;
     display: flex;
     flex-direction: column;
-    width: 100%;
+    /* Match the assistant bubble layout */
+    width: 85%;
+    max-width: 85%;
+    align-self: flex-start;
     /* Collapse animation: transition max-height for slide-up effect */
     max-height: 200px;
     transition: max-height 0.4s cubic-bezier(0.4, 0, 0.2, 1),
@@ -391,9 +405,9 @@ body {
 
 /* Expanded: thinking in progress */
 .reasoning-status.thinking-expanded {
-    height: 200px;
-    /* Force strict height */
-    max-height: 200px;
+    height: auto;
+    max-height: 15vh;
+    /* Responsive height */
     border-color: rgba(99, 102, 241, 0.35);
     background: rgba(99, 102, 241, 0.07);
 }
@@ -436,8 +450,8 @@ body {
 /* Scrollable body: fixed height, text accumulates & scrolls up */
 .reasoning-body {
     flex: 1;
-    height: 150px;
-    min-height: 150px;
+    max-height: 100px;
+    min-height: 30px;
     overflow-y: auto;
     padding: 10px 14px;
     font-size: 12px;

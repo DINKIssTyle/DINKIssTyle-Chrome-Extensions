@@ -226,5 +226,25 @@
     "openChatBtn": {
         "message": "Open Chat Window",
         "description": "Button to open the chat window directly from popup"
+    },
+    "showSummarizeBtn": {
+        "message": "Show Summarize Button",
+        "description": "Toggle to show summarize button in chat"
+    },
+    "summarizePromptLabel": {
+        "message": "Summarize Prompt",
+        "description": "Label for summarize prompt setting"
+    },
+    "defaultSummarizePrompt": {
+        "message": "Summarize the following webpage content:",
+        "description": "Default prompt to prepend before webpage text"
+    },
+    "summarizePromptHint": {
+        "message": "Prefix added before webpage text",
+        "description": "Hint for summarize prompt setting"
+    },
+    "summarizePageBtnTitle": {
+        "message": "Summarize Current Page",
+        "description": "Title tooltip for the summarize button"
     }
 }

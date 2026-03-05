@@ -44,7 +44,7 @@ function getDefaultSettings() {
         serverAddress: 'localhost:1234',
         apiKey: '',
         modelKey: '',
-        maxTokens: 2048,
+        maxTokens: 4096,
         temperature: 0.7,
         maxHistory: 10,
         useStreaming: false,
@@ -52,11 +52,13 @@ function getDefaultSettings() {
         useMcpTools: false,
         useVisionMode: false,
         useSidePanel: false,
+        showSummarizeBtn: true,
         visionPrompt: i18n('defaultVisionPrompt', 'Describe this image in detail.'),
         useTextEnhancement: false,
         textEnhancementPrompt: i18n('defaultEnhancementPrompt', 'Improve the following text to be more clear, professional, and well-structured. Return only the improved text in JSON format with key "enhanced_text":'),
         systemRole: i18n('defaultSystemRole', 'You are an expert at processing web articles, posts, and other content.'),
-        userRequest: i18n('defaultUserRequest', 'Summarize the following text:')
+        userRequest: i18n('defaultUserRequest', 'Summarize the following text:'),
+        summarizePrompt: i18n('defaultSummarizePrompt', 'Summarize the following webpage content:')
     };
 }
 
@@ -83,9 +85,15 @@ document.addEventListener('DOMContentLoaded', async () => {
     const imagePreviewContainer = document.getElementById('imagePreviewContainer');
     const imagePreview = document.getElementById('imagePreview');
     const removeImageBtn = document.getElementById('removeImageBtn');
+    const summarizePageBtn = document.getElementById('summarizePageBtn');
 
     // Load settings
     settings = await chrome.storage.sync.get(getDefaultSettings());
+    if (settings.showSummarizeBtn) {
+        summarizePageBtn.style.display = 'inline-block';
+    } else {
+        summarizePageBtn.style.display = 'none';
+    }
 
     // Detect if user manually scrolled up — if so, pause auto-scroll
     chatContent.addEventListener('scroll', () => {
@@ -108,6 +116,9 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (areaName === 'sync') {
             for (let [key, { newValue }] of Object.entries(changes)) {
                 settings[key] = newValue;
+            }
+            if (changes.showSummarizeBtn !== undefined) {
+                summarizePageBtn.style.display = changes.showSummarizeBtn.newValue ? 'inline-block' : 'none';
             }
         }
     });
@@ -276,6 +287,69 @@ document.addEventListener('DOMContentLoaded', async () => {
         addSystemMessage(chrome.i18n.getMessage('conversationCleared') || 'Conversation cleared. Send a new message.');
     });
 
+    summarizePageBtn.addEventListener('click', async () => {
+        if (isProcessing) return;
+
+        try {
+            // Find the last focused normal window (not this popup/sidepanel if it's standalone)
+            const lastWindow = await chrome.windows.getLastFocused({ windowTypes: ['normal'] });
+            if (!lastWindow) {
+                throw new Error("No active browser window found.");
+            }
+
+            const tabs = await chrome.tabs.query({ active: true, windowId: lastWindow.id });
+            if (!tabs || tabs.length === 0) {
+                throw new Error("No active tab found.");
+            }
+
+            const activeTab = tabs[0];
+
+            // Cannot script chrome:// or edge:// URLs
+            if (activeTab.url.startsWith('chrome://') || activeTab.url.startsWith('edge://')) {
+                throw new Error("Cannot summarize internal browser pages.");
+            }
+
+            // Extract page text
+            const injectionResults = await chrome.scripting.executeScript({
+                target: { tabId: activeTab.id },
+                func: () => document.body.innerText
+            });
+
+            if (!injectionResults || !injectionResults[0] || !injectionResults[0].result) {
+                throw new Error("Could not extract text from the page.");
+            }
+
+            let pageText = injectionResults[0].result.trim();
+            if (!pageText) {
+                throw new Error("Page seems to be empty.");
+            }
+
+            // Limit webpage text length aggressively to prevent LLM context starvation (e.g. max ~15000 chars)
+            const MAX_TEXT_LENGTH = 15000;
+            if (pageText.length > MAX_TEXT_LENGTH) {
+                pageText = pageText.substring(0, MAX_TEXT_LENGTH) + '\n\n[... Text truncated due to length limits ...]';
+            }
+
+            const prompt = settings.summarizePrompt || 'Summarize the following webpage content:';
+            const fullMessage = `${prompt}\n\n${pageText}`;
+
+            // Create a truncated display message for the UI
+            const pageTitle = activeTab.title || 'Webpage';
+
+            const displayMessage = `📄 **${pageTitle}** 원문을 요약합니다.`;
+
+            // Clean up any pending image
+            clearImageData();
+
+            // Send the full message to the LLM, but show the displayMessage in the UI
+            await sendMessage(fullMessage, displayMessage);
+
+        } catch (error) {
+            console.error('[Local AI Assistant] Summarize error:', error);
+            showToast(error.message || 'Failed to summarize page.', true);
+        }
+    });
+
     async function sendAdditionalMessage() {
         const message = messageInput.value.trim();
         // Allow sending if there's an image even if there's no text (we'll use default prompt)
@@ -296,20 +370,23 @@ document.addEventListener('DOMContentLoaded', async () => {
         await sendMessage(finalMessage);
     }
 
-    async function sendMessage(userMessage) {
+    async function sendMessage(userMessage, displayMessage = null) {
         // Always reset scroll lock when a new response starts
         userScrolledUp = false;
         isProcessing = true;
         sendBtn.disabled = true;
 
-        // Add user bubble (show image thumbnail if exists)
+        const messageToDisplay = displayMessage || userMessage;
+
+        // Add user bubble (show image thumbnail if exists, and use display string if provided)
         if (currentImageData && conversationHistory.length === 0) {
-            addImageBubble(currentImageData, userMessage);
+            addImageBubble(currentImageData, messageToDisplay);
         } else {
-            addBubble(userMessage, 'user');
+            addBubble(messageToDisplay, 'user');
         }
 
         // Add user message to history (with image if exists)
+        // Note: The LLM always gets the 'userMessage' (which is the full text)
         if (currentImageData && conversationHistory.length === 0) {
             // Use full data URL format: data:image/jpeg;base64,{base64_data}
             conversationHistory.push({
@@ -467,18 +544,17 @@ document.addEventListener('DOMContentLoaded', async () => {
         const decoder = new TextDecoder();
         let fullContent = '';
         let fullReasoning = ''; // Keep track of reasoning separately if sent in reasoning_content field
-        let isFirstChunk = true;
+        let buffer = '';
 
         // Helper to strip thinking tags and content for display
         function stripThinking(text) {
             if (!text) return '';
+            // Remove complete think blocks
             let cleaned = text.replace(/<think>[\s\S]*?<\/think>/gi, '');
-            // Handle partial blocks
-            if (cleaned.includes('<think>')) {
-                cleaned = cleaned.split(/<think>/i)[0];
-            }
-            if (cleaned.includes('</think>')) {
-                cleaned = cleaned.split(/<\/think>/i).pop();
+            // Handle partial blocks: if there's an unclosed <think>, strip everything after it
+            const openTagIdx = cleaned.toLowerCase().lastIndexOf('<think>');
+            if (openTagIdx !== -1) {
+                cleaned = cleaned.substring(0, openTagIdx);
             }
             return cleaned.trim();
         }
@@ -487,12 +563,14 @@ document.addEventListener('DOMContentLoaded', async () => {
             const { done, value } = await reader.read();
             if (done) break;
 
-            const chunk = decoder.decode(value, { stream: true });
-            const lines = chunk.split('\n');
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split('\n');
+            buffer = lines.pop(); // Keep the last incomplete line in the buffer
 
             for (const line of lines) {
-                if (line.startsWith('data: ')) {
-                    const data = line.slice(6);
+                const trimmedLine = line.trim();
+                if (trimmedLine.startsWith('data: ')) {
+                    const data = trimmedLine.slice(6);
                     if (data === '[DONE]') continue;
 
                     try {
@@ -502,11 +580,6 @@ document.addEventListener('DOMContentLoaded', async () => {
                         const reasoning = delta.reasoning_content || ''; // Support for Ollama/DeepSeek reasoning field
 
                         if (content || reasoning) {
-                            if (isFirstChunk) {
-                                bubble.innerHTML = '<div class="streaming-text"></div>';
-                                isFirstChunk = false;
-                            }
-
                             if (content) fullContent += content;
                             if (reasoning) fullReasoning += reasoning;
 
@@ -530,10 +603,12 @@ document.addEventListener('DOMContentLoaded', async () => {
                             // --- Main Bubble Display ---
                             let displayText = stripThinking(fullContent);
 
-                            const streamingEl = bubble.querySelector('.streaming-text');
-                            if (streamingEl) {
-                                streamingEl.textContent = displayText;
+                            if (displayText) {
+                                bubble.innerHTML = renderMarkdown(displayText);
+                            } else if (!bubble.querySelector('.typing-indicator')) {
+                                bubble.innerHTML = '<div class="typing-indicator"><span></span><span></span><span></span></div>';
                             }
+
                             scrollToBottom(true);
                         }
                     } catch (e) {
@@ -707,10 +782,22 @@ function renderMarkdown(text) {
 
     let html = text;
 
-    // Escape HTML
+    // First preserve existing <think> tags before escaping
+    const thinkBlocks = [];
+    html = html.replace(/<think>([\s\S]*?)<\/think>/gi, (match) => {
+        thinkBlocks.push(match);
+        return `__THINK_BLOCK_${thinkBlocks.length - 1}__`;
+    });
+
+    // Escape HTML (but preserve our placeholders)
     html = html.replace(/&/g, '&amp;')
         .replace(/</g, '&lt;')
         .replace(/>/g, '&gt;');
+
+    // Restore think blocks
+    thinkBlocks.forEach((block, index) => {
+        html = html.replace(`__THINK_BLOCK_${index}__`, block);
+    });
 
     // Code blocks
     html = html.replace(/```(\w*)\n([\s\S]*?)```/g, '<pre><code class="language-$1">$2</code></pre>');
@@ -738,9 +825,9 @@ function renderMarkdown(text) {
     // Lists
     html = html.replace(/^\* (.+)$/gm, '<li>$1</li>');
     html = html.replace(/^- (.+)$/gm, '<li>$1</li>');
-    html = html.replace(/(<li>.*<\/li>)/gs, '<ul>$1</ul>');
+    html = html.replace(/^\d+\. (.+)$/gm, '<li>$0</li>'); // Preserve the number
+    html = html.replace(/(<li>.*?<\/li>)/gs, '<ul>$1</ul>');
     html = html.replace(/<\/ul>\s*<ul>/g, '');
-    html = html.replace(/^\d+\. (.+)$/gm, '<li>$1</li>');
 
     // Links
     html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');

@@ -226,5 +226,25 @@
     "openChatBtn": {
         "message": "채팅창 열기",
         "description": "Button to open the chat window directly from popup"
+    },
+    "showSummarizeBtn": {
+        "message": "요약 버튼 표시",
+        "description": "Toggle to show summarize button in chat"
+    },
+    "summarizePromptLabel": {
+        "message": "웹페이지 요약 프롬프트",
+        "description": "Label for summarize prompt setting"
+    },
+    "defaultSummarizePrompt": {
+        "message": "다음 웹페이지 내용을 요약해주세요:",
+        "description": "Default prompt to prepend before webpage text"
+    },
+    "summarizePromptHint": {
+        "message": "웹페이지 텍스트 앞에 붙일 명령어",
+        "description": "Hint for summarize prompt setting"
+    },
+    "summarizePageBtnTitle": {
+        "message": "현재 페이지 요약하기",
+        "description": "Title tooltip for the summarize button"
     }
 }
