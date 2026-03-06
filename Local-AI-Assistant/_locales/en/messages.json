@@ -1,4 +1,8 @@
 {
+    "dropFilesHint": {
+        "message": "Drop images or text here",
+        "description": "Hint for global drop zone"
+    },
     "extName": {
         "message": "Local AI Assistant (LLM)",
         "description": "Extension name"

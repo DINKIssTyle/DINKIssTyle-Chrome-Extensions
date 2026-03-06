@@ -157,89 +157,149 @@ document.addEventListener('DOMContentLoaded', async () => {
         messageInput.style.height = Math.min(messageInput.scrollHeight, 120) + 'px';
     });
 
-    // Handle pasting images
-    messageInput.addEventListener('paste', (e) => {
+    // Handle pasting images and text
+    messageInput.addEventListener('paste', async (e) => {
         const items = e.clipboardData?.items;
         if (!items) return;
 
         for (let i = 0; i < items.length; i++) {
+            // Handle image paste
             if (items[i].type.indexOf('image/') !== -1) {
-                e.preventDefault(); // Prevent pasting text representation (e.g. filename)
-
+                e.preventDefault();
                 const blob = items[i].getAsFile();
-                if (!blob) continue;
-
-                // For formats like WebP or others, use a canvas to enforce PNG/JPEG if necessary,
-                // but local LLMs usually handle base64 PNG/JPEG fine.
-                // We'll read it as a DataURL block.
-                const reader = new FileReader();
-                reader.onloadend = () => {
-                    const dataUrl = reader.result;
-
-                    // If it's already PNG/JPEG we can just use it, else we convert
-                    if (blob.type === 'image/png' || blob.type === 'image/jpeg') {
-                        setImageData(dataUrl);
-                    } else {
-                        // Convert to PNG via canvas
-                        const img = new Image();
-                        img.onload = () => {
-                            const canvas = document.createElement('canvas');
-                            canvas.width = img.naturalWidth;
-                            canvas.height = img.naturalHeight;
-                            const ctx = canvas.getContext('2d');
-                            ctx.drawImage(img, 0, 0);
-                            setImageData(canvas.toDataURL('image/png'));
-                        };
-                        img.src = dataUrl;
-                    }
-                };
-                reader.readAsDataURL(blob);
-
-                // Stop after the first image
+                if (blob) processFile(blob);
                 break;
+            }
+            // Handle plain text paste if needed (default behavior) or HTML content
+            if (items[i].type === 'text/html') {
+                // We'll let default happens for now, but we could extract images from HTML if needed
             }
         }
     });
 
-    // Handle drag and drop images
-    document.body.addEventListener('dragover', (e) => {
+    // Handle drag and drop images and text
+    const dropZoneContainer = document.getElementById('dropZoneContainer');
+    let dragCounter = 0; // To handle nested drag events
+
+    document.addEventListener('dragenter', (e) => {
+        e.preventDefault();
+        dragCounter++;
+        dropZoneContainer.style.display = 'flex';
+    });
+
+    document.addEventListener('dragover', (e) => {
         e.preventDefault();
         e.dataTransfer.dropEffect = 'copy';
     });
 
-    document.body.addEventListener('drop', (e) => {
+    document.addEventListener('dragleave', (e) => {
         e.preventDefault();
-        const items = e.dataTransfer?.items;
-        if (!items) return;
-
-        for (let i = 0; i < items.length; i++) {
-            if (items[i].type.indexOf('image/') !== -1) {
-                const blob = items[i].getAsFile();
-                if (!blob) continue;
-
-                const reader = new FileReader();
-                reader.onloadend = () => {
-                    const dataUrl = reader.result;
-                    if (blob.type === 'image/png' || blob.type === 'image/jpeg') {
-                        setImageData(dataUrl);
-                    } else {
-                        const img = new Image();
-                        img.onload = () => {
-                            const canvas = document.createElement('canvas');
-                            canvas.width = img.naturalWidth;
-                            canvas.height = img.naturalHeight;
-                            const ctx = canvas.getContext('2d');
-                            ctx.drawImage(img, 0, 0);
-                            setImageData(canvas.toDataURL('image/png'));
-                        };
-                        img.src = dataUrl;
-                    }
-                };
-                reader.readAsDataURL(blob);
-                break;
-            }
+        dragCounter--;
+        if (dragCounter === 0) {
+            dropZoneContainer.style.display = 'none';
         }
     });
+
+    document.addEventListener('drop', async (e) => {
+        e.preventDefault();
+        dragCounter = 0;
+        dropZoneContainer.style.display = 'none';
+
+        const dt = e.dataTransfer;
+
+        // 1. Handle files (direct drop of image files)
+        if (dt.files && dt.files.length > 0) {
+            const file = dt.files[0];
+            if (file.type.startsWith('image/')) {
+                await processFile(file);
+                sendAdditionalMessage(); // Auto-send image
+            }
+            return;
+        }
+
+        // 2. Handle items (webpage drag-and-drop)
+        if (dt.items) {
+            for (let i = 0; i < dt.items.length; i++) {
+                if (dt.items[i].type.startsWith('image/')) {
+                    const blob = dt.items[i].getAsFile();
+                    if (blob) {
+                        await processFile(blob);
+                        sendAdditionalMessage(); // Auto-send image
+                        return;
+                    }
+                }
+            }
+        }
+
+        // 3. Handle data URLs or plain text (dragging images from some sites or text selection)
+        const html = dt.getData('text/html');
+        if (html) {
+            // Try to extract image source from HTML (e.g. from <img> tags)
+            const doc = new DOMParser().parseFromString(html, 'text/html');
+            const img = doc.querySelector('img');
+            if (img && img.src) {
+                // If it's a data URL, use it directly
+                if (img.src.startsWith('data:')) {
+                    setImageData(img.src);
+                    sendAdditionalMessage(); // Auto-send
+                } else {
+                    // Try to proxy/fetch the image URL via background script if needed, 
+                    // or just use the URL if the model supports it (not common for local).
+                    // For now, we'll try to fetch it if possible.
+                    try {
+                        const response = await fetch(img.src);
+                        const blob = await response.blob();
+                        await processFile(blob);
+                        sendAdditionalMessage(); // Auto-send
+                    } catch (err) {
+                        console.error('Failed to fetch dragged image:', err);
+                    }
+                }
+                return;
+            }
+        }
+
+        const text = dt.getData('text/plain');
+        if (text) {
+            // Insert text into input
+            const start = messageInput.selectionStart;
+            const end = messageInput.selectionEnd;
+            const val = messageInput.value;
+            messageInput.value = val.substring(0, start) + text + val.substring(end);
+            messageInput.focus();
+            messageInput.dispatchEvent(new Event('input')); // Trigger resize
+        }
+    });
+
+    // Helper to process a file/blob into the preview
+    function processFile(blob) {
+        return new Promise((resolve) => {
+            const reader = new FileReader();
+            reader.onloadend = () => {
+                const dataUrl = reader.result;
+                // Ensure it's a standard format for LLMs
+                if (blob.type === 'image/png' || blob.type === 'image/jpeg' || blob.type === 'image/webp') {
+                    setImageData(dataUrl);
+                } else {
+                    // Convert to PNG via canvas
+                    const img = new Image();
+                    img.onload = () => {
+                        const canvas = document.createElement('canvas');
+                        canvas.width = img.naturalWidth;
+                        canvas.height = img.naturalHeight;
+                        const ctx = canvas.getContext('2d');
+                        ctx.drawImage(img, 0, 0);
+                        setImageData(canvas.toDataURL('image/png'));
+                        resolve();
+                    };
+                    img.src = dataUrl;
+                    return;
+                }
+                resolve();
+            };
+            reader.readAsDataURL(blob);
+        });
+    }
 
     // Function to set and preview image data
     function setImageData(base64Url) {
@@ -383,17 +443,17 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         const messageToDisplay = displayMessage || userMessage;
 
-        // Add user bubble (show image thumbnail if exists, and use display string if provided)
-        if (currentImageData && conversationHistory.length === 0) {
+        // Add user bubble (show image thumbnail if exists)
+        if (currentImageData) {
             addImageBubble(currentImageData, messageToDisplay);
         } else {
             addBubble(messageToDisplay, 'user');
         }
 
         // Add user message to history (with image if exists)
-        // Note: The LLM always gets the 'userMessage' (which is the full text)
-        if (currentImageData && conversationHistory.length === 0) {
-            // Use full data URL format: data:image/jpeg;base64,{base64_data}
+        if (currentImageData) {
+            isVisionMode = true;
+            // Use full data URL format
             conversationHistory.push({
                 role: 'user',
                 content: [
@@ -414,7 +474,10 @@ document.addEventListener('DOMContentLoaded', async () => {
             conversationHistory = conversationHistory.slice(-maxMessages);
         }
 
-        // Clear image data BEFORE sending, so UI updates instantly
+        // Store the image data locally for the request builder before clearing UI
+        const requestImageData = currentImageData;
+
+        // Clear image data so UI updates instantly (but we keep a local reference)
         clearImageData();
 
         // Create assistant bubble with loading indicator
@@ -432,8 +495,8 @@ document.addEventListener('DOMContentLoaded', async () => {
             ];
 
             if (settings.llmMode === 'lmstudio') {
-                // LM Studio native API: uses previous_response_id, no messages array
-                await lmStudioStreamResponse(userMessage, assistantBubble);
+                // Use LM Studio native stateful API which supports multimodal using input array
+                await lmStudioStreamResponse(userMessage, requestImageData, assistantBubble);
             } else if (settings.useStreaming) {
                 await streamResponse(messages, assistantBubble);
             } else {
@@ -607,14 +670,20 @@ document.addEventListener('DOMContentLoaded', async () => {
     // =========================================================================
     // LM Studio Native API (/api/v1/chat) - Streaming with Named SSE Events
     // =========================================================================
-    async function lmStudioStreamResponse(userMessage, bubble) {
+    async function lmStudioStreamResponse(userMessage, imageData, bubble) {
         bubble.classList.add('streaming');
         bubble.innerHTML = '<div class="typing-indicator"><span></span><span></span><span></span></div>';
+
+        // Prepare input payload (support LM Studio multimodal format)
+        const inputPayload = imageData ? [
+            { type: 'text', content: userMessage || 'Please describe this image.' },
+            { type: 'image', data_url: imageData }
+        ] : userMessage;
 
         // Build request body
         const requestBody = {
             model: settings.modelKey || 'local-model',
-            input: userMessage,
+            input: inputPayload,
             stream: true,
             temperature: settings.temperature,
             max_output_tokens: settings.maxTokens,
@@ -656,6 +725,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         const reader = response.body.getReader();
         const decoder = new TextDecoder();
         let fullContent = '';
+        let fullReasoning = '';
         let buffer = '';
         let currentEventType = null;
         let isFirstContent = true;
@@ -717,13 +787,14 @@ document.addEventListener('DOMContentLoaded', async () => {
                     case 'reasoning.delta': {
                         const reasonContent = eventData.content || '';
                         if (reasonContent) {
-                            showReasoningStatus(bubble, reasonContent, false, settings.useThinking);
+                            fullReasoning += reasonContent;
+                            showReasoningStatus(bubble, fullReasoning, false, settings.useThinking);
                         }
                         break;
                     }
 
                     case 'reasoning.end':
-                        showReasoningStatus(bubble, null, false, settings.useThinking, true);
+                        showReasoningStatus(bubble, fullReasoning, false, settings.useThinking, true);
                         break;
 
                     case 'tool_call.start': {
@@ -930,7 +1001,10 @@ document.addEventListener('DOMContentLoaded', async () => {
         // scrollIntoView is more reliable than scrollTop after DOM insertion
         requestAnimationFrame(() => {
             if (statusEl && statusEl.parentNode) {
+                // Ensure the status element is visible
                 statusEl.scrollIntoView({ block: 'nearest', behavior: 'instant' });
+                // Also trigger main chat scroll to ensure bubble stays in view
+                chatContent.scrollTop = chatContent.scrollHeight;
             }
         });
     }

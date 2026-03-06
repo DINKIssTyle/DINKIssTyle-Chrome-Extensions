@@ -254,5 +254,9 @@
     "summarizePageBtnTitle": {
         "message": "현재 페이지 요약하기",
         "description": "Title tooltip for the summarize button"
+    },
+    "dropFilesHint": {
+        "message": "이미지나 텍스트를 여기로 끌어다 놓으세요",
+        "description": "Hint for global drop zone"
     }
 }
