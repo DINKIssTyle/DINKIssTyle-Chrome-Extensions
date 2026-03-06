@@ -5,7 +5,7 @@
 
 // Get i18n message helper
 function i18n(key, fallback = '') {
-    return chrome.i18n.getMessage(key) || fallback;
+    return (window.ci18n ? window.ci18n.getMessage(key) : chrome.i18n.getMessage(key)) || fallback;
 }
 
 // Default settings with i18n support
@@ -36,26 +36,35 @@ function getDefaultSettings() {
 
 // Apply i18n translations
 function applyI18n() {
-    // Apply text content translations
-    document.querySelectorAll('[data-i18n]').forEach(element => {
-        const key = element.getAttribute('data-i18n');
-        const message = chrome.i18n.getMessage(key);
-        if (message) {
-            element.textContent = message;
-        }
-    });
+    if (window.ci18n) {
+        window.ci18n.applyToDOM();
+    } else {
+        // Fallback text content translations
+        document.querySelectorAll('[data-i18n]').forEach(element => {
+            const key = element.getAttribute('data-i18n');
+            const message = chrome.i18n.getMessage(key);
+            if (message) {
+                element.textContent = message;
+            }
+        });
 
-    // Apply placeholder translations
-    document.querySelectorAll('[data-i18n-placeholder]').forEach(element => {
-        const key = element.getAttribute('data-i18n-placeholder');
-        const message = chrome.i18n.getMessage(key);
-        if (message) {
-            element.placeholder = message;
-        }
-    });
+        // Fallback placeholder translations
+        document.querySelectorAll('[data-i18n-placeholder]').forEach(element => {
+            const key = element.getAttribute('data-i18n-placeholder');
+            const message = chrome.i18n.getMessage(key);
+            if (message) {
+                element.placeholder = message;
+            }
+        });
+    }
 }
 
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
+    // Initialize custom i18n
+    if (window.ci18n) {
+        await window.ci18n.init();
+    }
+
     // Apply translations
     applyI18n();
 
@@ -83,6 +92,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const userRequestInput = document.getElementById('userRequest');
     const summarizePromptInput = document.getElementById('summarizePrompt');
     const askWebpagePromptInput = document.getElementById('askWebpagePrompt');
+    const uiLanguageInput = document.getElementById('uiLanguage');
     const saveBtn = document.getElementById('saveBtn');
     const statusText = document.getElementById('statusText');
 
@@ -155,12 +165,28 @@ document.addEventListener('DOMContentLoaded', () => {
         if (userRequestInput) userRequestInput.value = settings.userRequest;
         if (summarizePromptInput) summarizePromptInput.value = settings.summarizePrompt;
         if (askWebpagePromptInput) askWebpagePromptInput.value = settings.askWebpagePrompt;
+        if (uiLanguageInput) {
+            uiLanguageInput.value = window.ci18n ? window.ci18n.currentLang : (settings.uiLanguage || 'auto');
+        }
 
         if (statusText) statusText.textContent = i18n('settingsLoaded');
 
         updatePromptVisibility();
         updateModeVisibility();
     });
+
+    // Handle immediate language change
+    if (uiLanguageInput && window.ci18n) {
+        uiLanguageInput.addEventListener('change', async () => {
+            const newLang = uiLanguageInput.value;
+            await window.ci18n.changeLanguage(newLang);
+            // Re-render inputs that rely on translated defaults
+            const defaults = getDefaultSettings();
+            if (visionPromptInput && visionPromptInput.value === visionPromptInput.getAttribute('data-default-placeholder')) {
+                visionPromptInput.value = defaults.visionPrompt;
+            }
+        });
+    }
 
     // Save settings
     if (saveBtn) {
@@ -186,10 +212,15 @@ document.addEventListener('DOMContentLoaded', () => {
                 systemRole: systemRoleInput ? (systemRoleInput.value.trim() || defaults.systemRole) : defaults.systemRole,
                 userRequest: userRequestInput ? (userRequestInput.value.trim() || defaults.userRequest) : defaults.userRequest,
                 summarizePrompt: summarizePromptInput ? (summarizePromptInput.value.trim() || defaults.summarizePrompt) : defaults.summarizePrompt,
-                askWebpagePrompt: askWebpagePromptInput ? (askWebpagePromptInput.value.trim() || defaults.askWebpagePrompt) : defaults.askWebpagePrompt
+                askWebpagePrompt: askWebpagePromptInput ? (askWebpagePromptInput.value.trim() || defaults.askWebpagePrompt) : defaults.askWebpagePrompt,
+                uiLanguage: uiLanguageInput ? uiLanguageInput.value : 'auto'
             };
 
-            chrome.storage.sync.set(settings, () => {
+            chrome.storage.sync.set(settings, async () => {
+                if (window.ci18n && uiLanguageInput) {
+                    await window.ci18n.changeLanguage(uiLanguageInput.value);
+                }
+
                 if (statusText) {
                     statusText.textContent = i18n('saved');
                     statusText.classList.add('saved');

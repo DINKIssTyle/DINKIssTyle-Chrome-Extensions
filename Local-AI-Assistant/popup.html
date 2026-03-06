@@ -171,6 +171,19 @@
                     placeholder="Summarize the following text:"></textarea>
                 <span class="hint" data-i18n="requestPrefixHint">Prefix added before selected text</span>
             </div>
+
+            <div class="setting-row"
+                style="margin-top: 24px; border-top: 1px solid rgba(255, 255, 255, 0.1); padding-top: 16px;">
+                <div class="setting-item half">
+                    <label for="uiLanguage" data-i18n="uiLanguageLabel">UI Language</label>
+                    <select id="uiLanguage">
+                        <option value="auto" data-i18n="langAuto">Auto (Browser Setting)</option>
+                        <option value="en" data-i18n="langEn">English</option>
+                        <option value="ko" data-i18n="langKo">한국어</option>
+                    </select>
+                </div>
+                <div class="setting-item half"></div>
+            </div>
         </div>
 
         <button id="saveBtn" class="save-btn" data-i18n="saveSettings">Save Settings</button>
@@ -179,6 +192,7 @@
             <span id="statusText" class="status-indicator">Ready</span>
         </div>
     </div>
+    <script src="custom_i18n.js"></script>
     <script src="popup.js"></script>
 </body>
 

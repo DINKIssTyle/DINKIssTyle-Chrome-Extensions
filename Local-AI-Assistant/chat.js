@@ -5,37 +5,41 @@
 
 // Get i18n message helper
 function i18n(key, fallback = '') {
-    return chrome.i18n.getMessage(key) || fallback;
+    return (window.ci18n ? window.ci18n.getMessage(key) : chrome.i18n.getMessage(key)) || fallback;
 }
 
 // Apply i18n translations
 function applyI18n() {
-    // Apply text content translations
-    document.querySelectorAll('[data-i18n]').forEach(element => {
-        const key = element.getAttribute('data-i18n');
-        const message = chrome.i18n.getMessage(key);
-        if (message) {
-            element.textContent = message;
-        }
-    });
+    if (window.ci18n) {
+        window.ci18n.applyToDOM();
+    } else {
+        // Fallback text content translations
+        document.querySelectorAll('[data-i18n]').forEach(element => {
+            const key = element.getAttribute('data-i18n');
+            const message = chrome.i18n.getMessage(key);
+            if (message) {
+                element.textContent = message;
+            }
+        });
 
-    // Apply placeholder translations
-    document.querySelectorAll('[data-i18n-placeholder]').forEach(element => {
-        const key = element.getAttribute('data-i18n-placeholder');
-        const message = chrome.i18n.getMessage(key);
-        if (message) {
-            element.placeholder = message;
-        }
-    });
+        // Fallback placeholder translations
+        document.querySelectorAll('[data-i18n-placeholder]').forEach(element => {
+            const key = element.getAttribute('data-i18n-placeholder');
+            const message = chrome.i18n.getMessage(key);
+            if (message) {
+                element.placeholder = message;
+            }
+        });
 
-    // Apply title translations
-    document.querySelectorAll('[data-i18n-title]').forEach(element => {
-        const key = element.getAttribute('data-i18n-title');
-        const message = chrome.i18n.getMessage(key);
-        if (message) {
-            element.title = message;
-        }
-    });
+        // Fallback title translations
+        document.querySelectorAll('[data-i18n-title]').forEach(element => {
+            const key = element.getAttribute('data-i18n-title');
+            const message = chrome.i18n.getMessage(key);
+            if (message) {
+                element.title = message;
+            }
+        });
+    }
 }
 
 // Default settings with i18n support
@@ -77,6 +81,11 @@ let lastResponseId = null; // For LM Studio stateful chat
 let abortController = null; // For cancelling active requests
 
 document.addEventListener('DOMContentLoaded', async () => {
+    // Initialize custom i18n
+    if (window.ci18n) {
+        await window.ci18n.init();
+    }
+
     // Apply i18n translations
     applyI18n();
 
@@ -414,12 +423,14 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (isProcessing) return;
 
         try {
+            // Ensure settings are completely up to date
+            settings = await chrome.storage.sync.get(getDefaultSettings());
             const { pageText, pageTitle } = await getWebpageInfo();
             const prompt = settings.summarizePrompt || 'Summarize the following webpage content:';
             const fullMessage = `${prompt}\n\n${pageText}`;
 
             // Create a truncated display message for the UI
-            const displayMessage = `📄 **${pageTitle}** 원문을 요약합니다.`;
+            const displayMessage = i18n('summarizeWebpageDisplayMsg', `📄 Summarizing **$1**...`).replace('$1', pageTitle);
 
             // Clean up any pending image
             clearImageData();
@@ -437,6 +448,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (isProcessing) return;
 
         try {
+            // Ensure settings are completely up to date
+            settings = await chrome.storage.sync.get(getDefaultSettings());
             const { pageText, pageTitle } = await getWebpageInfo();
             const prompt = settings.askWebpagePrompt || "Once the webpage content is fully received, reply with 'Now you can ask'.";
 
@@ -444,7 +457,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             const fullMessage = `[Webpage Context: ${pageTitle}]\n\n${pageText}\n\n---\n${prompt}`;
 
             // Create a truncated display message for the UI
-            const displayMessage = `📄 **${pageTitle}** 원문을 전송합니다.`;
+            const displayMessage = i18n('askWebpageDisplayMsg', `📄 Sending context of **$1**...`).replace('$1', pageTitle);
 
             // Clean up any pending image
             clearImageData();
@@ -472,6 +485,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         let finalMessage = message;
         if (currentImageData && !finalMessage) {
             // Use default prompt if image is attached but no text is provided
+            settings = await chrome.storage.sync.get(getDefaultSettings());
             finalMessage = settings.visionPrompt;
         }
 

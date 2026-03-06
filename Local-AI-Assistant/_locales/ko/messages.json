@@ -252,7 +252,7 @@
         "description": "Hint for summarize prompt setting"
     },
     "summarizePageBtnTitle": {
-        "message": "현재 페이지 요약하기",
+        "message": "웹페이지 요약하기",
         "description": "Title tooltip for the summarize button"
     },
     "dropFilesHint": {
@@ -282,5 +282,29 @@
     "askWebpagePromptHint": {
         "message": "웹페이지 원문 전송 후 사용될 프롬프트",
         "description": "Hint for Ask Webpage prompt setting"
+    },
+    "uiLanguageLabel": {
+        "message": "UI 언어 (Language)",
+        "description": "Label for the UI language selection dropdown"
+    },
+    "langAuto": {
+        "message": "자동 (브라우저 설정)",
+        "description": "Auto option for language selection"
+    },
+    "langEn": {
+        "message": "English",
+        "description": "English option for language selection"
+    },
+    "langKo": {
+        "message": "한국어",
+        "description": "Korean option for language selection"
+    },
+    "summarizeWebpageDisplayMsg": {
+        "message": "📄 **$1** 원문을 요약합니다.",
+        "description": "Message displayed when summarizing a webpage"
+    },
+    "askWebpageDisplayMsg": {
+        "message": "📄 **$1** 원문을 전송합니다.",
+        "description": "Message displayed when sending webpage context for Ask Webpage"
     }
 }

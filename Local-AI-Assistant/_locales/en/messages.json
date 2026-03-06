@@ -27,6 +27,30 @@
         "message": "Prompt appended to the webpage content before asking",
         "description": "Hint for Ask Webpage prompt setting"
     },
+    "uiLanguageLabel": {
+        "message": "UI Language",
+        "description": "Label for the UI language selection dropdown"
+    },
+    "langAuto": {
+        "message": "Auto (Browser Setting)",
+        "description": "Auto option for language selection"
+    },
+    "langEn": {
+        "message": "English",
+        "description": "English option for language selection"
+    },
+    "langKo": {
+        "message": "Korean (한국어)",
+        "description": "Korean option for language selection"
+    },
+    "summarizeWebpageDisplayMsg": {
+        "message": "📄 Summarizing **$1**...",
+        "description": "Message displayed when summarizing a webpage"
+    },
+    "askWebpageDisplayMsg": {
+        "message": "📄 Sending context of **$1**...",
+        "description": "Message displayed when sending webpage context for Ask Webpage"
+    },
     "extName": {
         "message": "Local AI Assistant (LLM)",
         "description": "Extension name"
@@ -280,7 +304,7 @@
         "description": "Hint for summarize prompt setting"
     },
     "summarizePageBtnTitle": {
-        "message": "Summarize Current Page",
+        "message": "Summarize Webpage",
         "description": "Title tooltip for the summarize button"
     }
 }

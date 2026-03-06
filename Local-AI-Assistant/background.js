@@ -3,13 +3,15 @@
     Copyright (C) 2026 DINKI'ssTyle. All rights reserved.
 */
 
+import './custom_i18n.js';
+
 const MENU_ID_TEXT = 'local-ai-process';
 const MENU_ID_IMAGE = 'local-ai-vision';
 const MENU_ID_ENHANCE = 'local-ai-enhance';
 
 // Get i18n message helper
 function i18n(key, fallback = '') {
-    return chrome.i18n.getMessage(key) || fallback;
+    return (globalThis.ci18n ? globalThis.ci18n.getMessage(key) : chrome.i18n.getMessage(key)) || fallback;
 }
 
 // Default settings with i18n support
@@ -75,7 +77,12 @@ async function createContextMenus(includeTextMenu = true) {
     });
 }
 
-chrome.runtime.onInstalled.addListener(() => {
+chrome.runtime.onInstalled.addListener(async () => {
+    // Initialize custom i18n
+    if (globalThis.ci18n) {
+        await globalThis.ci18n.init();
+    }
+
     // Allow content scripts to write to session storage
     if (chrome.storage && chrome.storage.session && chrome.storage.session.setAccessLevel) {
         chrome.storage.session.setAccessLevel({ accessLevel: 'TRUSTED_AND_UNTRUSTED_CONTEXTS' });
@@ -84,13 +91,25 @@ chrome.runtime.onInstalled.addListener(() => {
     createContextMenus();
 });
 
+// Initialize on service worker startup
+if (globalThis.ci18n) {
+    globalThis.ci18n.init().then(() => {
+        // Safe to create/update menus after translations are loaded
+    });
+}
+
 // Update context menus when settings change
-chrome.storage.onChanged.addListener((changes, areaName) => {
+chrome.storage.onChanged.addListener(async (changes, areaName) => {
     if (areaName === 'sync') {
         for (let [key, { newValue }] of Object.entries(changes)) {
             cachedSettings[key] = newValue !== undefined ? newValue : getDefaultSettings()[key];
         }
-        if (changes.useVisionMode || changes.useTextEnhancement) {
+
+        // If language changed, re-init i18n and update menus
+        if (changes.uiLanguage && globalThis.ci18n) {
+            await globalThis.ci18n.changeLanguage(changes.uiLanguage.newValue);
+            createContextMenus();
+        } else if (changes.useVisionMode || changes.useTextEnhancement) {
             createContextMenus();
         }
     }
