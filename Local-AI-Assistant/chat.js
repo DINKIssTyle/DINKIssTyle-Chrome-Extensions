@@ -74,6 +74,7 @@ let isVisionMode = false;
 let userScrolledUp = false;
 let scrollRafId = null;
 let lastResponseId = null; // For LM Studio stateful chat
+let abortController = null; // For cancelling active requests
 
 document.addEventListener('DOMContentLoaded', async () => {
     // Apply i18n translations
@@ -88,13 +89,15 @@ document.addEventListener('DOMContentLoaded', async () => {
     const imagePreview = document.getElementById('imagePreview');
     const removeImageBtn = document.getElementById('removeImageBtn');
     const summarizePageBtn = document.getElementById('summarizePageBtn');
+    const askWebpageBtn = document.getElementById('askWebpageBtn');
+    const quickActionsContainer = document.getElementById('quickActionsContainer');
 
     // Load settings
     settings = await chrome.storage.sync.get(getDefaultSettings());
     if (settings.showSummarizeBtn) {
-        summarizePageBtn.style.display = 'inline-block';
+        quickActionsContainer.style.display = 'flex';
     } else {
-        summarizePageBtn.style.display = 'none';
+        quickActionsContainer.style.display = 'none';
     }
 
     // Detect if user manually scrolled up — if so, pause auto-scroll
@@ -122,7 +125,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 settings[key] = newValue;
             }
             if (changes.showSummarizeBtn !== undefined) {
-                summarizePageBtn.style.display = changes.showSummarizeBtn.newValue ? 'inline-block' : 'none';
+                quickActionsContainer.style.display = changes.showSummarizeBtn.newValue ? 'flex' : 'none';
             }
         }
     });
@@ -333,7 +336,18 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     });
 
-    sendBtn.addEventListener('click', sendAdditionalMessage);
+    // Handle send command
+    sendBtn.addEventListener('click', () => {
+        if (isProcessing) {
+            // Cancel generation if already processing
+            if (abortController) {
+                abortController.abort();
+                abortController = null;
+            }
+        } else {
+            sendAdditionalMessage();
+        }
+    });
 
     copyBtn.addEventListener('click', () => {
         if (lastAssistantResponse) {
@@ -352,55 +366,59 @@ document.addEventListener('DOMContentLoaded', async () => {
         addSystemMessage(chrome.i18n.getMessage('conversationCleared') || 'Conversation cleared. Send a new message.');
     });
 
+    // Reusable function to get active webpage context
+    async function getWebpageInfo() {
+        // Find the last focused normal window (not this popup/sidepanel if it's standalone)
+        const lastWindow = await chrome.windows.getLastFocused({ windowTypes: ['normal'] });
+        if (!lastWindow) {
+            throw new Error("No active browser window found.");
+        }
+
+        const tabs = await chrome.tabs.query({ active: true, windowId: lastWindow.id });
+        if (!tabs || tabs.length === 0) {
+            throw new Error("No active tab found.");
+        }
+
+        const activeTab = tabs[0];
+
+        // Cannot script chrome:// or edge:// URLs
+        if (activeTab.url.startsWith('chrome://') || activeTab.url.startsWith('edge://')) {
+            throw new Error("Cannot extract from internal browser pages.");
+        }
+
+        // Extract page text
+        const injectionResults = await chrome.scripting.executeScript({
+            target: { tabId: activeTab.id },
+            func: () => document.body.innerText
+        });
+
+        if (!injectionResults || !injectionResults[0] || !injectionResults[0].result) {
+            throw new Error("Could not extract text from the page.");
+        }
+
+        let pageText = injectionResults[0].result.trim();
+        if (!pageText) {
+            throw new Error("Page seems to be empty.");
+        }
+
+        // Limit webpage text length aggressively to prevent LLM context starvation (e.g. max ~15000 chars)
+        const MAX_TEXT_LENGTH = 15000;
+        if (pageText.length > MAX_TEXT_LENGTH) {
+            pageText = pageText.substring(0, MAX_TEXT_LENGTH) + '\n\n[... Text truncated due to length limits ...]';
+        }
+
+        return { pageText, pageTitle: activeTab.title || 'Webpage' };
+    }
+
     summarizePageBtn.addEventListener('click', async () => {
         if (isProcessing) return;
 
         try {
-            // Find the last focused normal window (not this popup/sidepanel if it's standalone)
-            const lastWindow = await chrome.windows.getLastFocused({ windowTypes: ['normal'] });
-            if (!lastWindow) {
-                throw new Error("No active browser window found.");
-            }
-
-            const tabs = await chrome.tabs.query({ active: true, windowId: lastWindow.id });
-            if (!tabs || tabs.length === 0) {
-                throw new Error("No active tab found.");
-            }
-
-            const activeTab = tabs[0];
-
-            // Cannot script chrome:// or edge:// URLs
-            if (activeTab.url.startsWith('chrome://') || activeTab.url.startsWith('edge://')) {
-                throw new Error("Cannot summarize internal browser pages.");
-            }
-
-            // Extract page text
-            const injectionResults = await chrome.scripting.executeScript({
-                target: { tabId: activeTab.id },
-                func: () => document.body.innerText
-            });
-
-            if (!injectionResults || !injectionResults[0] || !injectionResults[0].result) {
-                throw new Error("Could not extract text from the page.");
-            }
-
-            let pageText = injectionResults[0].result.trim();
-            if (!pageText) {
-                throw new Error("Page seems to be empty.");
-            }
-
-            // Limit webpage text length aggressively to prevent LLM context starvation (e.g. max ~15000 chars)
-            const MAX_TEXT_LENGTH = 15000;
-            if (pageText.length > MAX_TEXT_LENGTH) {
-                pageText = pageText.substring(0, MAX_TEXT_LENGTH) + '\n\n[... Text truncated due to length limits ...]';
-            }
-
+            const { pageText, pageTitle } = await getWebpageInfo();
             const prompt = settings.summarizePrompt || 'Summarize the following webpage content:';
             const fullMessage = `${prompt}\n\n${pageText}`;
 
             // Create a truncated display message for the UI
-            const pageTitle = activeTab.title || 'Webpage';
-
             const displayMessage = `📄 **${pageTitle}** 원문을 요약합니다.`;
 
             // Clean up any pending image
@@ -411,7 +429,32 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         } catch (error) {
             console.error('[Local AI Assistant] Summarize error:', error);
-            showToast(error.message || 'Failed to summarize page.', true);
+            showToast(error.message || 'Failed to summarize page.');
+        }
+    });
+
+    askWebpageBtn.addEventListener('click', async () => {
+        if (isProcessing) return;
+
+        try {
+            const { pageText, pageTitle } = await getWebpageInfo();
+            const prompt = settings.askWebpagePrompt || "Once the webpage content is fully received, reply with 'Now you can ask'.";
+
+            // Format for Ask Webpage: Context first, then instruction prompt
+            const fullMessage = `[Webpage Context: ${pageTitle}]\n\n${pageText}\n\n---\n${prompt}`;
+
+            // Create a truncated display message for the UI
+            const displayMessage = `📄 **${pageTitle}** 원문을 전송합니다.`;
+
+            // Clean up any pending image
+            clearImageData();
+
+            // Send the full message to the LLM, but show the displayMessage in the UI
+            await sendMessage(fullMessage, displayMessage);
+
+        } catch (error) {
+            console.error('[Local AI Assistant] Ask Webpage error:', error);
+            showToast(error.message || 'Failed to extract page context.');
         }
     });
 
@@ -439,7 +482,10 @@ document.addEventListener('DOMContentLoaded', async () => {
         // Always reset scroll lock when a new response starts
         userScrolledUp = false;
         isProcessing = true;
-        sendBtn.disabled = true;
+
+        // Setup AbortController for this request
+        abortController = new AbortController();
+        updateSendButtonState();
 
         const messageToDisplay = displayMessage || userMessage;
 
@@ -504,15 +550,55 @@ document.addEventListener('DOMContentLoaded', async () => {
             }
 
         } catch (error) {
-            assistantBubble.classList.remove('streaming');
-            assistantBubble.classList.add('error');
-            assistantBubble.innerHTML = renderMarkdown(`**Error**\n\n${error.message}\n\n${chrome.i18n.getMessage('errorMessage') || 'Please check if Local AI Assistant is running.'}`);
-            lastAssistantResponse = error.message;
+            if (error.name === 'AbortError') {
+                assistantBubble.classList.remove('streaming');
+
+                // Remove loading animations and progress metadata blocks
+                assistantBubble.querySelectorAll('.typing-indicator, .progress-status, .model-load-status').forEach(el => el.remove());
+
+                // If the bubble is completely empty after removing loaders
+                if (!assistantBubble.textContent.trim() && !assistantBubble.querySelector('img')) {
+                    assistantBubble.innerHTML = `*(Generation stopped by user)*`;
+                } else {
+                    assistantBubble.innerHTML += '<br><br>*(Generation stopped by user)*';
+                }
+
+                // Mark reasoning box as done to collapse it
+                showReasoningStatus(assistantBubble, null, false, settings.useThinking, true);
+
+                lastAssistantResponse = assistantBubble.innerText;
+            } else {
+                assistantBubble.classList.remove('streaming');
+                assistantBubble.classList.add('error');
+                assistantBubble.innerHTML = renderMarkdown(`**Error**\n\n${error.message}\n\n${chrome.i18n.getMessage('errorMessage') || 'Please check if Local AI Assistant is running.'}`);
+                lastAssistantResponse = error.message;
+            }
         } finally {
             isProcessing = false;
-            sendBtn.disabled = false;
+            abortController = null;
+            updateSendButtonState();
             messageInput.focus();
             scrollToBottom();
+        }
+    }
+
+    function updateSendButtonState() {
+        if (isProcessing) {
+            sendBtn.innerHTML = `
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" class="stop-icon">
+                    <rect x="6" y="6" width="12" height="12" fill="currentColor" rx="2" />
+                </svg>`;
+            sendBtn.title = chrome.i18n.getMessage('stopGenerationTitle') || 'Stop Generation';
+            sendBtn.classList.add('stop-btn');
+            sendBtn.disabled = false;
+        } else {
+            sendBtn.innerHTML = `
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+                    <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z" fill="currentColor"/>
+                </svg>`;
+            sendBtn.title = chrome.i18n.getMessage('sendBtnTitle') || 'Send Message';
+            sendBtn.classList.remove('stop-btn');
+            sendBtn.disabled = false;
         }
     }
 
@@ -531,7 +617,8 @@ document.addEventListener('DOMContentLoaded', async () => {
                 'Content-Type': 'application/json',
                 ...(settings.apiKey ? { 'Authorization': `Bearer ${settings.apiKey}` } : {})
             },
-            body: JSON.stringify(requestBody)
+            body: JSON.stringify(requestBody),
+            signal: abortController ? abortController.signal : undefined
         });
 
         if (!response.ok) {
@@ -566,7 +653,8 @@ document.addEventListener('DOMContentLoaded', async () => {
                 'Content-Type': 'application/json',
                 ...(settings.apiKey ? { 'Authorization': `Bearer ${settings.apiKey}` } : {})
             },
-            body: JSON.stringify(requestBody)
+            body: JSON.stringify(requestBody),
+            signal: abortController ? abortController.signal : undefined
         });
 
         if (!response.ok) {
@@ -714,7 +802,8 @@ document.addEventListener('DOMContentLoaded', async () => {
                 'Content-Type': 'application/json',
                 ...(settings.apiKey ? { 'Authorization': `Bearer ${settings.apiKey}` } : {})
             },
-            body: JSON.stringify(requestBody)
+            body: JSON.stringify(requestBody),
+            signal: abortController ? abortController.signal : undefined
         });
 
         if (!response.ok) {

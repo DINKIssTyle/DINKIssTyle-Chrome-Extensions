@@ -3,6 +3,30 @@
         "message": "Drop images or text here",
         "description": "Hint for global drop zone"
     },
+    "stopGenerationTitle": {
+        "message": "Stop Generation",
+        "description": "Title tooltip to stop LLM generation"
+    },
+    "askWebpageBtn": {
+        "message": "Ask Webpage",
+        "description": "Button to ask about the current webpage"
+    },
+    "askWebpageBtnTitle": {
+        "message": "Ask questions about the current page",
+        "description": "Tooltip for Ask Webpage button"
+    },
+    "askWebpagePromptLabel": {
+        "message": "Ask Webpage Prompt",
+        "description": "Label for Ask Webpage prompt setting"
+    },
+    "defaultAskWebpagePrompt": {
+        "message": "Once the webpage content is fully received, reply with 'Now you can ask'.",
+        "description": "Default prompt to append to webpage content before asking"
+    },
+    "askWebpagePromptHint": {
+        "message": "Prompt appended to the webpage content before asking",
+        "description": "Hint for Ask Webpage prompt setting"
+    },
     "extName": {
         "message": "Local AI Assistant (LLM)",
         "description": "Extension name"

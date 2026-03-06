@@ -29,7 +29,8 @@ function getDefaultSettings() {
         textEnhancementPrompt: i18n('defaultEnhancementPrompt', 'Improve the following text to be more clear, professional, and well-structured. Return only the improved text in JSON format with key "enhanced_text":'),
         systemRole: i18n('defaultSystemRole', 'You are an expert at processing web articles, posts, and other content.'),
         userRequest: i18n('defaultUserRequest', 'Summarize the following text:'),
-        summarizePrompt: i18n('defaultSummarizePrompt', 'Summarize the following webpage content:')
+        summarizePrompt: i18n('defaultSummarizePrompt', 'Summarize the following webpage content:'),
+        askWebpagePrompt: i18n('defaultAskWebpagePrompt', 'Once the webpage content is fully received, reply with "Now you can ask".')
     };
 }
 
@@ -81,6 +82,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const systemRoleInput = document.getElementById('systemRole');
     const userRequestInput = document.getElementById('userRequest');
     const summarizePromptInput = document.getElementById('summarizePrompt');
+    const askWebpagePromptInput = document.getElementById('askWebpagePrompt');
     const saveBtn = document.getElementById('saveBtn');
     const statusText = document.getElementById('statusText');
 
@@ -152,6 +154,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (systemRoleInput) systemRoleInput.value = settings.systemRole;
         if (userRequestInput) userRequestInput.value = settings.userRequest;
         if (summarizePromptInput) summarizePromptInput.value = settings.summarizePrompt;
+        if (askWebpagePromptInput) askWebpagePromptInput.value = settings.askWebpagePrompt;
 
         if (statusText) statusText.textContent = i18n('settingsLoaded');
 
@@ -182,7 +185,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 textEnhancementPrompt: textEnhancementPromptInput ? (textEnhancementPromptInput.value.trim() || defaults.textEnhancementPrompt) : defaults.textEnhancementPrompt,
                 systemRole: systemRoleInput ? (systemRoleInput.value.trim() || defaults.systemRole) : defaults.systemRole,
                 userRequest: userRequestInput ? (userRequestInput.value.trim() || defaults.userRequest) : defaults.userRequest,
-                summarizePrompt: summarizePromptInput ? (summarizePromptInput.value.trim() || defaults.summarizePrompt) : defaults.summarizePrompt
+                summarizePrompt: summarizePromptInput ? (summarizePromptInput.value.trim() || defaults.summarizePrompt) : defaults.summarizePrompt,
+                askWebpagePrompt: askWebpagePromptInput ? (askWebpagePromptInput.value.trim() || defaults.askWebpagePrompt) : defaults.askWebpagePrompt
             };
 
             chrome.storage.sync.set(settings, () => {

@@ -258,5 +258,29 @@
     "dropFilesHint": {
         "message": "이미지나 텍스트를 여기로 끌어다 놓으세요",
         "description": "Hint for global drop zone"
+    },
+    "stopGenerationTitle": {
+        "message": "생성 중지",
+        "description": "Title tooltip to stop LLM generation"
+    },
+    "askWebpageBtn": {
+        "message": "웹페이지 물어보기",
+        "description": "Button to ask about the current webpage"
+    },
+    "askWebpageBtnTitle": {
+        "message": "현재 페이지에 대해 질문하기",
+        "description": "Tooltip for Ask Webpage button"
+    },
+    "askWebpagePromptLabel": {
+        "message": "웹페이지 물어보기 프롬프트",
+        "description": "Label for Ask Webpage prompt setting"
+    },
+    "defaultAskWebpagePrompt": {
+        "message": "웹페이지 내용이 다 전송되었으면 '이제 물어보세요' 라고 응답하세요.",
+        "description": "Default prompt to append to webpage content before asking"
+    },
+    "askWebpagePromptHint": {
+        "message": "웹페이지 원문 전송 후 사용될 프롬프트",
+        "description": "Hint for Ask Webpage prompt setting"
     }
 }
