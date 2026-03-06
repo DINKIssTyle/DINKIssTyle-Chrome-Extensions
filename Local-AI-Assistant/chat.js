@@ -395,10 +395,96 @@ document.addEventListener('DOMContentLoaded', async () => {
             throw new Error("Cannot extract from internal browser pages.");
         }
 
-        // Extract page text
+        // Extract page text by converting DOM to Markdown
         const injectionResults = await chrome.scripting.executeScript({
             target: { tabId: activeTab.id },
-            func: () => document.body.innerText
+            func: () => {
+                // A lightweight recursive function to convert DOM elements to basic Markdown
+                function convertNodeToMarkdown(node) {
+                    if (node.nodeType === Node.TEXT_NODE) {
+                        return node.textContent.replace(/\s+/g, ' '); // Compress whitespace
+                    }
+
+                    if (node.nodeType !== Node.ELEMENT_NODE) {
+                        return '';
+                    }
+
+                    // Skip hidden elements, scripts, styles, etc.
+                    const tag = node.tagName.toLowerCase();
+                    const style = window.getComputedStyle(node);
+                    if (tag === 'script' || tag === 'style' || tag === 'noscript' || tag === 'iframe' || tag === 'svg' || style.display === 'none' || style.visibility === 'hidden') {
+                        return '';
+                    }
+
+                    let md = '';
+                    let prefix = '';
+                    let postfix = '';
+
+                    // Formatting blocks
+                    if (tag === 'h1') { prefix = '\n# '; postfix = '\n'; }
+                    else if (tag === 'h2') { prefix = '\n## '; postfix = '\n'; }
+                    else if (tag === 'h3') { prefix = '\n### '; postfix = '\n'; }
+                    else if (tag === 'h4') { prefix = '\n#### '; postfix = '\n'; }
+                    else if (tag === 'h5') { prefix = '\n##### '; postfix = '\n'; }
+                    else if (tag === 'h6') { prefix = '\n###### '; postfix = '\n'; }
+                    else if (tag === 'p' || tag === 'div' || tag === 'section' || tag === 'article') { prefix = '\n'; postfix = '\n'; }
+                    else if (tag === 'br') { return '\n'; }
+                    else if (tag === 'b' || tag === 'strong') { prefix = '**'; postfix = '**'; }
+                    else if (tag === 'i' || tag === 'em') { prefix = '*'; postfix = '*'; }
+                    else if (tag === 'code') { prefix = '`'; postfix = '`'; }
+                    else if (tag === 'pre') { prefix = '\n```\n'; postfix = '\n```\n'; }
+                    else if (tag === 'li') { prefix = '\n- '; }
+                    else if (tag === 'a') {
+                        const href = node.getAttribute('href');
+                        if (href && !href.startsWith('javascript:')) {
+                            prefix = '[';
+                            // Postfix logic will capture the href in the recursive loop below
+                        }
+                    }
+
+                    // Traverse children
+                    let childrenContent = '';
+                    for (const child of node.childNodes) {
+                        childrenContent += convertNodeToMarkdown(child);
+                    }
+
+                    // Special postfix handling for links (anchor tags)
+                    if (tag === 'a' && prefix === '[') {
+                        // Resolve absolute URL
+                        const href = node.getAttribute('href');
+                        let absoluteUrl = href;
+                        try {
+                            absoluteUrl = new URL(href, window.location.href).href;
+                        } catch (e) {
+                            // Keep as is if invalid
+                        }
+                        postfix = `](${absoluteUrl})`;
+                    }
+
+                    // Images (basic alt text)
+                    if (tag === 'img') {
+                        const alt = node.getAttribute('alt') || 'Image';
+                        return `[Image: ${alt}]`;
+                    }
+
+                    let result = prefix + childrenContent + postfix;
+
+                    // Collapse excessive newlines inside inline elements to prevent bad formatting
+                    if (['b', 'strong', 'i', 'em', 'a'].includes(tag)) {
+                        result = result.replace(/\n+/g, ' ');
+                    }
+
+                    return result;
+                }
+
+                // Extract main content if available, otherwise body
+                const mainCandidate = document.querySelector('main, article, [role="main"]') || document.body;
+
+                let rawMarkdown = convertNodeToMarkdown(mainCandidate);
+
+                // Clean up excessive empty lines
+                return rawMarkdown.replace(/\n{3,}/g, '\n\n').trim();
+            }
         });
 
         if (!injectionResults || !injectionResults[0] || !injectionResults[0].result) {
