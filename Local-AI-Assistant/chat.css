@@ -690,13 +690,13 @@ body {
 
 .quick-action-btn {
     flex: 1;
-    /* Make both buttons equal width */
+    /* Make buttons equal width */
     background: linear-gradient(135deg, #818cf8, #a78bfa);
     color: #fff;
     border: none;
-    border-radius: 8px;
-    padding: 8px 12px;
-    font-size: 13px;
+    border-radius: 6px;
+    padding: 6px 8px;
+    font-size: 11px;
     font-weight: 500;
     cursor: pointer;
     transition: opacity 0.2s, transform 0.1s;

@@ -306,5 +306,13 @@
     "askWebpageDisplayMsg": {
         "message": "📄 **$1** 원문을 전송합니다.",
         "description": "Message displayed when sending webpage context for Ask Webpage"
+    },
+    "capturePageBtnTitle": {
+        "message": "화면 캡쳐 질문",
+        "description": "Title tooltip for the capture button"
+    },
+    "capturePageDisplayMsg": {
+        "message": "🖼️ **$1** 화면을 캡쳐하여 전송합니다.",
+        "description": "Message displayed when capturing a webpage"
     }
 }

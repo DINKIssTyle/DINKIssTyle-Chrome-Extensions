@@ -306,5 +306,13 @@
     "summarizePageBtnTitle": {
         "message": "Summarize Webpage",
         "description": "Title tooltip for the summarize button"
+    },
+    "capturePageBtnTitle": {
+        "message": "Capture & Ask",
+        "description": "Title tooltip for the capture button"
+    },
+    "capturePageDisplayMsg": {
+        "message": "🖼️ Analyzing screenshot of **$1**...",
+        "description": "Message displayed when capturing a webpage"
     }
 }

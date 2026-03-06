@@ -63,7 +63,8 @@ function getDefaultSettings() {
         textEnhancementPrompt: i18n('defaultEnhancementPrompt', 'Improve the following text to be more clear, professional, and well-structured. Return only the improved text in JSON format with key "enhanced_text":'),
         systemRole: i18n('defaultSystemRole', 'You are an expert at processing web articles, posts, and other content.'),
         userRequest: i18n('defaultUserRequest', 'Summarize the following text:'),
-        summarizePrompt: i18n('defaultSummarizePrompt', 'Summarize the following webpage content:')
+        summarizePrompt: i18n('defaultSummarizePrompt', 'Summarize the following webpage content:'),
+        askWebpagePrompt: i18n('defaultAskWebpagePrompt', 'Once the webpage content is fully received, reply with "Now you can ask".')
     };
 }
 
@@ -99,6 +100,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const removeImageBtn = document.getElementById('removeImageBtn');
     const summarizePageBtn = document.getElementById('summarizePageBtn');
     const askWebpageBtn = document.getElementById('askWebpageBtn');
+    const capturePageBtn = document.getElementById('capturePageBtn');
     const quickActionsContainer = document.getElementById('quickActionsContainer');
 
     // Load settings
@@ -554,6 +556,50 @@ document.addEventListener('DOMContentLoaded', async () => {
         } catch (error) {
             console.error('[Local AI Assistant] Ask Webpage error:', error);
             showToast(error.message || 'Failed to extract page context.');
+        }
+    });
+
+    capturePageBtn.addEventListener('click', async () => {
+        if (isProcessing) return;
+
+        try {
+            // Ensure settings are completely up to date
+            settings = await chrome.storage.sync.get(getDefaultSettings());
+
+            // Get the active window's tab to get the title
+            const lastWindow = await chrome.windows.getLastFocused({ windowTypes: ['normal'] });
+            let pageTitle = 'Webpage';
+            let tabId = null;
+            if (lastWindow) {
+                const tabs = await chrome.tabs.query({ active: true, windowId: lastWindow.id });
+                if (tabs && tabs.length > 0) {
+                    pageTitle = tabs[0].title || 'Webpage';
+                    tabId = tabs[0].id;
+                }
+            }
+
+            // Capture the visible tab
+            const dataUrl = await chrome.tabs.captureVisibleTab(lastWindow.id, { format: 'png' });
+            if (!dataUrl) {
+                throw new Error("Failed to capture screen. Ensure you are on a valid webpage.");
+            }
+
+            // Set the captured image as the current image data
+            currentImageData = dataUrl;
+
+            // Use the askWebpagePrompt as the instruction (user wants 'same feature as ask webpage')
+            // If they didn't define it, use a fallback instruction
+            const prompt = settings.askWebpagePrompt || "Once the webpage content is fully received, reply with 'Now you can ask'.";
+
+            // Create a truncated display message for the UI
+            const displayMessage = i18n('capturePageDisplayMsg', `🖼️ Analyzing screenshot of **$1**...`).replace('$1', pageTitle);
+
+            // Send the message using the general mechanism
+            await sendMessage(prompt, displayMessage);
+
+        } catch (error) {
+            console.error('[Local AI Assistant] Capture Webpage error:', error);
+            showToast(error.message || 'Failed to capture screen.');
         }
     });
 
