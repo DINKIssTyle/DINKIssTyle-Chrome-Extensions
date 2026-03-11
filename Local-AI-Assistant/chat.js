@@ -479,8 +479,11 @@ document.addEventListener('DOMContentLoaded', async () => {
                     return result;
                 }
 
-                // Extract main content if available, otherwise body
-                const mainCandidate = document.querySelector('main, article, [role="main"]') || document.body;
+                // Extract main content with explicit priority: main -> [role="main"] -> article -> body
+                const mainCandidate = document.querySelector('main') || 
+                                     document.querySelector('[role="main"]') || 
+                                     document.querySelector('article') || 
+                                     document.body;
 
                 let rawMarkdown = convertNodeToMarkdown(mainCandidate);
 
