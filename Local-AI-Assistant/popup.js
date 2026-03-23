@@ -30,7 +30,7 @@ function getDefaultSettings() {
         systemRole: i18n('defaultSystemRole', 'You are an expert at processing web articles, posts, and other content.'),
         userRequest: i18n('defaultUserRequest', 'Summarize the following text:'),
         summarizePrompt: i18n('defaultSummarizePrompt', 'Summarize the following webpage content:'),
-        askWebpagePrompt: i18n('defaultAskWebpagePrompt', 'Once the webpage content is fully received, reply with "Now you can ask".')
+        askWebpagePrompt: i18n('defaultAskWebpagePrompt', 'Answer the user using the webpage context below. If the answer is not clearly supported by the page, say so.')
     };
 }
 

@@ -20,11 +20,11 @@
         "description": "Label for Ask Webpage prompt setting"
     },
     "defaultAskWebpagePrompt": {
-        "message": "Once the webpage content is fully received, reply with 'Now you can ask'.",
+        "message": "Answer the user's question using the webpage context below. If the answer is not clearly supported by the page, say so.",
         "description": "Default prompt to append to webpage content before asking"
     },
     "askWebpagePromptHint": {
-        "message": "Prompt appended to the webpage content before asking",
+        "message": "Instruction used when answering questions with the current page or a captured screen",
         "description": "Hint for Ask Webpage prompt setting"
     },
     "uiLanguageLabel": {
@@ -48,8 +48,12 @@
         "description": "Message displayed when summarizing a webpage"
     },
     "askWebpageDisplayMsg": {
-        "message": "📄 Sending context of **$1**...",
+        "message": "Loaded \"$1\". Ask a question about this page.",
         "description": "Message displayed when sending webpage context for Ask Webpage"
+    },
+    "askWebpageReadyMsg": {
+        "message": "Loaded \"$1\". Ask a question about this page.",
+        "description": "System message displayed when webpage question mode is ready"
     },
     "extName": {
         "message": "Local AI Assistant (LLM)",
@@ -308,11 +312,19 @@
         "description": "Title tooltip for the summarize button"
     },
     "capturePageBtnTitle": {
-        "message": "Capture & Ask",
+        "message": "Ask With Screenshot",
         "description": "Title tooltip for the capture button"
     },
     "capturePageDisplayMsg": {
-        "message": "🖼️ Analyzing screenshot of **$1**...",
-        "description": "Message displayed when capturing a webpage"
+        "message": "Captured \"$1\". Ask a question about this screen.",
+        "description": "Message displayed when screenshot question mode is ready"
+    },
+    "capturePageReadyMsg": {
+        "message": "Captured \"$1\". Ask a question about this screen.",
+        "description": "System message displayed when captured screen question mode is ready"
+    },
+    "capturePageQuestionRequired": {
+        "message": "Enter a question to send with the captured screen.",
+        "description": "Validation message when a captured screen exists but no question was entered"
     }
 }

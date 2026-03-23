@@ -275,6 +275,48 @@ body {
     padding: 0;
 }
 
+.chat-bubble table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 10px 0;
+    display: block;
+    overflow-x: auto;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.03);
+}
+
+.chat-bubble thead {
+    background: rgba(99, 102, 241, 0.16);
+}
+
+.chat-bubble th,
+.chat-bubble td {
+    padding: 10px 12px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    text-align: left;
+    vertical-align: top;
+    white-space: nowrap;
+}
+
+.chat-bubble tbody tr:last-child td {
+    border-bottom: none;
+}
+
+.chat-bubble th {
+    font-weight: 700;
+    color: #f5f7ff;
+}
+
+.chat-bubble td {
+    color: #d9dcef;
+}
+
+.chat-bubble input[type="checkbox"] {
+    margin-right: 8px;
+    accent-color: #818cf8;
+}
+
 .chat-bubble blockquote {
     border-left: 3px solid #6366f1;
     margin: 8px 0;

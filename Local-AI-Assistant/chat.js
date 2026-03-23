@@ -64,7 +64,7 @@ function getDefaultSettings() {
         systemRole: i18n('defaultSystemRole', 'You are an expert at processing web articles, posts, and other content.'),
         userRequest: i18n('defaultUserRequest', 'Summarize the following text:'),
         summarizePrompt: i18n('defaultSummarizePrompt', 'Summarize the following webpage content:'),
-        askWebpagePrompt: i18n('defaultAskWebpagePrompt', 'Once the webpage content is fully received, reply with "Now you can ask".')
+        askWebpagePrompt: i18n('defaultAskWebpagePrompt', 'Answer the user using the webpage context below. If the answer is not clearly supported by the page, say so.')
     };
 }
 
@@ -74,6 +74,8 @@ let lastAssistantResponse = '';
 let isProcessing = false;
 let currentImageData = null;
 let isVisionMode = false;
+let currentPageContext = null;
+let currentCapturedPageContext = null;
 
 // Scroll state
 let userScrolledUp = false;
@@ -151,6 +153,9 @@ document.addEventListener('DOMContentLoaded', async () => {
             // Append to conversation for new request
             currentImageData = sessionData.imageData || null;
             isVisionMode = isVisionMode || !!currentImageData; // Update vision mode if image is present
+            currentPageContext = null;
+            currentCapturedPageContext = null;
+            lastResponseId = null;
 
             // Clear the flag
             await chrome.storage.session.set({ isNewConversation: false });
@@ -318,6 +323,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     // Function to set and preview image data
     function setImageData(base64Url) {
         currentImageData = base64Url;
+        currentCapturedPageContext = null;
         isVisionMode = true; // Auto-activate vision mode when image is pasted
         imagePreview.src = base64Url;
         imagePreviewContainer.style.display = 'inline-block';
@@ -373,6 +379,9 @@ document.addEventListener('DOMContentLoaded', async () => {
         chatContent.innerHTML = '';
         lastAssistantResponse = '';
         lastResponseId = null;
+        currentPageContext = null;
+        currentCapturedPageContext = null;
+        isVisionMode = false;
         clearImageData();
         addSystemMessage(chrome.i18n.getMessage('conversationCleared') || 'Conversation cleared. Send a new message.');
     });
@@ -507,7 +516,43 @@ document.addEventListener('DOMContentLoaded', async () => {
             pageText = pageText.substring(0, MAX_TEXT_LENGTH) + '\n\n[... Text truncated due to length limits ...]';
         }
 
-        return { pageText, pageTitle: activeTab.title || 'Webpage' };
+        return {
+            pageText,
+            pageTitle: activeTab.title || 'Webpage',
+            pageUrl: activeTab.url || ''
+        };
+    }
+
+    function getEffectiveAskWebpagePrompt() {
+        const configuredPrompt = (settings.askWebpagePrompt || '').trim();
+        const normalizedPrompt = configuredPrompt.replace(/\s+/g, ' ').trim();
+        const isLegacyPrompt = !normalizedPrompt ||
+            /now you can ask/i.test(normalizedPrompt) ||
+            /이제 물어보세요/.test(normalizedPrompt) ||
+            /웹페이지 내용이 다 전송되었으면/.test(normalizedPrompt);
+
+        if (isLegacyPrompt) {
+            return 'Answer the user using the webpage context below. If the answer is not clearly supported by the page, say so.';
+        }
+
+        return configuredPrompt;
+    }
+
+    function buildWebpageQuestionPrompt(userMessage) {
+        if (!currentPageContext) return userMessage;
+
+        const instruction = getEffectiveAskWebpagePrompt();
+        const pageUrlLine = currentPageContext.url ? `URL: ${currentPageContext.url}\n` : '';
+
+        return `${instruction}\n\n[Webpage]\nTitle: ${currentPageContext.title}\n${pageUrlLine}Content:\n${currentPageContext.text}\n\n[Question]\n${userMessage}`;
+    }
+
+    function buildCapturedPageQuestionPrompt(userMessage) {
+        if (!currentCapturedPageContext) return userMessage;
+
+        const instruction = getEffectiveAskWebpagePrompt();
+
+        return `${instruction}\n\n[Screen]\nTitle: ${currentCapturedPageContext.title}\n\n[Question]\n${userMessage}`;
     }
 
     summarizePageBtn.addEventListener('click', async () => {
@@ -525,6 +570,8 @@ document.addEventListener('DOMContentLoaded', async () => {
 
             // Clean up any pending image
             clearImageData();
+            currentPageContext = null;
+            currentCapturedPageContext = null;
 
             // Send the full message to the LLM, but show the displayMessage in the UI
             await sendMessage(fullMessage, displayMessage);
@@ -541,20 +588,28 @@ document.addEventListener('DOMContentLoaded', async () => {
         try {
             // Ensure settings are completely up to date
             settings = await chrome.storage.sync.get(getDefaultSettings());
-            const { pageText, pageTitle } = await getWebpageInfo();
-            const prompt = settings.askWebpagePrompt || "Once the webpage content is fully received, reply with 'Now you can ask'.";
-
-            // Format for Ask Webpage: Context first, then instruction prompt
-            const fullMessage = `[Webpage Context: ${pageTitle}]\n\n${pageText}\n\n---\n${prompt}`;
-
-            // Create a truncated display message for the UI
-            const displayMessage = i18n('askWebpageDisplayMsg', `📄 Sending context of **$1**...`).replace('$1', pageTitle);
+            const { pageText, pageTitle, pageUrl } = await getWebpageInfo();
 
             // Clean up any pending image
             clearImageData();
 
-            // Send the full message to the LLM, but show the displayMessage in the UI
-            await sendMessage(fullMessage, displayMessage);
+            // Start a fresh webpage Q&A session without spending an LLM turn up front
+            conversationHistory = [];
+            lastAssistantResponse = '';
+            lastResponseId = null;
+            isVisionMode = false;
+            chatContent.innerHTML = '';
+            currentPageContext = {
+                title: pageTitle,
+                url: pageUrl,
+                text: pageText
+            };
+            currentCapturedPageContext = null;
+
+            addSystemMessage(
+                i18n('askWebpageReadyMsg', 'Loaded "$1". Ask a question about this page.')
+                    .replace('$1', pageTitle)
+            );
 
         } catch (error) {
             console.error('[Local AI Assistant] Ask Webpage error:', error);
@@ -587,18 +642,23 @@ document.addEventListener('DOMContentLoaded', async () => {
                 throw new Error("Failed to capture screen. Ensure you are on a valid webpage.");
             }
 
-            // Set the captured image as the current image data
-            currentImageData = dataUrl;
+            // Start a fresh screenshot Q&A session without spending an LLM turn up front
+            conversationHistory = [];
+            lastAssistantResponse = '';
+            lastResponseId = null;
+            currentPageContext = null;
+            currentCapturedPageContext = {
+                title: pageTitle,
+                imageData: dataUrl
+            };
+            isVisionMode = false;
+            clearImageData();
+            chatContent.innerHTML = '';
 
-            // Use the askWebpagePrompt as the instruction (user wants 'same feature as ask webpage')
-            // If they didn't define it, use a fallback instruction
-            const prompt = settings.askWebpagePrompt || "Once the webpage content is fully received, reply with 'Now you can ask'.";
-
-            // Create a truncated display message for the UI
-            const displayMessage = i18n('capturePageDisplayMsg', `🖼️ Analyzing screenshot of **$1**...`).replace('$1', pageTitle);
-
-            // Send the message using the general mechanism
-            await sendMessage(prompt, displayMessage);
+            addSystemMessage(
+                i18n('capturePageReadyMsg', 'Captured "$1". Ask a question about this screen.')
+                    .replace('$1', pageTitle)
+            );
 
         } catch (error) {
             console.error('[Local AI Assistant] Capture Webpage error:', error);
@@ -608,8 +668,14 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     async function sendAdditionalMessage() {
         const message = messageInput.value.trim();
+        const preparedCapturedImage = currentCapturedPageContext?.imageData || null;
         // Allow sending if there's an image even if there's no text (we'll use default prompt)
-        if ((!message && !currentImageData) || isProcessing) return;
+        if (isProcessing) return;
+        if (!message && preparedCapturedImage && !currentImageData) {
+            showToast(i18n('capturePageQuestionRequired', 'Enter a question to send with the captured screen.'));
+            return;
+        }
+        if (!message && !currentImageData) return;
 
         // Reset scroll lock when user sends a new message
         userScrolledUp = false;
@@ -637,29 +703,36 @@ document.addEventListener('DOMContentLoaded', async () => {
         updateSendButtonState();
 
         const messageToDisplay = displayMessage || userMessage;
+        const preparedCapturedImage = currentCapturedPageContext?.imageData || null;
+        const activeImageData = currentImageData || preparedCapturedImage;
+        const requestUserMessage = activeImageData && currentCapturedPageContext && !currentImageData
+            ? buildCapturedPageQuestionPrompt(userMessage)
+            : (currentPageContext && !activeImageData
+                ? buildWebpageQuestionPrompt(userMessage)
+                : userMessage);
 
         // Add user bubble (show image thumbnail if exists)
-        if (currentImageData) {
-            addImageBubble(currentImageData, messageToDisplay);
+        if (activeImageData) {
+            addImageBubble(activeImageData, messageToDisplay);
         } else {
             addBubble(messageToDisplay, 'user');
         }
 
         // Add user message to history (with image if exists)
-        if (currentImageData) {
+        if (activeImageData) {
             isVisionMode = true;
             // Use full data URL format
             conversationHistory.push({
                 role: 'user',
                 content: [
-                    { type: 'text', text: userMessage },
-                    { type: 'image_url', image_url: { url: currentImageData } }
+                    { type: 'text', text: requestUserMessage },
+                    { type: 'image_url', image_url: { url: activeImageData } }
                 ]
             });
         } else {
             conversationHistory.push({
                 role: 'user',
-                content: userMessage
+                content: requestUserMessage
             });
         }
 
@@ -670,10 +743,11 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
 
         // Store the image data locally for the request builder before clearing UI
-        const requestImageData = currentImageData;
+        const requestImageData = activeImageData;
 
         // Clear image data so UI updates instantly (but we keep a local reference)
         clearImageData();
+        currentCapturedPageContext = null;
 
         // Create assistant bubble with loading indicator
         const assistantBubble = addBubble('', 'assistant', true);
@@ -691,7 +765,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
             if (settings.llmMode === 'lmstudio') {
                 // Use LM Studio native stateful API which supports multimodal using input array
-                await lmStudioStreamResponse(userMessage, requestImageData, assistantBubble);
+                await lmStudioStreamResponse(requestUserMessage, requestImageData, assistantBubble);
             } else if (settings.useStreaming) {
                 await streamResponse(messages, assistantBubble);
             } else {
@@ -1161,7 +1235,6 @@ document.addEventListener('DOMContentLoaded', async () => {
             statusEl.innerHTML = `
                 <div class="status-text">
                     <span class="status-label">${text}</span>
-                    <span class="status-percent">${pct}%</span>
                 </div>
                 <div class="progress-bar-container">
                     <div class="progress-bar-fill" style="width: ${pct}%"></div>
@@ -1171,10 +1244,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         } else {
             const bar = statusEl.querySelector('.progress-bar-fill');
             const label = statusEl.querySelector('.status-label');
-            const percent = statusEl.querySelector('.status-percent');
             if (bar) bar.style.width = `${pct}%`;
             if (label) label.textContent = text;
-            if (percent) percent.textContent = `${pct}%`;
         }
         chatContent.scrollTop = chatContent.scrollHeight;
     }
@@ -1323,28 +1394,8 @@ function escapeHtml(text) {
     return div.innerHTML;
 }
 
-// Simple Markdown to HTML renderer
-function renderMarkdown(text) {
-    if (!text) return '';
-
+function fallbackRenderMarkdown(text) {
     let html = text;
-
-    // First preserve existing <think> tags before escaping
-    const thinkBlocks = [];
-    html = html.replace(/<think>([\s\S]*?)<\/think>/gi, (match) => {
-        thinkBlocks.push(match);
-        return `__THINK_BLOCK_${thinkBlocks.length - 1}__`;
-    });
-
-    // Escape HTML (but preserve our placeholders)
-    html = html.replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;');
-
-    // Restore think blocks
-    thinkBlocks.forEach((block, index) => {
-        html = html.replace(`__THINK_BLOCK_${index}__`, block);
-    });
 
     // Code blocks
     html = html.replace(/```(\w*)\n([\s\S]*?)```/g, '<pre><code class="language-$1">$2</code></pre>');
@@ -1395,6 +1446,51 @@ function renderMarkdown(text) {
 
     // Single newlines to <br>
     html = html.replace(/([^>])\n([^<])/g, '$1<br>$2');
+
+    return html;
+}
+
+// Markdown to HTML renderer using marked when available
+function renderMarkdown(text) {
+    if (!text) return '';
+
+    let html = text;
+
+    // First preserve existing <think> tags before escaping
+    const thinkBlocks = [];
+    html = html.replace(/<think>([\s\S]*?)<\/think>/gi, (match) => {
+        thinkBlocks.push(match);
+        return `__THINK_BLOCK_${thinkBlocks.length - 1}__`;
+    });
+
+    // Escape HTML (but preserve our placeholders)
+    html = html.replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
+
+    if (globalThis.marked?.parse) {
+        try {
+            globalThis.marked.setOptions({
+                gfm: true,
+                breaks: true
+            });
+
+            html = globalThis.marked.parse(html);
+        } catch (error) {
+            console.error('[Local AI Assistant] Markdown render fallback:', error);
+            html = fallbackRenderMarkdown(html);
+        }
+    } else {
+        html = fallbackRenderMarkdown(html);
+    }
+
+    // Restore preserved think blocks after markdown parsing
+    thinkBlocks.forEach((block, index) => {
+        html = html.replace(`__THINK_BLOCK_${index}__`, block);
+    });
+
+    // Force external links to open in a new tab safely
+    html = html.replace(/<a href=/g, '<a target="_blank" rel="noopener noreferrer" href=');
 
     return html;
 }
