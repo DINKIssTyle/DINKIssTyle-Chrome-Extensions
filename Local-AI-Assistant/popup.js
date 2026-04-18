@@ -30,8 +30,41 @@ function getDefaultSettings() {
         systemRole: i18n('defaultSystemRole', 'You are an expert at processing web articles, posts, and other content.'),
         userRequest: i18n('defaultUserRequest', 'Summarize the following text:'),
         summarizePrompt: i18n('defaultSummarizePrompt', 'Summarize the following webpage content:'),
-        askWebpagePrompt: i18n('defaultAskWebpagePrompt', 'Answer the user using the webpage context below. If the answer is not clearly supported by the page, say so.')
+        askWebpagePrompt: i18n('defaultAskWebpagePrompt', 'Answer the user using the webpage context below. If the answer is not clearly supported by the page, say so.'),
+        uiTheme: 'auto'
     };
+}
+
+function resolveTheme(themePreference) {
+    if (themePreference === 'light' || themePreference === 'dark') {
+        return themePreference;
+    }
+
+    return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+}
+
+function applyTheme(themePreference = 'auto') {
+    const resolvedTheme = resolveTheme(themePreference);
+    document.documentElement.dataset.theme = resolvedTheme;
+    document.documentElement.dataset.themePreference = themePreference;
+}
+
+function normalizeServerAddress(value, fallback = 'localhost:1234') {
+    const trimmedValue = (value || '').trim();
+    if (!trimmedValue) return fallback;
+
+    if (/^https?:\/\//i.test(trimmedValue)) {
+        try {
+            const url = new URL(trimmedValue);
+            return url.host || fallback;
+        } catch (error) {
+            console.warn('[Local AI Assistant] Failed to parse server address as URL:', trimmedValue, error);
+        }
+    }
+
+    const withoutScheme = trimmedValue.replace(/^https?:\/\//i, '');
+    const normalized = withoutScheme.split(/[/?#]/)[0].trim();
+    return normalized || fallback;
 }
 
 // Apply i18n translations
@@ -93,6 +126,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const summarizePromptInput = document.getElementById('summarizePrompt');
     const askWebpagePromptInput = document.getElementById('askWebpagePrompt');
     const uiLanguageInput = document.getElementById('uiLanguage');
+    const uiThemeInput = document.getElementById('uiTheme');
     const saveBtn = document.getElementById('saveBtn');
     const statusText = document.getElementById('statusText');
 
@@ -145,7 +179,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     // Load saved settings
     const defaults = getDefaultSettings();
     chrome.storage.sync.get(defaults, (settings) => {
-        if (serverAddressInput) serverAddressInput.value = settings.serverAddress;
+        if (serverAddressInput) serverAddressInput.value = normalizeServerAddress(settings.serverAddress, defaults.serverAddress);
         if (apiKeyInput) apiKeyInput.value = settings.apiKey;
         if (modelKeyInput) modelKeyInput.value = settings.modelKey;
         if (maxTokensInput) maxTokensInput.value = settings.maxTokens;
@@ -168,6 +202,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (uiLanguageInput) {
             uiLanguageInput.value = window.ci18n ? window.ci18n.currentLang : (settings.uiLanguage || 'auto');
         }
+        if (uiThemeInput) uiThemeInput.value = settings.uiTheme || 'auto';
+        applyTheme(settings.uiTheme || 'auto');
 
         if (statusText) statusText.textContent = i18n('settingsLoaded');
 
@@ -188,12 +224,29 @@ document.addEventListener('DOMContentLoaded', async () => {
         });
     }
 
+    if (uiThemeInput) {
+        uiThemeInput.addEventListener('change', () => {
+            applyTheme(uiThemeInput.value);
+        });
+    }
+
+    const colorSchemeMedia = window.matchMedia('(prefers-color-scheme: dark)');
+    colorSchemeMedia.addEventListener('change', () => {
+        const themePreference = uiThemeInput ? uiThemeInput.value : 'auto';
+        if (themePreference === 'auto') {
+            applyTheme('auto');
+        }
+    });
+
     // Save settings
     if (saveBtn) {
         saveBtn.addEventListener('click', () => {
             const defaults = getDefaultSettings();
+            const normalizedServerAddress = serverAddressInput
+                ? normalizeServerAddress(serverAddressInput.value, defaults.serverAddress)
+                : defaults.serverAddress;
             const settings = {
-                serverAddress: serverAddressInput ? (serverAddressInput.value.trim() || defaults.serverAddress) : defaults.serverAddress,
+                serverAddress: normalizedServerAddress,
                 apiKey: apiKeyInput ? apiKeyInput.value.trim() : '',
                 modelKey: modelKeyInput ? modelKeyInput.value.trim() : '',
                 maxTokens: maxTokensInput ? (parseInt(maxTokensInput.value) || defaults.maxTokens) : defaults.maxTokens,
@@ -213,10 +266,16 @@ document.addEventListener('DOMContentLoaded', async () => {
                 userRequest: userRequestInput ? (userRequestInput.value.trim() || defaults.userRequest) : defaults.userRequest,
                 summarizePrompt: summarizePromptInput ? (summarizePromptInput.value.trim() || defaults.summarizePrompt) : defaults.summarizePrompt,
                 askWebpagePrompt: askWebpagePromptInput ? (askWebpagePromptInput.value.trim() || defaults.askWebpagePrompt) : defaults.askWebpagePrompt,
-                uiLanguage: uiLanguageInput ? uiLanguageInput.value : 'auto'
+                uiLanguage: uiLanguageInput ? uiLanguageInput.value : 'auto',
+                uiTheme: uiThemeInput ? uiThemeInput.value : 'auto'
             };
 
             chrome.storage.sync.set(settings, async () => {
+                if (serverAddressInput) {
+                    serverAddressInput.value = normalizedServerAddress;
+                }
+                applyTheme(settings.uiTheme);
+
                 if (window.ci18n && uiLanguageInput) {
                     await window.ci18n.changeLanguage(uiLanguageInput.value);
                 }

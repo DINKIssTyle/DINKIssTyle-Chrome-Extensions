@@ -64,8 +64,42 @@ function getDefaultSettings() {
         systemRole: i18n('defaultSystemRole', 'You are an expert at processing web articles, posts, and other content.'),
         userRequest: i18n('defaultUserRequest', 'Summarize the following text:'),
         summarizePrompt: i18n('defaultSummarizePrompt', 'Summarize the following webpage content:'),
-        askWebpagePrompt: i18n('defaultAskWebpagePrompt', 'Answer the user using the webpage context below. If the answer is not clearly supported by the page, say so.')
+        askWebpagePrompt: i18n('defaultAskWebpagePrompt', 'Answer the user using the webpage context below. If the answer is not clearly supported by the page, say so.'),
+        uiTheme: 'auto'
     };
+}
+
+function resolveTheme(themePreference) {
+    if (themePreference === 'light' || themePreference === 'dark') {
+        return themePreference;
+    }
+
+    return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+}
+
+function applyTheme(themePreference = 'auto') {
+    const resolvedTheme = resolveTheme(themePreference);
+    document.documentElement.dataset.theme = resolvedTheme;
+    document.documentElement.dataset.themePreference = themePreference;
+}
+
+function getApiBaseUrl(serverAddress, fallback = 'localhost:1234') {
+    const trimmedValue = (serverAddress || '').trim();
+    if (!trimmedValue) {
+        return `http://${fallback}`;
+    }
+
+    if (/^https?:\/\//i.test(trimmedValue)) {
+        try {
+            const url = new URL(trimmedValue);
+            return `${url.protocol}//${url.host}`;
+        } catch (error) {
+            console.warn('[Local AI Assistant] Failed to parse API base URL:', trimmedValue, error);
+        }
+    }
+
+    const normalized = trimmedValue.replace(/^https?:\/\//i, '').split(/[/?#]/)[0].trim() || fallback;
+    return `http://${normalized}`;
 }
 
 let conversationHistory = [];
@@ -107,6 +141,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // Load settings
     settings = await chrome.storage.sync.get(getDefaultSettings());
+    applyTheme(settings.uiTheme || 'auto');
     if (settings.showSummarizeBtn) {
         quickActionsContainer.style.display = 'flex';
     } else {
@@ -137,9 +172,19 @@ document.addEventListener('DOMContentLoaded', async () => {
             for (let [key, { newValue }] of Object.entries(changes)) {
                 settings[key] = newValue;
             }
+            if (changes.uiTheme !== undefined) {
+                applyTheme(changes.uiTheme.newValue || 'auto');
+            }
             if (changes.showSummarizeBtn !== undefined) {
                 quickActionsContainer.style.display = changes.showSummarizeBtn.newValue ? 'flex' : 'none';
             }
+        }
+    });
+
+    const colorSchemeMedia = window.matchMedia('(prefers-color-scheme: dark)');
+    colorSchemeMedia.addEventListener('change', () => {
+        if ((settings.uiTheme || 'auto') === 'auto') {
+            applyTheme('auto');
         }
     });
 
@@ -815,17 +860,15 @@ document.addEventListener('DOMContentLoaded', async () => {
             sendBtn.classList.add('stop-btn');
             sendBtn.disabled = false;
         } else {
-            sendBtn.innerHTML = `
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
-                    <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z" fill="currentColor"/>
-                </svg>`;
-            sendBtn.title = chrome.i18n.getMessage('sendBtnTitle') || 'Send Message';
+            sendBtn.innerHTML = '<span class="material-symbols-round">arrow_circle_up</span>';
+            sendBtn.title = chrome.i18n.getMessage('send') || 'Send';
             sendBtn.classList.remove('stop-btn');
             sendBtn.disabled = false;
         }
     }
 
     async function normalResponse(messages, bubble) {
+        const apiBaseUrl = getApiBaseUrl(settings.serverAddress);
         const requestBody = {
             model: settings.modelKey || 'local-model',
             messages: messages,
@@ -834,7 +877,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             stream: false
         };
 
-        const response = await fetch(`http://${settings.serverAddress}/v1/chat/completions`, {
+        const response = await fetch(`${apiBaseUrl}/v1/chat/completions`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -859,6 +902,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     async function streamResponse(messages, bubble) {
+        const apiBaseUrl = getApiBaseUrl(settings.serverAddress);
         bubble.classList.add('streaming');
         bubble.innerHTML = '<div class="typing-indicator"><span></span><span></span><span></span></div>';
 
@@ -870,7 +914,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             stream: true
         };
 
-        const response = await fetch(`http://${settings.serverAddress}/v1/chat/completions`, {
+        const response = await fetch(`${apiBaseUrl}/v1/chat/completions`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -982,6 +1026,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     // LM Studio Native API (/api/v1/chat) - Streaming with Named SSE Events
     // =========================================================================
     async function lmStudioStreamResponse(userMessage, imageData, bubble) {
+        const apiBaseUrl = getApiBaseUrl(settings.serverAddress);
         bubble.classList.add('streaming');
         bubble.innerHTML = '<div class="typing-indicator"><span></span><span></span><span></span></div>';
 
@@ -1019,7 +1064,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             }];
         }
 
-        const response = await fetch(`http://${settings.serverAddress}/api/v1/chat`, {
+        const response = await fetch(`${apiBaseUrl}/api/v1/chat`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',

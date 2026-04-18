@@ -287,9 +287,25 @@
         "message": "UI 언어 (Language)",
         "description": "Label for the UI language selection dropdown"
     },
+    "uiThemeLabel": {
+        "message": "테마",
+        "description": "Label for the UI theme selection dropdown"
+    },
     "langAuto": {
         "message": "자동 (브라우저 설정)",
         "description": "Auto option for language selection"
+    },
+    "themeAuto": {
+        "message": "자동",
+        "description": "Auto option for theme selection"
+    },
+    "themeLight": {
+        "message": "라이트",
+        "description": "Light option for theme selection"
+    },
+    "themeDark": {
+        "message": "다크",
+        "description": "Dark option for theme selection"
     },
     "langEn": {
         "message": "English",

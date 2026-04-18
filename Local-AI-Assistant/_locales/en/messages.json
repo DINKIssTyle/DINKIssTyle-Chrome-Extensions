@@ -31,9 +31,25 @@
         "message": "UI Language",
         "description": "Label for the UI language selection dropdown"
     },
+    "uiThemeLabel": {
+        "message": "Theme",
+        "description": "Label for the UI theme selection dropdown"
+    },
     "langAuto": {
         "message": "Auto (Browser Setting)",
         "description": "Auto option for language selection"
+    },
+    "themeAuto": {
+        "message": "Auto",
+        "description": "Auto option for theme selection"
+    },
+    "themeLight": {
+        "message": "Light",
+        "description": "Light option for theme selection"
+    },
+    "themeDark": {
+        "message": "Dark",
+        "description": "Dark option for theme selection"
     },
     "langEn": {
         "message": "English",

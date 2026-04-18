@@ -39,6 +39,25 @@ function getDefaultSettings() {
     };
 }
 
+function getApiBaseUrl(serverAddress, fallback = 'localhost:1234') {
+    const trimmedValue = (serverAddress || '').trim();
+    if (!trimmedValue) {
+        return `http://${fallback}`;
+    }
+
+    if (/^https?:\/\//i.test(trimmedValue)) {
+        try {
+            const url = new URL(trimmedValue);
+            return `${url.protocol}//${url.host}`;
+        } catch (error) {
+            console.warn('[Local AI Assistant] Failed to parse API base URL:', trimmedValue, error);
+        }
+    }
+
+    const normalized = trimmedValue.replace(/^https?:\/\//i, '').split(/[/?#]/)[0].trim() || fallback;
+    return `http://${normalized}`;
+}
+
 // Track current selection state for menu creation
 let currentHasSelection = false;
 let cachedSettings = getDefaultSettings();
@@ -742,6 +761,7 @@ async function handleTextEnhancement(tab) {
 }
 
 async function callLLMForEnhancement(text, settings, signal = null, tabId = null, hasProtectedContent = false) {
+    const apiBaseUrl = getApiBaseUrl(settings.serverAddress);
     // Build system message with placeholder preservation instruction if needed
     let systemMessage = 'You are a helpful writing assistant. Always respond with valid JSON containing only the "enhanced_text" key.';
     if (hasProtectedContent) {
@@ -774,8 +794,8 @@ async function callLLMForEnhancement(text, settings, signal = null, tabId = null
         fetchOptions.signal = signal;
     }
 
-    console.log('[Local AI Assistant] Sending fetch to:', `http://${settings.serverAddress}/v1/chat/completions`);
-    const response = await fetch(`http://${settings.serverAddress}/v1/chat/completions`, fetchOptions);
+    console.log('[Local AI Assistant] Sending fetch to:', `${apiBaseUrl}/v1/chat/completions`);
+    const response = await fetch(`${apiBaseUrl}/v1/chat/completions`, fetchOptions);
     console.log('[Local AI Assistant] Fetch response received, status:', response.status);
 
     if (!response.ok) {
