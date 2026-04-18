@@ -327,6 +327,14 @@
         "message": "\"$1\" 페이지를 불러왔습니다. 이 페이지에 대해 질문해보세요.",
         "description": "System message displayed when webpage question mode is ready"
     },
+    "autoWebpageContextMsg": {
+        "message": "\"$1\" 페이지를 현재 질문의 문맥으로 사용합니다.",
+        "description": "System message displayed when webpage context is automatically applied"
+    },
+    "webpageNavigationMsg": {
+        "message": "현재 페이지가 \"$1\" ($2) 에서 \"$3\" ($4) 로 이동되어 문맥을 갱신했습니다.",
+        "description": "System message displayed when webpage context follows a navigation change"
+    },
     "capturePageBtnTitle": {
         "message": "화면 캡처로 질문",
         "description": "Title tooltip for the capture button"

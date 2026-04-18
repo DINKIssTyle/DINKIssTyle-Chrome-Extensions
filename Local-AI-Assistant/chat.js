@@ -102,6 +102,38 @@ function getApiBaseUrl(serverAddress, fallback = 'localhost:1234') {
     return `http://${normalized}`;
 }
 
+function extractFirstJsonObject(text) {
+    const source = (text || '').trim();
+    if (!source) return null;
+
+    try {
+        return JSON.parse(source);
+    } catch (error) {
+        // Continue to block extraction below
+    }
+
+    const fencedMatch = source.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
+    if (fencedMatch) {
+        try {
+            return JSON.parse(fencedMatch[1]);
+        } catch (error) {
+            // Continue to brace extraction below
+        }
+    }
+
+    const start = source.indexOf('{');
+    const end = source.lastIndexOf('}');
+    if (start !== -1 && end !== -1 && end > start) {
+        try {
+            return JSON.parse(source.slice(start, end + 1));
+        } catch (error) {
+            return null;
+        }
+    }
+
+    return null;
+}
+
 let conversationHistory = [];
 let settings = {};
 let lastAssistantResponse = '';
@@ -135,7 +167,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     const imagePreview = document.getElementById('imagePreview');
     const removeImageBtn = document.getElementById('removeImageBtn');
     const summarizePageBtn = document.getElementById('summarizePageBtn');
-    const askWebpageBtn = document.getElementById('askWebpageBtn');
     const capturePageBtn = document.getElementById('capturePageBtn');
     const quickActionsContainer = document.getElementById('quickActionsContainer');
 
@@ -568,6 +599,137 @@ document.addEventListener('DOMContentLoaded', async () => {
         };
     }
 
+    async function loadCurrentPageContext(source = 'auto') {
+        const { pageText, pageTitle, pageUrl } = await getWebpageInfo();
+        const previousTitle = currentPageContext?.title;
+        const previousUrl = currentPageContext?.url;
+
+        currentPageContext = {
+            title: pageTitle,
+            url: pageUrl,
+            text: pageText,
+            source
+        };
+        currentCapturedPageContext = null;
+
+        return {
+            pageTitle,
+            pageUrl,
+            isNewContext: previousTitle !== pageTitle || previousUrl !== pageUrl || !previousUrl
+        };
+    }
+
+    function buildNavigationNoticeForPrompt(navigation) {
+        if (!navigation) return '';
+
+        return `[Page Change]\nThe active page changed from:\n- Title: ${navigation.fromTitle}\n- URL: ${navigation.fromUrl}\nTo:\n- Title: ${navigation.toTitle}\n- URL: ${navigation.toUrl}\nUse the new page as the current context for the answer.\n\n`;
+    }
+
+    async function syncCurrentPageContextWithActiveTab() {
+        if (!currentPageContext) {
+            return { changed: false };
+        }
+
+        const previousContext = {
+            title: currentPageContext.title || 'Webpage',
+            url: currentPageContext.url || '',
+            source: currentPageContext.source || 'auto'
+        };
+        const { pageText, pageTitle, pageUrl } = await getWebpageInfo();
+        const changed = previousContext.title !== pageTitle || previousContext.url !== pageUrl;
+
+        if (!changed) {
+            return { changed: false };
+        }
+
+        currentPageContext = {
+            ...currentPageContext,
+            title: pageTitle,
+            url: pageUrl,
+            text: pageText,
+            source: previousContext.source,
+            pendingNavigation: {
+                fromTitle: previousContext.title,
+                fromUrl: previousContext.url || '-',
+                toTitle: pageTitle,
+                toUrl: pageUrl || '-'
+            }
+        };
+
+        return {
+            changed: true,
+            navigation: currentPageContext.pendingNavigation
+        };
+    }
+
+    async function classifyMessageIntentWithLLM(userMessage, options = {}) {
+        const { isFirstTurn = false } = options;
+        const apiBaseUrl = getApiBaseUrl(settings.serverAddress);
+        const firstTurnInstruction = isFirstTurn
+            ? `\nFirst-turn rule:\n- This is the first user turn after the history was cleared or a new conversation started.\n- On the first turn, evaluate more aggressively in favor of "current_page".\n- If the first-turn request could plausibly be about the currently open page, choose "current_page".`
+            : '';
+        const requestBody = {
+            model: settings.modelKey || 'local-model',
+            messages: [
+                {
+                    role: 'system',
+                    content: `You are an intent router for a web browser assistant.
+Your task is to classify whether the user's query requires the content of the currently open webpage to answer.
+
+Analyze the user's intent and output strictly in JSON format matching the schema below. Do not include markdown formatting (like \`\`\`json), explanations, or any other text outside the JSON object.
+
+Schema:
+{
+  "reasoning": "Briefly explain why this route was chosen based on the user's intent.",
+  "route": "current_page" | "general",
+  "confidence": <float between 0.0 and 1.0>
+}
+
+Classification Rules:
+- "current_page": Choose this when the user explicitly or implicitly refers to the current page. This includes summarizing, translating, explaining specific text/visible content, or using pronouns like "this", "it", or "here" (e.g., "What does this mean?", "Summarize it").
+- "general": Choose this when the user is asking a general knowledge question, making a conversational query, or asking about general web development where the current webpage's specific content is entirely irrelevant.
+
+Fallback Rule:
+- If the context is ambiguous, relies on unclear pronouns, or if you are unsure, default to "current_page" to ensure the assistant has maximum context.${firstTurnInstruction}`
+                },
+                {
+                    role: 'user',
+                    content: userMessage
+                }
+            ],
+            max_tokens: 80,
+            temperature: 0,
+            stream: false
+        };
+
+        const response = await fetch(`${apiBaseUrl}/v1/chat/completions`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                ...(settings.apiKey ? { 'Authorization': `Bearer ${settings.apiKey}` } : {})
+            },
+            body: JSON.stringify(requestBody)
+        });
+
+        if (!response.ok) {
+            throw new Error(`Intent classification failed (${response.status})`);
+        }
+
+        const data = await response.json();
+        const content = data.choices?.[0]?.message?.content || '';
+        const parsed = extractFirstJsonObject(content);
+
+        if (!parsed || (parsed.route !== 'current_page' && parsed.route !== 'general')) {
+            throw new Error('Intent classification returned invalid JSON.');
+        }
+
+        return {
+            reasoning: typeof parsed.reasoning === 'string' ? parsed.reasoning.trim() : '',
+            route: parsed.route,
+            confidence: typeof parsed.confidence === 'number' ? parsed.confidence : null
+        };
+    }
+
     function getEffectiveAskWebpagePrompt() {
         const configuredPrompt = (settings.askWebpagePrompt || '').trim();
         const normalizedPrompt = configuredPrompt.replace(/\s+/g, ' ').trim();
@@ -588,8 +750,9 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         const instruction = getEffectiveAskWebpagePrompt();
         const pageUrlLine = currentPageContext.url ? `URL: ${currentPageContext.url}\n` : '';
+        const navigationNotice = buildNavigationNoticeForPrompt(currentPageContext.pendingNavigation);
 
-        return `${instruction}\n\n[Webpage]\nTitle: ${currentPageContext.title}\n${pageUrlLine}Content:\n${currentPageContext.text}\n\n[Question]\n${userMessage}`;
+        return `${instruction}\n\n${navigationNotice}[Webpage]\nTitle: ${currentPageContext.title}\n${pageUrlLine}Content:\n${currentPageContext.text}\n\n[Question]\n${userMessage}`;
     }
 
     function buildCapturedPageQuestionPrompt(userMessage) {
@@ -624,41 +787,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         } catch (error) {
             console.error('[Local AI Assistant] Summarize error:', error);
             showToast(error.message || 'Failed to summarize page.');
-        }
-    });
-
-    askWebpageBtn.addEventListener('click', async () => {
-        if (isProcessing) return;
-
-        try {
-            // Ensure settings are completely up to date
-            settings = await chrome.storage.sync.get(getDefaultSettings());
-            const { pageText, pageTitle, pageUrl } = await getWebpageInfo();
-
-            // Clean up any pending image
-            clearImageData();
-
-            // Start a fresh webpage Q&A session without spending an LLM turn up front
-            conversationHistory = [];
-            lastAssistantResponse = '';
-            lastResponseId = null;
-            isVisionMode = false;
-            chatContent.innerHTML = '';
-            currentPageContext = {
-                title: pageTitle,
-                url: pageUrl,
-                text: pageText
-            };
-            currentCapturedPageContext = null;
-
-            addSystemMessage(
-                i18n('askWebpageReadyMsg', 'Loaded "$1". Ask a question about this page.')
-                    .replace('$1', pageTitle)
-            );
-
-        } catch (error) {
-            console.error('[Local AI Assistant] Ask Webpage error:', error);
-            showToast(error.message || 'Failed to extract page context.');
         }
     });
 
@@ -712,30 +840,60 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
 
     async function sendAdditionalMessage() {
-        const message = messageInput.value.trim();
-        const preparedCapturedImage = currentCapturedPageContext?.imageData || null;
-        // Allow sending if there's an image even if there's no text (we'll use default prompt)
-        if (isProcessing) return;
-        if (!message && preparedCapturedImage && !currentImageData) {
-            showToast(i18n('capturePageQuestionRequired', 'Enter a question to send with the captured screen.'));
-            return;
+        try {
+            const message = messageInput.value.trim();
+            const preparedCapturedImage = currentCapturedPageContext?.imageData || null;
+            // Allow sending if there's an image even if there's no text (we'll use default prompt)
+            if (isProcessing) return;
+            if (!message && preparedCapturedImage && !currentImageData) {
+                showToast(i18n('capturePageQuestionRequired', 'Enter a question to send with the captured screen.'));
+                return;
+            }
+            if (!message && !currentImageData) return;
+
+            // Reset scroll lock when user sends a new message
+            userScrolledUp = false;
+
+            messageInput.value = '';
+            messageInput.style.height = 'auto';
+
+            let finalMessage = message;
+            if (currentImageData && !finalMessage) {
+                // Use default prompt if image is attached but no text is provided
+                settings = await chrome.storage.sync.get(getDefaultSettings());
+                finalMessage = settings.visionPrompt;
+            }
+
+            if (!currentImageData && !preparedCapturedImage && finalMessage) {
+                settings = await chrome.storage.sync.get(getDefaultSettings());
+                const isFirstTurn = conversationHistory.length === 0 && !lastResponseId;
+
+                let routingDecision = { route: 'general', confidence: null };
+                try {
+                    routingDecision = await classifyMessageIntentWithLLM(finalMessage, { isFirstTurn });
+                } catch (routingError) {
+                    console.warn('[Local AI Assistant] Intent classification failed:', routingError);
+                }
+
+                if (routingDecision.route === 'current_page') {
+                    clearImageData();
+                    const { pageTitle, isNewContext } = await loadCurrentPageContext('auto');
+                    if (isNewContext || currentPageContext?.source !== 'auto') {
+                        addSystemMessage(
+                            i18n('autoWebpageContextMsg', 'Using "$1" as context for this question.')
+                                .replace('$1', pageTitle)
+                        );
+                    }
+                } else if (currentPageContext?.source === 'auto') {
+                    currentPageContext = null;
+                }
+            }
+
+            await sendMessage(finalMessage);
+        } catch (error) {
+            console.error('[Local AI Assistant] Send additional message error:', error);
+            showToast(error.message || 'Failed to prepare message.');
         }
-        if (!message && !currentImageData) return;
-
-        // Reset scroll lock when user sends a new message
-        userScrolledUp = false;
-
-        messageInput.value = '';
-        messageInput.style.height = 'auto';
-
-        let finalMessage = message;
-        if (currentImageData && !finalMessage) {
-            // Use default prompt if image is attached but no text is provided
-            settings = await chrome.storage.sync.get(getDefaultSettings());
-            finalMessage = settings.visionPrompt;
-        }
-
-        await sendMessage(finalMessage);
     }
 
     async function sendMessage(userMessage, displayMessage = null) {
@@ -750,6 +908,24 @@ document.addEventListener('DOMContentLoaded', async () => {
         const messageToDisplay = displayMessage || userMessage;
         const preparedCapturedImage = currentCapturedPageContext?.imageData || null;
         const activeImageData = currentImageData || preparedCapturedImage;
+
+        if (currentPageContext && !activeImageData) {
+            try {
+                const syncResult = await syncCurrentPageContextWithActiveTab();
+                if (syncResult.changed && syncResult.navigation) {
+                    addSystemMessage(
+                        i18n('webpageNavigationMsg', 'The current page moved from "$1" ($2) to "$3" ($4), so the context was refreshed.')
+                            .replace('$1', syncResult.navigation.fromTitle)
+                            .replace('$2', syncResult.navigation.fromUrl)
+                            .replace('$3', syncResult.navigation.toTitle)
+                            .replace('$4', syncResult.navigation.toUrl)
+                    );
+                }
+            } catch (syncError) {
+                console.warn('[Local AI Assistant] Failed to sync page context before sending:', syncError);
+            }
+        }
+
         const requestUserMessage = activeImageData && currentCapturedPageContext && !currentImageData
             ? buildCapturedPageQuestionPrompt(userMessage)
             : (currentPageContext && !activeImageData
@@ -793,6 +969,9 @@ document.addEventListener('DOMContentLoaded', async () => {
         // Clear image data so UI updates instantly (but we keep a local reference)
         clearImageData();
         currentCapturedPageContext = null;
+        if (currentPageContext?.pendingNavigation) {
+            delete currentPageContext.pendingNavigation;
+        }
 
         // Create assistant bubble with loading indicator
         const assistantBubble = addBubble('', 'assistant', true);

@@ -71,6 +71,14 @@
         "message": "Loaded \"$1\". Ask a question about this page.",
         "description": "System message displayed when webpage question mode is ready"
     },
+    "autoWebpageContextMsg": {
+        "message": "Using \"$1\" as context for this question.",
+        "description": "System message displayed when webpage context is automatically applied"
+    },
+    "webpageNavigationMsg": {
+        "message": "The current page moved from \"$1\" ($2) to \"$3\" ($4), so the context was refreshed.",
+        "description": "System message displayed when webpage context follows a navigation change"
+    },
     "extName": {
         "message": "Local AI Assistant (LLM)",
         "description": "Extension name"
