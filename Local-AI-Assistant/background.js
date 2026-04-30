@@ -8,6 +8,7 @@ import './custom_i18n.js';
 const MENU_ID_TEXT = 'local-ai-process';
 const MENU_ID_IMAGE = 'local-ai-vision';
 const MENU_ID_ENHANCE = 'local-ai-enhance';
+const ACTIVE_WEB_TAB_KEY = 'activeWebTab';
 
 // Get i18n message helper
 function i18n(key, fallback = '') {
@@ -20,7 +21,7 @@ function getDefaultSettings() {
         serverAddress: 'localhost:1234',
         apiKey: '',
         modelKey: '',
-        maxTokens: 4096,
+        maxTokens: 14096,
         temperature: 0.7,
         maxHistory: 10,
         useStreaming: false,
@@ -63,6 +64,59 @@ let currentHasSelection = false;
 let cachedSettings = getDefaultSettings();
 const openSidePanelWindowIds = new Set();
 chrome.storage.sync.get(getDefaultSettings()).then(s => { cachedSettings = s; });
+
+function isTrackableWebTab(tab) {
+    if (!tab || !tab.id || !tab.windowId || !tab.url || !tab.active) return false;
+
+    const extensionUrl = chrome.runtime.getURL('');
+    return /^https?:\/\//i.test(tab.url) && !tab.url.startsWith(extensionUrl);
+}
+
+async function rememberActiveWebTab(tab) {
+    if (!isTrackableWebTab(tab)) return;
+
+    await chrome.storage.session.set({
+        [ACTIVE_WEB_TAB_KEY]: {
+            tabId: tab.id,
+            windowId: tab.windowId,
+            url: tab.url,
+            title: tab.title || 'Webpage',
+            updatedAt: Date.now()
+        }
+    });
+}
+
+async function rememberActiveWebTabByWindow(windowId) {
+    if (!windowId || windowId === chrome.windows.WINDOW_ID_NONE) return;
+
+    const tabs = await chrome.tabs.query({ active: true, windowId });
+    if (tabs && tabs[0]) {
+        await rememberActiveWebTab(tabs[0]);
+    }
+}
+
+chrome.tabs.onActivated.addListener(({ tabId, windowId }) => {
+    chrome.tabs.get(tabId).then(rememberActiveWebTab).catch(error => {
+        console.warn('[Local AI Assistant] Failed to track activated tab:', error);
+    });
+    rememberActiveWebTabByWindow(windowId).catch(error => {
+        console.warn('[Local AI Assistant] Failed to track active window tab:', error);
+    });
+});
+
+chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+    if (changeInfo.url || changeInfo.title || changeInfo.status === 'complete') {
+        rememberActiveWebTab(tab).catch(error => {
+            console.warn('[Local AI Assistant] Failed to track updated tab:', error);
+        });
+    }
+});
+
+chrome.windows.onFocusChanged.addListener((windowId) => {
+    rememberActiveWebTabByWindow(windowId).catch(error => {
+        console.warn('[Local AI Assistant] Failed to track focused window tab:', error);
+    });
+});
 
 if (chrome.sidePanel?.onOpened) {
     chrome.sidePanel.onOpened.addListener((info) => {
@@ -212,6 +266,10 @@ function closeSidePanel(windowId) {
 }
 
 chrome.action.onClicked.addListener((tab) => {
+    rememberActiveWebTab(tab).catch(error => {
+        console.warn('[Local AI Assistant] Failed to track action tab:', error);
+    });
+
     if (chrome.sidePanel && tab && tab.windowId) {
         if (openSidePanelWindowIds.has(tab.windowId)) {
             closeSidePanel(tab.windowId);
@@ -234,6 +292,10 @@ chrome.action.onClicked.addListener((tab) => {
 });
 
 chrome.contextMenus.onClicked.addListener((info, tab) => {
+    rememberActiveWebTab(tab).catch(error => {
+        console.warn('[Local AI Assistant] Failed to track context menu tab:', error);
+    });
+
     // Open side panel synchronously to preserve user gesture token
     if (cachedSettings && cachedSettings.useSidePanel && chrome.sidePanel && tab && tab.windowId) {
         chrome.sidePanel.open({ windowId: tab.windowId }).catch(e => console.error('[Local AI Assistant] Failed to open side panel:', e));

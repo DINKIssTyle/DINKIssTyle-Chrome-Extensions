@@ -103,7 +103,7 @@ function getApiBaseUrl(serverAddress, fallback = 'localhost:1234') {
 }
 
 function extractFirstJsonObject(text) {
-    const source = (text || '').trim();
+    const source = (text || '').replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
     if (!source) return null;
 
     try {
@@ -118,6 +118,43 @@ function extractFirstJsonObject(text) {
             return JSON.parse(fencedMatch[1]);
         } catch (error) {
             // Continue to brace extraction below
+        }
+    }
+
+    for (let start = source.indexOf('{'); start !== -1; start = source.indexOf('{', start + 1)) {
+        let depth = 0;
+        let inString = false;
+        let escaped = false;
+
+        for (let i = start; i < source.length; i++) {
+            const char = source[i];
+
+            if (inString) {
+                if (escaped) {
+                    escaped = false;
+                } else if (char === '\\') {
+                    escaped = true;
+                } else if (char === '"') {
+                    inString = false;
+                }
+                continue;
+            }
+
+            if (char === '"') {
+                inString = true;
+            } else if (char === '{') {
+                depth += 1;
+            } else if (char === '}') {
+                depth -= 1;
+
+                if (depth === 0) {
+                    try {
+                        return JSON.parse(source.slice(start, i + 1));
+                    } catch (error) {
+                        break;
+                    }
+                }
+            }
         }
     }
 
@@ -142,12 +179,15 @@ let currentImageData = null;
 let isVisionMode = false;
 let currentPageContext = null;
 let currentCapturedPageContext = null;
+const ACTIVE_WEB_TAB_KEY = 'activeWebTab';
+const CHAT_STATE_KEY = 'chatState';
 
 // Scroll state
 let userScrolledUp = false;
 let scrollRafId = null;
 let lastResponseId = null; // For LM Studio stateful chat
 let abortController = null; // For cancelling active requests
+let saveChatStateTimer = null;
 
 document.addEventListener('DOMContentLoaded', async () => {
     // Initialize custom i18n
@@ -180,6 +220,83 @@ document.addEventListener('DOMContentLoaded', async () => {
         quickActionsContainer.style.display = 'none';
     }
 
+    async function restoreChatState() {
+        const sessionData = await chrome.storage.session.get([CHAT_STATE_KEY]);
+        const savedState = sessionData[CHAT_STATE_KEY];
+        if (!savedState) return false;
+
+        conversationHistory = Array.isArray(savedState.conversationHistory)
+            ? savedState.conversationHistory
+            : [];
+        lastAssistantResponse = savedState.lastAssistantResponse || '';
+        lastResponseId = savedState.lastResponseId || null;
+        currentPageContext = savedState.currentPageContext || null;
+        currentCapturedPageContext = savedState.currentCapturedPageContext || null;
+        currentImageData = savedState.currentImageData || null;
+        isVisionMode = !!savedState.isVisionMode;
+
+        chatContent.innerHTML = savedState.chatHtml || '';
+
+        if (currentImageData) {
+            imagePreview.src = currentImageData;
+            imagePreviewContainer.style.display = 'inline-block';
+        } else {
+            imagePreview.src = '';
+            imagePreviewContainer.style.display = 'none';
+        }
+
+        scrollToBottom(true);
+        return chatContent.innerHTML !== '' || conversationHistory.length > 0;
+    }
+
+    function getPersistedChatHtml() {
+        const clonedContent = chatContent.cloneNode(true);
+
+        clonedContent.querySelectorAll('.typing-indicator, .progress-status, .model-load-status').forEach(el => el.remove());
+        clonedContent.querySelectorAll('.streaming').forEach(el => {
+            el.classList.remove('streaming');
+            if (!el.textContent.trim() && !el.querySelector('img')) {
+                el.remove();
+            }
+        });
+
+        return clonedContent.innerHTML;
+    }
+
+    function getSerializableChatState() {
+        return {
+            conversationHistory,
+            lastAssistantResponse,
+            lastResponseId,
+            currentPageContext,
+            currentCapturedPageContext,
+            currentImageData,
+            isVisionMode,
+            chatHtml: getPersistedChatHtml(),
+            updatedAt: Date.now()
+        };
+    }
+
+    async function saveChatStateNow() {
+        if (saveChatStateTimer) {
+            clearTimeout(saveChatStateTimer);
+            saveChatStateTimer = null;
+        }
+
+        try {
+            await chrome.storage.session.set({ [CHAT_STATE_KEY]: getSerializableChatState() });
+        } catch (error) {
+            console.warn('[Local AI Assistant] Failed to save chat state:', error);
+        }
+    }
+
+    function scheduleSaveChatState() {
+        if (saveChatStateTimer) clearTimeout(saveChatStateTimer);
+        saveChatStateTimer = setTimeout(() => {
+            saveChatStateNow();
+        }, 150);
+    }
+
     // Detect if user manually scrolled up — if so, pause auto-scroll
     // But NOT during active streaming (isProcessing), since content growth triggers scroll events
     chatContent.addEventListener('scroll', () => {
@@ -188,8 +305,10 @@ document.addEventListener('DOMContentLoaded', async () => {
         userScrolledUp = distanceFromBottom > 120;
     });
 
+    const restoredChatState = await restoreChatState();
+
     // Initial check for message
-    await checkInitialMessage();
+    await checkInitialMessage(restoredChatState);
 
     // Listen for new message triggers (from background.js when window is reused)
     chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
@@ -220,7 +339,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     });
 
-    async function checkInitialMessage() {
+    async function checkInitialMessage(hasRestoredChatState = false) {
         // Load settings in case they changed
         settings = await chrome.storage.sync.get(getDefaultSettings());
 
@@ -242,7 +361,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 ? sessionData.selectedText
                 : `${settings.userRequest}\n\n${sessionData.selectedText}`;
             await sendMessage(initialMessage);
-        } else if (conversationHistory.length === 0 && chatContent.innerHTML === '') {
+        } else if (!hasRestoredChatState && conversationHistory.length === 0 && chatContent.innerHTML === '') {
             addSystemMessage(chrome.i18n.getMessage('noTextSelected') || 'No text selected. Use context menu on selected text.');
         }
     }
@@ -405,6 +524,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         imagePreview.src = base64Url;
         imagePreviewContainer.style.display = 'inline-block';
         messageInput.focus();
+        scheduleSaveChatState();
     }
 
     // Function to clear image data
@@ -412,6 +532,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         currentImageData = null;
         imagePreview.src = '';
         imagePreviewContainer.style.display = 'none';
+        scheduleSaveChatState();
     }
 
     removeImageBtn.addEventListener('click', () => {
@@ -443,8 +564,15 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     });
 
-    settingsBtn.addEventListener('click', () => {
+    settingsBtn.addEventListener('click', async () => {
+        await saveChatStateNow();
         window.location.href = chrome.runtime.getURL('popup.html?returnToChat=1');
+    });
+
+    window.addEventListener('pagehide', () => {
+        chrome.storage.session.set({ [CHAT_STATE_KEY]: getSerializableChatState() }).catch(error => {
+            console.warn('[Local AI Assistant] Failed to save chat state during pagehide:', error);
+        });
     });
 
     copyBtn.addEventListener('click', () => {
@@ -465,22 +593,59 @@ document.addEventListener('DOMContentLoaded', async () => {
         isVisionMode = false;
         clearImageData();
         addSystemMessage(chrome.i18n.getMessage('conversationCleared') || 'Conversation cleared. Send a new message.');
+        saveChatStateNow();
     });
+
+    function isReadableWebTab(tab) {
+        if (!tab || !tab.id || !tab.windowId || !tab.url) return false;
+
+        const extensionUrl = chrome.runtime.getURL('');
+        return /^https?:\/\//i.test(tab.url) && !tab.url.startsWith(extensionUrl);
+    }
+
+    async function resolveActiveWebTab() {
+        const sessionData = await chrome.storage.session.get([ACTIVE_WEB_TAB_KEY]);
+        const trackedTab = sessionData[ACTIVE_WEB_TAB_KEY];
+
+        if (trackedTab?.tabId) {
+            try {
+                const tab = await chrome.tabs.get(trackedTab.tabId);
+                if (isReadableWebTab(tab) && tab.active) {
+                    return tab;
+                }
+            } catch (error) {
+                console.warn('[Local AI Assistant] Failed to use tracked active tab:', error);
+            }
+        }
+
+        const windows = await chrome.windows.getAll({ windowTypes: ['normal'], populate: true });
+        const focusedWindow = windows.find(win => win.focused);
+        const candidateWindows = focusedWindow
+            ? [focusedWindow, ...windows.filter(win => win.id !== focusedWindow.id)]
+            : windows;
+
+        for (const win of candidateWindows) {
+            const tab = (win.tabs || []).find(candidate => candidate.active && isReadableWebTab(candidate));
+            if (tab) {
+                await chrome.storage.session.set({
+                    [ACTIVE_WEB_TAB_KEY]: {
+                        tabId: tab.id,
+                        windowId: tab.windowId,
+                        url: tab.url,
+                        title: tab.title || 'Webpage',
+                        updatedAt: Date.now()
+                    }
+                });
+                return tab;
+            }
+        }
+
+        throw new Error("No active webpage tab found.");
+    }
 
     // Reusable function to get active webpage context
     async function getWebpageInfo() {
-        // Find the last focused normal window (not this popup/sidepanel if it's standalone)
-        const lastWindow = await chrome.windows.getLastFocused({ windowTypes: ['normal'] });
-        if (!lastWindow) {
-            throw new Error("No active browser window found.");
-        }
-
-        const tabs = await chrome.tabs.query({ active: true, windowId: lastWindow.id });
-        if (!tabs || tabs.length === 0) {
-            throw new Error("No active tab found.");
-        }
-
-        const activeTab = tabs[0];
+        const activeTab = await resolveActiveWebTab();
 
         // Cannot script chrome:// or edge:// URLs
         if (activeTab.url.startsWith('chrome://') || activeTab.url.startsWith('edge://')) {
@@ -616,6 +781,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             source
         };
         currentCapturedPageContext = null;
+        scheduleSaveChatState();
 
         return {
             pageTitle,
@@ -660,11 +826,74 @@ document.addEventListener('DOMContentLoaded', async () => {
                 toUrl: pageUrl || '-'
             }
         };
+        scheduleSaveChatState();
 
         return {
             changed: true,
             navigation: currentPageContext.pendingNavigation
         };
+    }
+
+    function classifyMessageIntentLocally(userMessage, options = {}) {
+        const { isFirstTurn = false } = options;
+        const text = (userMessage || '').trim();
+        const normalized = text.toLowerCase().replace(/\s+/g, ' ');
+
+        if (!normalized) {
+            return { route: 'general', confidence: 1, reasoning: 'Empty message.' };
+        }
+
+        const explicitPagePattern = /(?:current\s+)?(?:web\s*)?page|webpage|article|post|site|screen|tab|this\s+(?:page|article|post|site|screen)|the\s+(?:page|article|post|site)|visible\s+(?:text|content)|page\s+content|페이지|웹페이지|현재\s*(?:페이지|탭|화면)|이\s*(?:페이지|글|기사|사이트|화면|내용)|해당\s*(?:페이지|글|기사|사이트|내용)|본문|기사|사이트|화면|탭/;
+        const pageActionPattern = /summari[sz]e|summary|translate|explain|analy[sz]e|review|rewrite|proofread|compare|extract|find|what\s+does\s+this\s+mean|요약|정리|번역|해석|설명|분석|검토|찾아|추출|비교|무슨\s*뜻|무슨\s*말/;
+        const deicticPattern = /\b(this|that|it|here|above|below|these|those)\b|이거|이것|그거|그것|여기|위\s*내용|아래\s*내용|방금|보고\s*있는/;
+
+        if (explicitPagePattern.test(normalized)) {
+            return {
+                route: 'current_page',
+                confidence: 0.95,
+                reasoning: 'The message explicitly refers to the current page or visible page content.'
+            };
+        }
+
+        if (pageActionPattern.test(normalized) && (deicticPattern.test(normalized) || isFirstTurn)) {
+            return {
+                route: 'current_page',
+                confidence: 0.9,
+                reasoning: 'The message asks for a content-processing action with page-like or ambiguous context.'
+            };
+        }
+
+        if (isFirstTurn && deicticPattern.test(normalized)) {
+            return {
+                route: 'current_page',
+                confidence: 0.85,
+                reasoning: 'The first turn uses an ambiguous reference that should use the active page as context.'
+            };
+        }
+
+        return null;
+    }
+
+    async function classifyMessageIntent(userMessage, options = {}) {
+        const localDecision = classifyMessageIntentLocally(userMessage, options);
+        if (localDecision) {
+            return localDecision;
+        }
+
+        try {
+            return await classifyMessageIntentWithLLM(userMessage, options);
+        } catch (routingError) {
+            const fallbackRoute = options.isFirstTurn || currentPageContext?.source === 'auto'
+                ? 'current_page'
+                : 'general';
+
+            console.warn(`[Local AI Assistant] Intent classification failed; defaulting to ${fallbackRoute}:`, routingError);
+            return {
+                route: fallbackRoute,
+                confidence: null,
+                reasoning: 'Intent classification failed, so the assistant used the safest available fallback route.'
+            };
+        }
     }
 
     async function classifyMessageIntentWithLLM(userMessage, options = {}) {
@@ -702,7 +931,7 @@ Fallback Rule:
                     content: userMessage
                 }
             ],
-            max_tokens: 80,
+            max_tokens: 160,
             temperature: 0,
             stream: false
         };
@@ -802,20 +1031,11 @@ Fallback Rule:
             // Ensure settings are completely up to date
             settings = await chrome.storage.sync.get(getDefaultSettings());
 
-            // Get the active window's tab to get the title
-            const lastWindow = await chrome.windows.getLastFocused({ windowTypes: ['normal'] });
-            let pageTitle = 'Webpage';
-            let tabId = null;
-            if (lastWindow) {
-                const tabs = await chrome.tabs.query({ active: true, windowId: lastWindow.id });
-                if (tabs && tabs.length > 0) {
-                    pageTitle = tabs[0].title || 'Webpage';
-                    tabId = tabs[0].id;
-                }
-            }
+            const activeTab = await resolveActiveWebTab();
+            const pageTitle = activeTab.title || 'Webpage';
 
             // Capture the visible tab
-            const dataUrl = await chrome.tabs.captureVisibleTab(lastWindow.id, { format: 'png' });
+            const dataUrl = await chrome.tabs.captureVisibleTab(activeTab.windowId, { format: 'png' });
             if (!dataUrl) {
                 throw new Error("Failed to capture screen. Ensure you are on a valid webpage.");
             }
@@ -837,6 +1057,7 @@ Fallback Rule:
                 i18n('capturePageReadyMsg', 'Captured "$1". Ask a question about this screen.')
                     .replace('$1', pageTitle)
             );
+            saveChatStateNow();
 
         } catch (error) {
             console.error('[Local AI Assistant] Capture Webpage error:', error);
@@ -858,6 +1079,8 @@ Fallback Rule:
 
             // Reset scroll lock when user sends a new message
             userScrolledUp = false;
+            isProcessing = true;
+            updateSendButtonState();
 
             messageInput.value = '';
             messageInput.style.height = 'auto';
@@ -869,16 +1092,15 @@ Fallback Rule:
                 finalMessage = settings.visionPrompt;
             }
 
+            let userBubbleAlreadyRendered = false;
             if (!currentImageData && !preparedCapturedImage && finalMessage) {
+                addBubble(finalMessage, 'user');
+                userBubbleAlreadyRendered = true;
+
                 settings = await chrome.storage.sync.get(getDefaultSettings());
                 const isFirstTurn = conversationHistory.length === 0 && !lastResponseId;
 
-                let routingDecision = { route: 'general', confidence: null };
-                try {
-                    routingDecision = await classifyMessageIntentWithLLM(finalMessage, { isFirstTurn });
-                } catch (routingError) {
-                    console.warn('[Local AI Assistant] Intent classification failed:', routingError);
-                }
+                const routingDecision = await classifyMessageIntent(finalMessage, { isFirstTurn });
 
                 if (routingDecision.route === 'current_page') {
                     clearImageData();
@@ -894,14 +1116,16 @@ Fallback Rule:
                 }
             }
 
-            await sendMessage(finalMessage);
+            await sendMessage(finalMessage, null, { skipUserBubble: userBubbleAlreadyRendered });
         } catch (error) {
+            isProcessing = false;
+            updateSendButtonState();
             console.error('[Local AI Assistant] Send additional message error:', error);
             showToast(error.message || 'Failed to prepare message.');
         }
     }
 
-    async function sendMessage(userMessage, displayMessage = null) {
+    async function sendMessage(userMessage, displayMessage = null, options = {}) {
         // Always reset scroll lock when a new response starts
         userScrolledUp = false;
         isProcessing = true;
@@ -938,10 +1162,12 @@ Fallback Rule:
                 : userMessage);
 
         // Add user bubble (show image thumbnail if exists)
-        if (activeImageData) {
-            addImageBubble(activeImageData, messageToDisplay);
-        } else {
-            addBubble(messageToDisplay, 'user');
+        if (!options.skipUserBubble) {
+            if (activeImageData) {
+                addImageBubble(activeImageData, messageToDisplay);
+            } else {
+                addBubble(messageToDisplay, 'user');
+            }
         }
 
         // Add user message to history (with image if exists)
@@ -977,6 +1203,7 @@ Fallback Rule:
         if (currentPageContext?.pendingNavigation) {
             delete currentPageContext.pendingNavigation;
         }
+        scheduleSaveChatState();
 
         // Create assistant bubble with loading indicator
         const assistantBubble = addBubble('', 'assistant', true);
@@ -1031,6 +1258,7 @@ Fallback Rule:
             updateSendButtonState();
             messageInput.focus();
             scrollToBottom();
+            saveChatStateNow();
         }
     }
 
@@ -1083,6 +1311,7 @@ Fallback Rule:
 
         bubble.classList.remove('streaming');
         bubble.innerHTML = renderMarkdown(content);
+        scheduleSaveChatState();
     }
 
     async function streamResponse(messages, bubble) {
@@ -1204,6 +1433,7 @@ Fallback Rule:
         lastAssistantResponse = fullContent;
         bubble.classList.remove('streaming');
         showReasoningStatus(bubble, null, true, settings.useThinking);
+        scheduleSaveChatState();
     }
 
     // =========================================================================
@@ -1437,6 +1667,7 @@ Fallback Rule:
         lastAssistantResponse = fullContent;
         bubble.classList.remove('streaming');
         showReasoningStatus(bubble, null, true, settings.useThinking);
+        scheduleSaveChatState();
     }
     // Show/Hide Inline Progress Helper
     function showInlineProgress(bubble, type, text, pct = 0, isDone = false) {
@@ -1560,6 +1791,9 @@ Fallback Rule:
 
         chatContent.appendChild(bubble);
         scrollToBottom();
+        if (!isLoading) {
+            scheduleSaveChatState();
+        }
         return bubble;
     }
 
@@ -1580,6 +1814,7 @@ Fallback Rule:
         bubble.appendChild(textDiv);
         chatContent.appendChild(bubble);
         scrollToBottom();
+        scheduleSaveChatState();
         return bubble;
     }
 
@@ -1589,6 +1824,7 @@ Fallback Rule:
         div.style.opacity = '0.6';
         div.textContent = message;
         chatContent.appendChild(div);
+        scheduleSaveChatState();
     }
 
     function scrollToBottom(force = false) {
