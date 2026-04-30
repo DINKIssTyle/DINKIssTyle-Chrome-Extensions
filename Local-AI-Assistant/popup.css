@@ -3,6 +3,13 @@
     Copyright (C) 2026 DINKI'ssTyle. All rights reserved.
 */
 
+@font-face {
+    font-family: "Material Symbols Round";
+    src: url("lib/material-icons-round.woff2") format("woff2");
+    font-style: normal;
+    font-weight: 100 700;
+}
+
 :root {
     color-scheme: light;
     --bg-base: #f3f6fb;
@@ -68,16 +75,31 @@ body {
         linear-gradient(180deg, var(--bg-base), color-mix(in srgb, var(--bg-base) 82%, black 18%));
 }
 
+body.settings-from-chat {
+    width: 100%;
+    min-width: 320px;
+    min-height: 100vh;
+    user-select: auto;
+}
+
 .container {
     display: flex;
     flex-direction: column;
     gap: 16px;
     padding: 16px;
-    border: 1px solid var(--border-soft);
-    border-radius: 18px;
-    background: var(--bg-surface);
+    border: none;
+    border-radius: 8px;
+    background: transparent;
     box-shadow: var(--shadow-soft);
     backdrop-filter: blur(14px);
+}
+
+body.settings-from-chat .container {
+    min-height: 100vh;
+    padding: 0;
+    border-radius: 0;
+    box-shadow: none;
+    backdrop-filter: none;
 }
 
 .header {
@@ -86,6 +108,55 @@ body {
     gap: 12px;
     padding-bottom: 12px;
     border-bottom: 1px solid var(--border-soft);
+}
+
+.back-btn {
+    display: none;
+    align-items: center;
+    justify-content: center;
+    width: 34px;
+    height: 34px;
+    flex-shrink: 0;
+    border: 1px solid var(--border-soft);
+    border-radius: 10px;
+    color: var(--text-primary);
+    background: color-mix(in srgb, var(--bg-surface-strong) 82%, transparent);
+    cursor: pointer;
+    transition: background-color 0.2s ease, transform 0.15s ease;
+}
+
+.back-btn:hover {
+    background: var(--bg-input-hover);
+    transform: translateY(-1px);
+}
+
+.settings-from-chat .back-btn {
+    display: inline-flex;
+}
+
+.settings-from-chat .open-chat-btn {
+    display: none;
+}
+
+.settings-from-chat .logo,
+.settings-from-chat .subtitle {
+    display: none;
+}
+
+.material-symbols-round {
+    font-family: "Material Symbols Round";
+    font-weight: normal;
+    font-style: normal;
+    font-size: 22px;
+    line-height: 1;
+    letter-spacing: normal;
+    text-transform: none;
+    display: inline-block;
+    white-space: nowrap;
+    word-wrap: normal;
+    direction: ltr;
+    -webkit-font-smoothing: antialiased;
+    font-feature-settings: "liga";
 }
 
 .logo {

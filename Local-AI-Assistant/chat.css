@@ -124,9 +124,9 @@ body {
 
 .header {
     display: flex;
-    justify-content: space-between;
+    justify-content: flex-end;
     align-items: center;
-    padding: 12px 16px;
+    padding: 3px 10px;
     background: var(--bg-header);
     color: var(--text-on-accent);
     flex-shrink: 0;
@@ -134,9 +134,10 @@ body {
 }
 
 .header-left {
-    display: flex;
+    display: none;
     align-items: center;
     gap: 10px;
+    min-width: 0;
 }
 
 .header-left .logo {
@@ -147,20 +148,24 @@ body {
 .header-left h1 {
     font-size: 16px;
     font-weight: 700;
-    letter-spacing: -0.02em;
+    letter-spacing: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 .header-right {
     display: flex;
     gap: 8px;
+    flex-shrink: 0;
 }
 
 .header-btn {
     background: var(--bg-header-btn);
     border: 1px solid rgba(255, 255, 255, 0.12);
-    border-radius: 10px;
-    min-width: 40px;
-    height: 38px;
+    border-radius: 12px;
+    min-width: 24px;
+    height: 30px;
     padding: 0 9px;
     cursor: pointer;
     color: inherit;

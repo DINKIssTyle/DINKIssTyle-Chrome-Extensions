@@ -89,6 +89,15 @@ function applyI18n() {
                 element.placeholder = message;
             }
         });
+
+        // Fallback title translations
+        document.querySelectorAll('[data-i18n-title]').forEach(element => {
+            const key = element.getAttribute('data-i18n-title');
+            const message = chrome.i18n.getMessage(key);
+            if (message) {
+                element.title = message;
+            }
+        });
     }
 }
 
@@ -98,8 +107,23 @@ document.addEventListener('DOMContentLoaded', async () => {
         await window.ci18n.init();
     }
 
+    const urlParams = new URLSearchParams(window.location.search);
+    const shouldReturnToChat = urlParams.get('returnToChat') === '1';
+
     // Apply translations
     applyI18n();
+
+    if (shouldReturnToChat) {
+        document.body.classList.add('settings-from-chat');
+        const title = document.querySelector('.title-group h1');
+        if (title) {
+            title.textContent = i18n('settings', 'Settings');
+        }
+    }
+
+    function returnToChat() {
+        window.location.href = chrome.runtime.getURL('chat.html');
+    }
 
     const serverAddressInput = document.getElementById('serverAddress');
     const apiKeyInput = document.getElementById('apiKey');
@@ -129,6 +153,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     const uiThemeInput = document.getElementById('uiTheme');
     const saveBtn = document.getElementById('saveBtn');
     const statusText = document.getElementById('statusText');
+    const backToChatBtn = document.getElementById('backToChatBtn');
+
+    if (backToChatBtn) {
+        backToChatBtn.addEventListener('click', returnToChat);
+    }
 
     // Toggle prompt visibility based on toggle states
     function updatePromptVisibility() {
@@ -283,6 +312,11 @@ document.addEventListener('DOMContentLoaded', async () => {
                 if (statusText) {
                     statusText.textContent = i18n('saved');
                     statusText.classList.add('saved');
+
+                    if (shouldReturnToChat) {
+                        setTimeout(returnToChat, 350);
+                        return;
+                    }
 
                     setTimeout(() => {
                         statusText.textContent = i18n('settingsLoaded');

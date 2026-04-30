@@ -175,6 +175,14 @@
         "message": "채팅 지우기",
         "description": "Clear button title"
     },
+    "settings": {
+        "message": "설정",
+        "description": "Settings button title"
+    },
+    "backToChat": {
+        "message": "채팅으로 돌아가기",
+        "description": "Back button title from settings to chat"
+    },
     "enhancementError": {
         "message": "AI 서버 연결 실패. 서버가 실행 중인지 확인해 주세요.",
         "description": "Error message when text enhancement fails"

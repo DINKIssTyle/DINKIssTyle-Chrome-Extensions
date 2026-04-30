@@ -161,6 +161,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const chatContent = document.getElementById('chatContent');
     const messageInput = document.getElementById('messageInput');
     const sendBtn = document.getElementById('sendBtn');
+    const settingsBtn = document.getElementById('settingsBtn');
     const copyBtn = document.getElementById('copyBtn');
     const clearBtn = document.getElementById('clearBtn');
     const imagePreviewContainer = document.getElementById('imagePreviewContainer');
@@ -440,6 +441,10 @@ document.addEventListener('DOMContentLoaded', async () => {
         } else {
             sendAdditionalMessage();
         }
+    });
+
+    settingsBtn.addEventListener('click', () => {
+        window.location.href = chrome.runtime.getURL('popup.html?returnToChat=1');
     });
 
     copyBtn.addEventListener('click', () => {

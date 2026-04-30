@@ -61,7 +61,24 @@ function getApiBaseUrl(serverAddress, fallback = 'localhost:1234') {
 // Track current selection state for menu creation
 let currentHasSelection = false;
 let cachedSettings = getDefaultSettings();
+const openSidePanelWindowIds = new Set();
 chrome.storage.sync.get(getDefaultSettings()).then(s => { cachedSettings = s; });
+
+if (chrome.sidePanel?.onOpened) {
+    chrome.sidePanel.onOpened.addListener((info) => {
+        if (info.windowId !== undefined) {
+            openSidePanelWindowIds.add(info.windowId);
+        }
+    });
+}
+
+if (chrome.sidePanel?.onClosed) {
+    chrome.sidePanel.onClosed.addListener((info) => {
+        if (info.windowId !== undefined) {
+            openSidePanelWindowIds.delete(info.windowId);
+        }
+    });
+}
 
 async function createContextMenus(includeTextMenu = true) {
     const settings = await chrome.storage.sync.get(getDefaultSettings());
@@ -156,6 +173,66 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     }
 });
 
+function notifyChatToCheckInitialMessage() {
+    chrome.runtime.sendMessage({ action: 'newInitialMessage' }).catch(error => {
+        if (error?.message?.includes('Receiving end does not exist')) {
+            return;
+        }
+        console.warn('[Local AI Assistant] Failed to notify chat:', error);
+    });
+}
+
+async function sendMessageToChatTab(tabId) {
+    try {
+        await chrome.tabs.sendMessage(tabId, { action: 'newInitialMessage' });
+    } catch (error) {
+        if (error?.message?.includes('Receiving end does not exist')) {
+            return;
+        }
+        console.warn('[Local AI Assistant] Failed to notify chat tab:', error);
+    }
+}
+
+function closeSidePanel(windowId) {
+    openSidePanelWindowIds.delete(windowId);
+
+    if (chrome.sidePanel?.close) {
+        chrome.sidePanel.close({ windowId }).catch(error => {
+            if (error?.message?.includes('already closed')) {
+                return;
+            }
+            console.warn('[Local AI Assistant] Failed to close side panel:', error);
+        });
+        return;
+    }
+
+    chrome.sidePanel.setOptions({ enabled: false }).catch(error => {
+        console.warn('[Local AI Assistant] Failed to disable side panel:', error);
+    });
+}
+
+chrome.action.onClicked.addListener((tab) => {
+    if (chrome.sidePanel && tab && tab.windowId) {
+        if (openSidePanelWindowIds.has(tab.windowId)) {
+            closeSidePanel(tab.windowId);
+            return;
+        }
+
+        chrome.sidePanel.setOptions({ path: 'chat.html', enabled: true }).catch(e => {
+            console.warn('[Local AI Assistant] Failed to reset side panel path:', e);
+        });
+
+        chrome.sidePanel.open({ windowId: tab.windowId }).catch(e => {
+            console.error('[Local AI Assistant] Failed to open side panel:', e);
+            openChatWindow(tab);
+        });
+        openSidePanelWindowIds.add(tab.windowId);
+        return;
+    }
+
+    openChatWindow(tab);
+});
+
 chrome.contextMenus.onClicked.addListener((info, tab) => {
     // Open side panel synchronously to preserve user gesture token
     if (cachedSettings && cachedSettings.useSidePanel && chrome.sidePanel && tab && tab.windowId) {
@@ -188,7 +265,7 @@ async function handleTextSelection(selectedText, tab) {
 
     // If opened is true, it means we opened a side panel or window. We send a message
     // just in case it was already open and needs to fetch new session data.
-    chrome.runtime.sendMessage({ action: 'newInitialMessage' });
+    notifyChatToCheckInitialMessage();
 }
 
 async function handleImageSelection(srcUrl, tab) {
@@ -208,7 +285,7 @@ async function handleImageSelection(srcUrl, tab) {
     });
 
     // Notify that data is ready
-    chrome.runtime.sendMessage({ action: 'newInitialMessage' });
+    notifyChatToCheckInitialMessage();
 }
 
 // Extract protected content (emo codes, special formats) and replace with placeholders
@@ -941,7 +1018,7 @@ async function openChatWindow(tab) {
     if (settings.useSidePanel && chrome.sidePanel) {
         // We already opened the side panel synchronously in the onClicked listener.
         // Broadcast the message so the already-open panel fetches the new session data.
-        chrome.runtime.sendMessage({ action: 'newInitialMessage' });
+        notifyChatToCheckInitialMessage();
         return true;
     }
 
@@ -954,7 +1031,7 @@ async function openChatWindow(tab) {
         await chrome.windows.update(tab.windowId, { focused: true });
 
         // Notify the tab to check for new session data
-        await chrome.tabs.sendMessage(tab.id, { action: 'newInitialMessage' });
+        await sendMessageToChatTab(tab.id);
         return;
     }
 
