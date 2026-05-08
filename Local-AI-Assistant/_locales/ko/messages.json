@@ -299,6 +299,18 @@
         "message": "테마",
         "description": "Label for the UI theme selection dropdown"
     },
+    "aiProviderLabel": {
+        "message": "AI 제공자",
+        "description": "Label for AI Provider selection"
+    },
+    "providerLocal": {
+        "message": "로컬 LLM",
+        "description": "Local LLM provider option"
+    },
+    "providerGemini": {
+        "message": "Gemini Nano (내장 모델)",
+        "description": "Gemini Nano provider option"
+    },
     "langAuto": {
         "message": "자동 (브라우저 설정)",
         "description": "Auto option for language selection"

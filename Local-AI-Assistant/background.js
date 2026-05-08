@@ -18,6 +18,7 @@ function i18n(key, fallback = '') {
 // Default settings with i18n support
 function getDefaultSettings() {
     return {
+        aiProvider: 'local',
         serverAddress: 'localhost:1234',
         apiKey: '',
         modelKey: '',
@@ -899,6 +900,60 @@ async function handleTextEnhancement(tab) {
     }
 }
 
+async function callGeminiNanoForEnhancement(text, settings, signal, systemMessage, prompt) {
+    const getAIModel = () => {
+        if (typeof chrome !== 'undefined' && chrome.aiOriginTrial && chrome.aiOriginTrial.languageModel) return chrome.aiOriginTrial.languageModel;
+        if (typeof self !== 'undefined' && self.LanguageModel) return self.LanguageModel;
+        const aiObj = typeof self !== 'undefined' ? self.ai : null;
+        if (aiObj) return aiObj.languageModel || aiObj.assistant || aiObj;
+        return null;
+    };
+
+    const model = getAIModel();
+    
+    if (!model || (!model.create && !model.createTextSession)) {
+        throw new Error("Gemini Nano is not supported or not enabled. Please check chrome://flags and enable Prompt API for Gemini Nano.");
+    }
+
+    const capabilitiesMethod = model.capabilities || model.availability || model.canCreateTextSession || model.canCreateGenericSession;
+    
+    if (capabilitiesMethod) {
+        const capabilitiesInfo = await capabilitiesMethod.call(model);
+        const available = typeof capabilitiesInfo === 'string' ? capabilitiesInfo : capabilitiesInfo.available;
+        
+        if (available === 'no') {
+            throw new Error("Gemini Nano is not available on this device.");
+        } else if (available === 'after-download') {
+            throw new Error("Gemini Nano model is currently downloading. Please check chrome://components.");
+        }
+    }
+
+    console.log('[Local AI Assistant] Starting Gemini Nano enhancement request...');
+
+    let session;
+    if (model.create) {
+        session = await model.create({
+            systemPrompt: systemMessage
+        });
+    } else if (model.createTextSession) {
+        session = await model.createTextSession();
+        // Legacy API fallback
+        prompt = `System: ${systemMessage}\n\nuser: ${prompt}`;
+    } else {
+        throw new Error("Could not find session creation method on self.ai");
+    }
+
+    try {
+        const response = await session.prompt(prompt);
+        if (signal?.aborted) {
+            throw new DOMException('Aborted', 'AbortError');
+        }
+        return response;
+    } finally {
+        if (session.destroy) session.destroy();
+    }
+}
+
 async function callLLMForEnhancement(text, settings, signal = null, tabId = null, hasProtectedContent = false) {
     const apiBaseUrl = getApiBaseUrl(settings.serverAddress);
     // Build system message with placeholder preservation instruction if needed
@@ -908,42 +963,47 @@ async function callLLMForEnhancement(text, settings, signal = null, tabId = null
     }
 
     const prompt = `${settings.textEnhancementPrompt}\n\n${text}`;
-    console.log('[Local AI Assistant] Starting enhancement request...');
+    let content = '';
 
-    const fetchOptions = {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-            ...(settings.apiKey ? { 'Authorization': `Bearer ${settings.apiKey}` } : {})
-        },
-        body: JSON.stringify({
-            model: settings.modelKey || 'local-model',
-            messages: [
-                { role: 'system', content: systemMessage },
-                { role: 'user', content: prompt }
-            ],
-            max_tokens: settings.maxTokens,
-            temperature: settings.temperature,
-            stream: false
-        })
-    };
+    if (settings.aiProvider === 'gemini') {
+        content = await callGeminiNanoForEnhancement(text, settings, signal, systemMessage, prompt);
+    } else {
+        console.log('[Local AI Assistant] Starting enhancement request...');
 
-    // Add signal for abort support
-    if (signal) {
-        fetchOptions.signal = signal;
+        const fetchOptions = {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                ...(settings.apiKey ? { 'Authorization': `Bearer ${settings.apiKey}` } : {})
+            },
+            body: JSON.stringify({
+                model: settings.modelKey || 'local-model',
+                messages: [
+                    { role: 'system', content: systemMessage },
+                    { role: 'user', content: prompt }
+                ],
+                max_tokens: settings.maxTokens,
+                temperature: settings.temperature,
+                stream: false
+            })
+        };
+
+        if (signal) {
+            fetchOptions.signal = signal;
+        }
+
+        console.log('[Local AI Assistant] Sending fetch to:', `${apiBaseUrl}/v1/chat/completions`);
+        const response = await fetch(`${apiBaseUrl}/v1/chat/completions`, fetchOptions);
+        console.log('[Local AI Assistant] Fetch response received, status:', response.status);
+
+        if (!response.ok) {
+            throw new Error(`HTTP Error: ${response.status}`);
+        }
+
+        const data = await response.json();
+        console.log('[Local AI Assistant] Response data received');
+        content = data.choices?.[0]?.message?.content || '';
     }
-
-    console.log('[Local AI Assistant] Sending fetch to:', `${apiBaseUrl}/v1/chat/completions`);
-    const response = await fetch(`${apiBaseUrl}/v1/chat/completions`, fetchOptions);
-    console.log('[Local AI Assistant] Fetch response received, status:', response.status);
-
-    if (!response.ok) {
-        throw new Error(`HTTP Error: ${response.status}`);
-    }
-
-    const data = await response.json();
-    console.log('[Local AI Assistant] Response data received');
-    const content = data.choices?.[0]?.message?.content || '';
 
     // Try to parse JSON response
     try {

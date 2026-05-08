@@ -45,6 +45,7 @@ function applyI18n() {
 // Default settings with i18n support
 function getDefaultSettings() {
     return {
+        aiProvider: 'local',
         serverAddress: 'localhost:1234',
         apiKey: '',
         modelKey: '',
@@ -307,8 +308,8 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     const restoredChatState = await restoreChatState();
 
-    // Initial check for message
-    await checkInitialMessage(restoredChatState);
+    // Initial check for message (do not await to prevent blocking UI bindings)
+    checkInitialMessage(restoredChatState).catch(console.error);
 
     // Listen for new message triggers (from background.js when window is reused)
     chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
@@ -339,30 +340,39 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     });
 
+    let isCheckingInitialMessage = false;
+
     async function checkInitialMessage(hasRestoredChatState = false) {
-        // Load settings in case they changed
-        settings = await chrome.storage.sync.get(getDefaultSettings());
+        if (isCheckingInitialMessage) return;
+        isCheckingInitialMessage = true;
+        
+        try {
+            // Load settings in case they changed
+            settings = await chrome.storage.sync.get(getDefaultSettings());
 
-        const sessionData = await chrome.storage.session.get(['selectedText', 'isNewConversation', 'imageData']);
+            const sessionData = await chrome.storage.session.get(['selectedText', 'isNewConversation', 'imageData']);
 
-        if (sessionData.selectedText && sessionData.isNewConversation) {
-            // Append to conversation for new request
-            currentImageData = sessionData.imageData || null;
-            isVisionMode = isVisionMode || !!currentImageData; // Update vision mode if image is present
-            currentPageContext = null;
-            currentCapturedPageContext = null;
-            lastResponseId = null;
+            if (sessionData.selectedText && sessionData.isNewConversation) {
+                // Clear the flag IMMEDIATELY to prevent double execution
+                await chrome.storage.session.set({ isNewConversation: false });
 
-            // Clear the flag
-            await chrome.storage.session.set({ isNewConversation: false });
+                // Append to conversation for new request
+                currentImageData = sessionData.imageData || null;
+                isVisionMode = isVisionMode || !!currentImageData; // Update vision mode if image is present
+                currentPageContext = null;
+                currentCapturedPageContext = null;
+                lastResponseId = null;
 
-            // Send initial request
-            const initialMessage = currentImageData
-                ? sessionData.selectedText
-                : `${settings.userRequest}\n\n${sessionData.selectedText}`;
-            await sendMessage(initialMessage);
-        } else if (!hasRestoredChatState && conversationHistory.length === 0 && chatContent.innerHTML === '') {
-            addSystemMessage(chrome.i18n.getMessage('noTextSelected') || 'No text selected. Use context menu on selected text.');
+                // Send initial request without awaiting so it doesn't block
+                const initialMessage = currentImageData
+                    ? sessionData.selectedText
+                    : `${settings.userRequest}\n\n${sessionData.selectedText}`;
+                sendMessage(initialMessage).catch(console.error);
+            } else if (!hasRestoredChatState && conversationHistory.length === 0 && chatContent.innerHTML === '') {
+                addSystemMessage(chrome.i18n.getMessage('noTextSelected') || 'No text selected. Use context menu on selected text.');
+            }
+        } finally {
+            isCheckingInitialMessage = false;
         }
     }
 
@@ -880,6 +890,14 @@ document.addEventListener('DOMContentLoaded', async () => {
             return localDecision;
         }
 
+        if (settings.aiProvider === 'gemini') {
+            return {
+                route: 'current_page',
+                confidence: 1.0,
+                reasoning: 'Bypassing intent classification for Gemini Nano'
+            };
+        }
+
         try {
             return await classifyMessageIntentWithLLM(userMessage, options);
         } catch (routingError) {
@@ -902,12 +920,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         const firstTurnInstruction = isFirstTurn
             ? `\nFirst-turn rule:\n- This is the first user turn after the history was cleared or a new conversation started.\n- On the first turn, evaluate more aggressively in favor of "current_page".\n- If the first-turn request could plausibly be about the currently open page, choose "current_page".`
             : '';
-        const requestBody = {
-            model: settings.modelKey || 'local-model',
-            messages: [
-                {
-                    role: 'system',
-                    content: `You are an intent router for a web browser assistant.
+            
+        const systemContent = `You are an intent router for a web browser assistant.
 Your task is to classify whether the user's query requires the content of the currently open webpage to answer.
 
 Analyze the user's intent and output strictly in JSON format matching the schema below. Do not include markdown formatting (like \`\`\`json), explanations, or any other text outside the JSON object.
@@ -924,7 +938,56 @@ Classification Rules:
 - "general": Choose this when the user is asking a general knowledge question, making a conversational query, or asking about general web development where the current webpage's specific content is entirely irrelevant.
 
 Fallback Rule:
-- If the context is ambiguous, relies on unclear pronouns, or if you are unsure, default to "current_page" to ensure the assistant has maximum context.${firstTurnInstruction}`
+- If the context is ambiguous, relies on unclear pronouns, or if you are unsure, default to "current_page" to ensure the assistant has maximum context.${firstTurnInstruction}`;
+
+        if (settings.aiProvider === 'gemini') {
+            const getAIModel = () => {
+                if (typeof chrome !== 'undefined' && chrome.aiOriginTrial && chrome.aiOriginTrial.languageModel) return chrome.aiOriginTrial.languageModel;
+                if (typeof self !== 'undefined' && self.LanguageModel) return self.LanguageModel;
+                const aiObj = typeof self !== 'undefined' ? self.ai : null;
+                if (aiObj) return aiObj.languageModel || aiObj.assistant || aiObj;
+                return null;
+            };
+
+            const model = getAIModel();
+            
+            if (!model || (!model.create && !model.createTextSession)) {
+                let debugInfo = "Not found.";
+                try {
+                    debugInfo = `self.LanguageModel: ${typeof self.LanguageModel}, chrome.aiOriginTrial: ${typeof chrome?.aiOriginTrial}, self.ai: ${typeof self.ai}`;
+                } catch(e) {}
+                throw new Error(`Gemini Nano not available for intent classification. Debug: ${debugInfo}`);
+            }
+
+            let session;
+            let promptText = userMessage;
+            if (model.create) {
+                session = await model.create({
+                    systemPrompt: systemContent
+                });
+            } else {
+                session = await model.createTextSession();
+                promptText = `System: ${systemContent}\n\nuser: ${userMessage}`;
+            }
+
+            try {
+                const response = await session.prompt(promptText);
+                const parsed = extractFirstJsonObject(response);
+                if (!parsed || (parsed.route !== 'current_page' && parsed.route !== 'general')) {
+                    throw new Error('Intent classification returned invalid JSON.');
+                }
+                return parsed;
+            } finally {
+                if (session.destroy) session.destroy();
+            }
+        }
+
+        const requestBody = {
+            model: settings.modelKey || 'local-model',
+            messages: [
+                {
+                    role: 'system',
+                    content: systemContent
                 },
                 {
                     role: 'user',
@@ -1219,7 +1282,9 @@ Fallback Rule:
                 ...conversationHistory
             ];
 
-            if (settings.llmMode === 'lmstudio') {
+            if (settings.aiProvider === 'gemini') {
+                await geminiNanoResponse(messages, assistantBubble);
+            } else if (settings.llmMode === 'lmstudio') {
                 // Use LM Studio native stateful API which supports multimodal using input array
                 await lmStudioStreamResponse(requestUserMessage, requestImageData, assistantBubble);
             } else if (settings.useStreaming) {
@@ -1276,6 +1341,132 @@ Fallback Rule:
             sendBtn.title = chrome.i18n.getMessage('send') || 'Send';
             sendBtn.classList.remove('stop-btn');
             sendBtn.disabled = false;
+        }
+    }
+
+    async function geminiNanoResponse(messages, bubble) {
+        const getAIModel = () => {
+            if (typeof chrome !== 'undefined' && chrome.aiOriginTrial && chrome.aiOriginTrial.languageModel) return chrome.aiOriginTrial.languageModel;
+            if (typeof self !== 'undefined' && self.LanguageModel) return self.LanguageModel;
+            const aiObj = typeof self !== 'undefined' ? self.ai : null;
+            if (aiObj) return aiObj.languageModel || aiObj.assistant || aiObj;
+            return null;
+        };
+
+        const model = getAIModel();
+        
+        if (!model || (!model.create && !model.createTextSession)) {
+            let debugInfo = "Not found.";
+            try {
+                debugInfo = `self.LanguageModel: ${typeof self.LanguageModel}, chrome.aiOriginTrial: ${typeof chrome?.aiOriginTrial}, self.ai: ${typeof self.ai}`;
+            } catch(e) {}
+            throw new Error(`Gemini Nano is not supported or not enabled. Please check chrome://flags. Debug: ${debugInfo}`);
+        }
+
+        const capabilitiesMethod = model.capabilities || model.availability || model.canCreateTextSession || model.canCreateGenericSession;
+        
+        if (capabilitiesMethod) {
+            const capabilitiesInfo = await capabilitiesMethod.call(model);
+            const available = typeof capabilitiesInfo === 'string' ? capabilitiesInfo : capabilitiesInfo.available;
+            
+            if (available === 'no') {
+                throw new Error("Gemini Nano is not available on this device.");
+            } else if (available === 'after-download') {
+                throw new Error("Gemini Nano model is currently downloading. Please check chrome://components.");
+            }
+        }
+
+        bubble.classList.add('streaming');
+        bubble.innerHTML = '<div class="typing-indicator"><span></span><span></span><span></span></div>';
+
+        const systemMessage = messages.find(m => m.role === 'system')?.content || '';
+        
+        let promptText = "";
+        const historyForSession = [];
+        
+        for (let i = 0; i < messages.length; i++) {
+            const msg = messages[i];
+            if (msg.role === 'system') continue;
+            
+            let textContent = "";
+            if (Array.isArray(msg.content)) {
+                textContent = msg.content.find(c => c.type === 'text')?.text || "";
+            } else {
+                textContent = msg.content;
+            }
+            
+            if (i === messages.length - 1 && msg.role === 'user') {
+                promptText = textContent;
+            } else {
+                historyForSession.push({ role: msg.role === 'user' ? 'user' : 'assistant', content: textContent });
+            }
+        }
+        
+        const sessionOptions = {
+            systemPrompt: systemMessage
+        };
+        
+        if (historyForSession.length > 0) {
+            sessionOptions.initialPrompts = historyForSession;
+        }
+
+        let session;
+        if (model.create) {
+            session = await model.create(sessionOptions);
+        } else if (model.createTextSession) {
+            // Legacy API might not support initialPrompts in the same way
+            session = await model.createTextSession();
+            // Fallback: prepend system and history to prompt if legacy API
+            let fullPrompt = systemMessage ? `System: ${systemMessage}\n\n` : "";
+            for (const h of historyForSession) {
+                fullPrompt += `${h.role}: ${h.content}\n\n`;
+            }
+            fullPrompt += `user: ${promptText}`;
+            promptText = fullPrompt;
+        } else {
+            throw new Error("Could not find session creation method on window.ai");
+        }
+
+        try {
+            if (settings.useStreaming && session.promptStreaming) {
+                const stream = await session.promptStreaming(promptText);
+                let fullContent = '';
+                
+                for await (const chunk of stream) {
+                    if (abortController?.signal?.aborted) {
+                        break;
+                    }
+                    
+                    // Chrome API versions vary: some yield full accumulated text, others yield deltas.
+                    if (fullContent && chunk.startsWith(fullContent)) {
+                        // It's accumulating the full text
+                        fullContent = chunk;
+                    } else {
+                        // It's just a delta chunk
+                        fullContent += chunk;
+                    }
+                    
+                    const displayHtml = renderMarkdown(fullContent);
+                    bubble.innerHTML = displayHtml;
+                    if (!userScrolledUp) scrollToBottom();
+                }
+                
+                if (!abortController?.signal?.aborted) {
+                    conversationHistory.push({ role: 'assistant', content: fullContent });
+                    lastAssistantResponse = fullContent;
+                }
+            } else {
+                const response = await session.prompt(promptText);
+                if (abortController?.signal?.aborted) return;
+                
+                conversationHistory.push({ role: 'assistant', content: response });
+                lastAssistantResponse = response;
+                bubble.innerHTML = renderMarkdown(response);
+            }
+        } finally {
+            if (session.destroy) session.destroy();
+            bubble.classList.remove('streaming');
+            scheduleSaveChatState();
         }
     }
 

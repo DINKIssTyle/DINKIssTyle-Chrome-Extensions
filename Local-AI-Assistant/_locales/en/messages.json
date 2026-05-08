@@ -35,6 +35,18 @@
         "message": "Theme",
         "description": "Label for the UI theme selection dropdown"
     },
+    "aiProviderLabel": {
+        "message": "AI Provider",
+        "description": "Label for AI Provider selection"
+    },
+    "providerLocal": {
+        "message": "Local LLM",
+        "description": "Local LLM provider option"
+    },
+    "providerGemini": {
+        "message": "Gemini Nano (Built-in)",
+        "description": "Gemini Nano provider option"
+    },
     "langAuto": {
         "message": "Auto (Browser Setting)",
         "description": "Auto option for language selection"

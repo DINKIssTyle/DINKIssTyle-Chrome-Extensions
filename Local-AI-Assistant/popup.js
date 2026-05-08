@@ -11,6 +11,7 @@ function i18n(key, fallback = '') {
 // Default settings with i18n support
 function getDefaultSettings() {
     return {
+        aiProvider: 'local',
         serverAddress: 'localhost:1234',
         apiKey: '',
         modelKey: '',
@@ -125,6 +126,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         window.location.href = chrome.runtime.getURL('chat.html');
     }
 
+    const aiProviderInput = document.getElementById('aiProvider');
     const serverAddressInput = document.getElementById('serverAddress');
     const apiKeyInput = document.getElementById('apiKey');
     const modelKeyInput = document.getElementById('modelKey');
@@ -178,11 +180,34 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     }
 
+    // Toggle visibility of provider-specific settings
+    function updateProviderVisibility() {
+        if (!aiProviderInput) return;
+        
+        const isGemini = aiProviderInput.value === 'gemini';
+        const elementsToHide = [
+            serverAddressInput ? serverAddressInput.closest('.setting-item') : null,
+            apiKeyInput ? apiKeyInput.closest('.setting-item') : null,
+            modelKeyInput ? modelKeyInput.closest('.setting-item') : null,
+            llmModeInput ? llmModeInput.closest('.setting-item') : null
+        ];
+
+        elementsToHide.forEach(el => {
+            if (el) {
+                el.style.display = isGemini ? 'none' : '';
+            }
+        });
+
+        updateModeVisibility();
+    }
+    if (aiProviderInput) aiProviderInput.addEventListener('change', updateProviderVisibility);
+
     // Toggle visibility of mode-specific settings
     function updateModeVisibility() {
         if (!llmModeInput) return;
 
-        const isLmStudio = llmModeInput.value === 'lmstudio';
+        const isGemini = aiProviderInput && aiProviderInput.value === 'gemini';
+        const isLmStudio = !isGemini && llmModeInput.value === 'lmstudio';
 
         if (mcpServerLabelContainer) {
             if (isLmStudio) {
@@ -208,6 +233,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     // Load saved settings
     const defaults = getDefaultSettings();
     chrome.storage.sync.get(defaults, (settings) => {
+        if (aiProviderInput) aiProviderInput.value = settings.aiProvider || 'local';
         if (serverAddressInput) serverAddressInput.value = normalizeServerAddress(settings.serverAddress, defaults.serverAddress);
         if (apiKeyInput) apiKeyInput.value = settings.apiKey;
         if (modelKeyInput) modelKeyInput.value = settings.modelKey;
@@ -237,6 +263,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (statusText) statusText.textContent = i18n('settingsLoaded');
 
         updatePromptVisibility();
+        updateProviderVisibility();
         updateModeVisibility();
     });
 
@@ -275,6 +302,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 ? normalizeServerAddress(serverAddressInput.value, defaults.serverAddress)
                 : defaults.serverAddress;
             const settings = {
+                aiProvider: aiProviderInput ? aiProviderInput.value : defaults.aiProvider,
                 serverAddress: normalizedServerAddress,
                 apiKey: apiKeyInput ? apiKeyInput.value.trim() : '',
                 modelKey: modelKeyInput ? modelKeyInput.value.trim() : '',

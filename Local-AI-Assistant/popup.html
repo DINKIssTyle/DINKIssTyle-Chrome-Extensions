@@ -27,6 +27,14 @@
 
         <div class="settings-group">
             <div class="setting-item">
+                <label for="aiProvider" data-i18n="aiProviderLabel">AI Provider</label>
+                <select id="aiProvider">
+                    <option value="local" data-i18n="providerLocal">Local LLM</option>
+                    <option value="gemini" data-i18n="providerGemini">Gemini Nano (Built-in)</option>
+                </select>
+            </div>
+
+            <div class="setting-item">
                 <label for="serverAddress" data-i18n="serverAddress">Server Address</label>
                 <input type="text" id="serverAddress" placeholder="localhost:1234">
                 <span class="hint" data-i18n="serverAddressHint">Address:Port only (no http:// or /v1)</span>
