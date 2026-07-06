@@ -385,6 +385,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     });
     return true;
   }
+  else if (message.action === "confirmSkipCompile") {
+    chrome.runtime.sendMessage({ action: "offscreenConfirmSkip" });
+    if (activeDownload) activeDownload.status = "compiling";
+    sendResponse({ success: true });
+  }
 
   // 10. Offscreen reports finish pipeline
   else if (message.action === "offscreenPipelineFinish") {

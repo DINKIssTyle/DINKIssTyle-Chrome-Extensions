@@ -53,11 +53,29 @@ document.addEventListener("DOMContentLoaded", async () => {
   // 1. Initial State Check (Sync with Background)
   chrome.runtime.sendMessage({ action: "getDownloadStatus" }, (response) => {
     if (response && response.activeDownload) {
-      showProgressView(response.activeDownload);
+      const state = response.activeDownload;
+      showProgressView(state);
       // Re-populate historical logs
-      if (response.activeDownload.logs) {
+      if (state.logs) {
         logTerminal.innerHTML = "";
-        response.activeDownload.logs.forEach(msg => appendLogLine(msg));
+        state.logs.forEach(msg => appendLogLine(msg));
+      }
+      
+      // Trigger decision if opened in waiting state
+      if (state.status === "waiting_decision" && !confirmOpened) {
+        confirmOpened = true;
+        setTimeout(() => {
+          const skip = confirm(`일부 세그먼트(${state.failedCount}개) 다운로드에 실패했습니다.\n실패한 조각을 제외하고 강제로 다운로드를 완료할까요?`);
+          if (skip) {
+            chrome.runtime.sendMessage({ action: "confirmSkipCompile" }, () => {
+              confirmOpened = false;
+            });
+          } else {
+            chrome.runtime.sendMessage({ action: "cancelHlsDownload" }, () => {
+              confirmOpened = false;
+            });
+          }
+        }, 300);
       }
     } else {
       if (tabId) loadMedia();
@@ -77,6 +95,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   }
 
   let showAll = false;
+  let confirmOpened = false;
 
   // Reload media list periodically if popup is open to catch async metadata updates (like resolution/duration/size)
   let reloadInterval = setInterval(() => {
@@ -444,6 +463,23 @@ document.addEventListener("DOMContentLoaded", async () => {
       // Append delta logs if they exist
       if (state.logs && state.logs.length > 0) {
         state.logs.forEach(msg => appendLogLine(msg));
+      }
+
+      // Check if waiting for user decision on failed segments
+      if (state.status === "waiting_decision" && !confirmOpened) {
+        confirmOpened = true;
+        setTimeout(() => {
+          const skip = confirm(`일부 세그먼트(${state.failedCount}개) 다운로드에 실패했습니다.\n실패한 조각을 제외하고 강제로 다운로드를 완료할까요?`);
+          if (skip) {
+            chrome.runtime.sendMessage({ action: "confirmSkipCompile" }, () => {
+              confirmOpened = false;
+            });
+          } else {
+            chrome.runtime.sendMessage({ action: "cancelHlsDownload" }, () => {
+              confirmOpened = false;
+            });
+          }
+        }, 100);
       }
 
       // Check if finished or failed

@@ -32,6 +32,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   } else if (message.action === "offscreenCancel") {
     cancelDownload();
     sendResponse({ success: true });
+  } else if (message.action === "offscreenConfirmSkip") {
+    confirmSkipCompile();
+    sendResponse({ success: true });
   }
 });
 
@@ -354,8 +357,16 @@ function fillQueue() {
 
   if (!nextSegment) {
     if (currentDownload.activeThreads === 0 && currentDownload.status === "downloading") {
-      currentDownload.status = "compiling";
-      compileSegments();
+      const failedCount = currentDownload.segments.filter(s => s.status === "failed").length;
+      if (failedCount > 0) {
+        currentDownload.status = "waiting_decision";
+        currentDownload.failedCount = failedCount;
+        log(`[warning] ${failedCount} segments failed. Waiting for user decision to skip and compile or cancel...`, "warning");
+        sendStatusUpdate({ failedCount: failedCount });
+      } else {
+        currentDownload.status = "compiling";
+        compileSegments();
+      }
     }
     return;
   }
@@ -399,7 +410,7 @@ async function downloadSegment(segment) {
       segment.retryCount++;
     } else {
       segment.status = "failed";
-      throw new Error(`Failed permanently downloading segment #${segment.index}`);
+      log(`Segment #${segment.index} permanently failed after 4 attempts: ${err.message}`, "error");
     }
   }
 }
@@ -443,7 +454,7 @@ function startSpeedTracker() {
 }
 
 // Merge & Finalize file stream
-async function compileSegments() {
+async function compileSegments(skipFailed = false) {
   log("All segments buffered. Initializing sequential compilation...", "success");
   clearInterval(currentDownload.speedTimer);
   
@@ -454,7 +465,13 @@ async function compileSegments() {
     for (let i = 0; i < total; i++) {
       const segmentKey = `${currentDownload.id}_${i}`;
       const buffer = await getSegmentFromDB(segmentKey);
-      if (!buffer) throw new Error(`Missing buffer block #${i}`);
+      if (!buffer) {
+        if (skipFailed) {
+          log(`Missing segment #${i} due to download failure. Skipping this chunk.`, "warning");
+          continue;
+        }
+        throw new Error(`Missing buffer block #${i}`);
+      }
       chunkList.push(buffer);
 
       if (i % 50 === 0 || i === total - 1) {
@@ -536,4 +553,11 @@ async function cleanUpDownload(finalStatus) {
   }).catch(() => {});
 
   currentDownload = null;
+}
+
+function confirmSkipCompile() {
+  if (!currentDownload || currentDownload.status !== "waiting_decision") return;
+  currentDownload.status = "compiling";
+  sendStatusUpdate();
+  compileSegments(true);
 }
