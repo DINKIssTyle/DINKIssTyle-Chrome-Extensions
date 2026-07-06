@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Video Downloader</title>
+  <link rel="stylesheet" href="popup.css">
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+</head>
+<body>
+  <div class="app-container">
+    <header class="app-header">
+      <div class="brand">
+        <svg class="logo-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/>
+        </svg>
+        <span class="logo-text">Video Downloader</span>
+      </div>
+      <div class="header-actions">
+        <button id="clear-all-btn" title="Clear list">
+          <svg class="action-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="3 6 5 6 21 6"/>
+            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+          </svg>
+        </button>
+      </div>
+    </header>
+
+    <main class="app-main">
+      <!-- 1. EMPTY DETECT STATE -->
+      <div id="no-media-view" class="empty-state">
+        <div class="empty-illustration">
+          <div class="radar-pulse"></div>
+          <svg class="empty-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+            <rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18"/>
+            <line x1="7" y1="2" x2="7" y2="22"/>
+            <line x1="17" y1="2" x2="17" y2="22"/>
+            <line x1="2" y1="12" x2="22" y2="12"/>
+          </svg>
+        </div>
+        <h3>Scanning for media...</h3>
+        <p>Play a video or audio on this page, and we'll detect the direct download link instantly.</p>
+      </div>
+
+      <!-- 2. DETECTED LIST VIEW -->
+      <div id="media-list-view" class="media-list hidden">
+        <!-- Media Cards injected by popup.js -->
+      </div>
+
+      <!-- 3. IN-POPUP DOWNLOADER PROGRESS VIEW -->
+      <div id="download-progress-view" class="progress-view hidden">
+        <div class="progress-header">
+          <div class="title-area">
+            <h3 id="target-title">Preparing Stream...</h3>
+            <span id="target-url-label" class="url-label">Loading stream parameters...</span>
+          </div>
+          <div class="action-buttons">
+            <button id="pause-btn" class="control-btn mini-btn" title="Pause">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
+            </button>
+            <button id="resume-btn" class="control-btn mini-btn play-btn hidden" title="Resume">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+            </button>
+            <button id="cancel-btn" class="control-btn mini-btn danger-btn" title="Cancel">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </button>
+          </div>
+        </div>
+
+        <div class="progress-gauge">
+          <div id="percent-val">0%</div>
+          <div class="progress-bar-container">
+            <div id="progress-bar-fill"></div>
+          </div>
+        </div>
+
+        <div class="metrics-grid">
+          <div class="metric-box">
+            <span class="m-title">Speed</span>
+            <span id="speed-val" class="m-val">0 KB/s</span>
+          </div>
+          <div class="metric-box">
+            <span class="m-title">Segments</span>
+            <span id="segments-val" class="m-val">0 / 0</span>
+          </div>
+          <div class="metric-box">
+            <span class="m-title">ETA</span>
+            <span id="eta-val" class="m-val">--:--</span>
+          </div>
+        </div>
+
+        <div class="console-box">
+          <div class="console-title">Log Console</div>
+          <div id="log-terminal" class="console-terminal">
+            <div class="log-line system">[System] Connection established.</div>
+          </div>
+        </div>
+      </div>
+    </main>
+    
+    <footer class="app-footer">
+      <div class="footer-status">
+        <span class="status-indicator active"></span>
+        <span id="status-text">Ready to download</span>
+      </div>
+    </footer>
+  </div>
+  <script src="popup.js"></script>
+</body>
+</html>
