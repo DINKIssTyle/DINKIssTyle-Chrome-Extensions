@@ -217,6 +217,8 @@
 .aiang-action.is-loading,
 .aiang-summary-button.is-loading {
   position: relative;
+  cursor: pointer;
+  opacity: 0.82;
 }
 
 .aiang-action.is-loading > :not(.aiang-loading-content),
@@ -232,6 +234,28 @@
   justify-content: center;
   gap: 5px;
   white-space: nowrap;
+}
+
+.aiang-loading-cancel {
+  width: 16px;
+  height: 16px;
+  border-radius: 999px;
+  display: inline-grid;
+  place-items: center;
+  background: color-mix(in oklch, currentColor 10%, transparent);
+  font: 700 15px/1 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  transition: background 150ms ease, transform 150ms ease;
+}
+
+.aiang-action.is-loading:hover .aiang-loading-cancel,
+.aiang-summary-button.is-loading:hover .aiang-loading-cancel {
+  background: color-mix(in oklch, currentColor 20%, transparent);
+  transform: scale(1.06);
+}
+
+.aiang-action.is-cancelling,
+.aiang-summary-button.is-cancelling {
+  cursor: wait;
 }
 
 .aiang-spinner {

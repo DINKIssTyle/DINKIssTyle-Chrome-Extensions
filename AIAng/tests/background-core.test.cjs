@@ -21,6 +21,7 @@ function loadCore(fetchImplementation = fetch) {
     chrome,
     console,
     crypto: webcrypto,
+    AbortController,
     DOMException,
     fetch: fetchImplementation,
     URL
@@ -38,12 +39,36 @@ function loadCore(fetchImplementation = fetch) {
     parseTitleSuggestions,
     parsePostSummary,
     callOpenAICompatible,
-    listModels
+    listModels,
+    processTextRequest,
+    handleMessage
   };`, context);
   return context.__core;
 }
 
 const core = loadCore();
+
+test('aborts an active AI request when its request ID is cancelled', async () => {
+  let markStarted;
+  const started = new Promise(resolve => { markStarted = resolve; });
+  let aborted = false;
+  const cancelCore = loadCore((url, options) => new Promise((resolve, reject) => {
+    markStarted();
+    options.signal.addEventListener('abort', () => {
+      aborted = true;
+      reject(new DOMException('Aborted', 'AbortError'));
+    }, { once: true });
+  }));
+  const processing = cancelCore.processTextRequest({
+    requestId: 'cancel-test-request',
+    action: 'improve',
+    text: '취소할 요청입니다.'
+  });
+  await started;
+  await cancelCore.handleMessage({ type: 'CANCEL_REQUEST', requestId: 'cancel-test-request' }, {});
+  await assert.rejects(processing, /요청을 취소했습니다/);
+  assert.equal(aborted, true);
+});
 
 test('normalizes LM Studio and explicit chat completion endpoints', () => {
   assert.equal(core.normalizeEndpoint('localhost:1234'), 'http://localhost:1234/v1');

@@ -88,6 +88,7 @@
   let inlineReviewSession = null;
   let inlineReviewFrame = 0;
   let toastToolbarAnchor = null;
+  const buttonRequestStates = new WeakMap();
 
   const ICONS = {
     check: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m4 12 5 5L20 6"/></svg>',
@@ -213,6 +214,8 @@
 
   function removeControls() {
     closeReview();
+    document.querySelectorAll('.aiang-action.is-loading, .aiang-summary-button.is-loading')
+      .forEach(cancelButtonRequest);
     document.querySelectorAll('.aiang-toolbar-slot').forEach(slot => {
       if (slot._aiangTarget) {
         delete slot._aiangTarget.dataset.aiangEnhanced;
@@ -377,29 +380,31 @@
   }
 
   async function runPostSummary(articleBody, button) {
+    if (cancelButtonRequest(button)) return;
     const text = limitPostSummarySource(extractArticleText(articleBody));
     if (!text) {
       showToast('요약할 게시물 본문을 찾지 못했습니다.', 'warning');
       return;
     }
     closeReview();
-    setButtonLoading(button, true, POST_SUMMARY_ACTION.id);
+    const requestState = beginButtonRequest(button, POST_SUMMARY_ACTION.id);
     try {
       const response = await sendMessage({
         type: 'SUMMARIZE_POST',
-        requestId: `aiang-${Date.now()}-${++requestSequence}`,
+        requestId: createTrackedRequestId(button),
         text
       });
       if (!response?.ok) throw new Error(response?.error || '게시물을 요약하지 못했습니다.');
       showPostSummary(response.summary, POST_SUMMARY_ACTION.label);
     } catch (error) {
-      showToast(error?.message || '게시물을 요약하지 못했습니다.', 'error', 3200, true);
+      showRequestError(error, requestState, '게시물을 요약하지 못했습니다.');
     } finally {
-      setButtonLoading(button, false, POST_SUMMARY_ACTION.id);
+      finishButtonRequest(button, requestState);
     }
   }
 
   async function runCommentReactionSummary(articleBody, button) {
+    if (cancelButtonRequest(button)) return;
     const comments = collectCommentTexts(articleBody);
     if (!comments.length) {
       showToast('요약할 댓글이 없습니다.', 'warning');
@@ -413,11 +418,11 @@
     );
     const commentsSource = buildCommentReactionSource(comments);
     closeReview();
-    setButtonLoading(button, true, COMMENT_REACTION_ACTION.id);
+    const requestState = beginButtonRequest(button, COMMENT_REACTION_ACTION.id);
     try {
       const response = await sendMessage({
         type: 'SUMMARIZE_REACTIONS',
-        requestId: `aiang-${Date.now()}-${++requestSequence}`,
+        requestId: createTrackedRequestId(button),
         postText,
         commentsText: commentsSource.text,
         commentCount: comments.length,
@@ -426,9 +431,9 @@
       if (!response?.ok) throw new Error(response?.error || '댓글 반응을 요약하지 못했습니다.');
       showPostSummary(response.summary, COMMENT_REACTION_ACTION.label);
     } catch (error) {
-      showToast(error?.message || '댓글 반응을 요약하지 못했습니다.', 'error', 3200, true);
+      showRequestError(error, requestState, '댓글 반응을 요약하지 못했습니다.');
     } finally {
-      setButtonLoading(button, false, COMMENT_REACTION_ACTION.id);
+      finishButtonRequest(button, requestState);
     }
   }
 
@@ -552,6 +557,7 @@
   }
 
   async function runAction(target, action, button) {
+    if (cancelButtonRequest(button)) return;
     const snapshot = createTargetSnapshot(target);
     const originalText = snapshot.text;
     if (!originalText.trim()) {
@@ -561,23 +567,25 @@
     }
 
     closeReview();
-    setButtonLoading(button, true, action);
+    const requestState = beginButtonRequest(button, action);
     try {
       const result = await requestEditingResult(
         target,
         action,
         target.closest('textarea') ? 'comment' : 'editor',
-        snapshot
+        snapshot,
+        createTrackedRequestId(button)
       );
       showInlineReview([{ ...result, action }]);
     } catch (error) {
-      showToast(error?.message || 'AI 요청에 실패했습니다.', 'error', 3200, true);
+      showRequestError(error, requestState, 'AI 요청에 실패했습니다.');
     } finally {
-      setButtonLoading(button, false, action);
+      finishButtonRequest(button, requestState);
     }
   }
 
   async function runPostSpellcheck(editor, button) {
+    if (cancelButtonRequest(button)) return;
     const title = document.querySelector('input#title[placeholder*="제목"]');
     const candidates = [];
     if (title) {
@@ -597,26 +605,38 @@
     }
 
     closeReview();
-    setButtonLoading(button, true, 'spellcheck');
+    const requestState = beginButtonRequest(button, 'spellcheck');
     try {
       const settled = await Promise.allSettled(candidates.map(async candidate => ({
-        ...await requestEditingResult(candidate.target, 'spellcheck', candidate.targetType, candidate.snapshot),
+        ...await requestEditingResult(
+          candidate.target,
+          'spellcheck',
+          candidate.targetType,
+          candidate.snapshot,
+          createTrackedRequestId(button)
+        ),
         label: candidate.label
       })));
       const failure = settled.find(result => result.status === 'rejected');
       if (failure) throw failure.reason;
       showInlineReview(settled.map(result => ({ ...result.value, action: 'spellcheck' })));
     } catch (error) {
-      showToast(error?.message || '제목과 내용을 검사하지 못했습니다.', 'error', 3200, true);
+      showRequestError(error, requestState, '제목과 내용을 검사하지 못했습니다.');
     } finally {
-      setButtonLoading(button, false, 'spellcheck');
+      finishButtonRequest(button, requestState);
     }
   }
 
-  async function requestEditingResult(target, action, targetType, snapshot = createTargetSnapshot(target)) {
+  async function requestEditingResult(
+    target,
+    action,
+    targetType,
+    snapshot = createTargetSnapshot(target),
+    requestId = createRequestId()
+  ) {
     const response = await sendMessage({
       type: 'PROCESS_TEXT',
-      requestId: `aiang-${Date.now()}-${++requestSequence}`,
+      requestId,
       action,
       text: snapshot.text,
       target: targetType
@@ -635,6 +655,7 @@
   }
 
   async function runTitleSuggestions(editor, button) {
+    if (cancelButtonRequest(button)) return;
     const title = document.querySelector('input#title[placeholder*="제목"]');
     if (!title) {
       showToast('제목 입력창을 찾지 못했습니다.', 'error');
@@ -648,37 +669,95 @@
     }
 
     closeReview();
-    setButtonLoading(button, true, 'suggest_title');
+    const requestState = beginButtonRequest(button, 'suggest_title');
     try {
       const response = await sendMessage({
         type: 'SUGGEST_TITLES',
-        requestId: `aiang-${Date.now()}-${++requestSequence}`,
+        requestId: createTrackedRequestId(button),
         text: snapshot.text
       });
       if (!response?.ok) throw new Error(response?.error || '제목을 추천하지 못했습니다.');
       showTitleSuggestions(title, editor, snapshot, response.titles || []);
     } catch (error) {
-      showToast(error?.message || '제목을 추천하지 못했습니다.', 'error', 3200, true);
+      showRequestError(error, requestState, '제목을 추천하지 못했습니다.');
     } finally {
-      setButtonLoading(button, false, 'suggest_title');
+      finishButtonRequest(button, requestState);
     }
+  }
+
+  function createRequestId() {
+    return `aiang-${Date.now()}-${++requestSequence}`;
+  }
+
+  function beginButtonRequest(button, action) {
+    const state = { action, requestIds: new Set(), cancelRequested: false };
+    buttonRequestStates.set(button, state);
+    setButtonLoading(button, true, action);
+    return state;
+  }
+
+  function createTrackedRequestId(button) {
+    const requestId = createRequestId();
+    buttonRequestStates.get(button)?.requestIds.add(requestId);
+    return requestId;
+  }
+
+  function finishButtonRequest(button, state) {
+    if (buttonRequestStates.get(button) !== state) return;
+    buttonRequestStates.delete(button);
+    setButtonLoading(button, false, state.action);
+  }
+
+  function cancelButtonRequest(button) {
+    const state = buttonRequestStates.get(button);
+    if (!state) return false;
+    if (!state.cancelRequested) {
+      state.cancelRequested = true;
+      button.classList.add('is-cancelling');
+      const label = button.querySelector('.aiang-loading-label');
+      if (label) label.textContent = '취소 중';
+      button.setAttribute('aria-label', `${LABELS[state.action]} 요청 취소 중`);
+      state.requestIds.forEach(requestId => {
+        sendMessage({ type: 'CANCEL_REQUEST', requestId }).catch(() => {});
+      });
+    }
+    return true;
+  }
+
+  function showRequestError(error, state, fallbackMessage) {
+    const message = error?.message || fallbackMessage;
+    const cancelled = state?.cancelRequested || error?.name === 'AbortError' || message === '요청을 취소했습니다.';
+    if (cancelled) {
+      showToast('요청을 취소했습니다.', 'info', 1800);
+      return;
+    }
+    showToast(message, 'error', 3200, true);
   }
 
   function setButtonLoading(button, loading, action) {
     if (!button) return;
-    button.disabled = loading;
+    button.disabled = false;
     button.classList.toggle('is-loading', loading);
+    button.classList.toggle('is-cancelling', false);
+    button.setAttribute('aria-busy', String(loading));
     if (loading) {
       if (!button.querySelector('.aiang-loading-content')) {
         const loadingContent = document.createElement('span');
         loadingContent.className = 'aiang-loading-content';
-        loadingContent.innerHTML = '<span class="aiang-spinner" aria-hidden="true"></span><span>처리 중</span>';
+        loadingContent.innerHTML = [
+          '<span class="aiang-spinner" aria-hidden="true"></span>',
+          '<span class="aiang-loading-label">처리 중</span>',
+          '<span class="aiang-loading-cancel" aria-hidden="true">×</span>'
+        ].join('');
         button.append(loadingContent);
       }
     } else {
       button.querySelector('.aiang-loading-content')?.remove();
     }
-    button.setAttribute('aria-label', loading ? `${LABELS[action]} 처리 중` : LABELS[action]);
+    button.setAttribute(
+      'aria-label',
+      loading ? `${LABELS[action]} 처리 중, 다시 누르면 취소` : LABELS[action]
+    );
   }
 
   function showInlineReview(results) {
