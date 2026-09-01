@@ -4,12 +4,77 @@
   const IMPROVE_ACTION = { id: 'improve', label: '문장 개선', short: '문장 개선', icon: 'sparkle' };
   const DECORATE_ACTION = { id: 'decorate', label: '글 꾸미기', short: '글 꾸미기', icon: 'palette' };
   const TITLE_SUGGEST_ACTION = { id: 'suggest_title', label: '글 제목 추천', short: '제목 추천', icon: 'title' };
+  const POST_SUMMARY_ACTION = { id: 'summarize_post', label: '게시물 요약', short: '요약', icon: 'sparkle' };
+  const COMMENT_REACTION_ACTION = { id: 'summarize_reactions', label: '댓글 반응 요약', short: '댓글 요약', icon: 'chat' };
   const BODY_ACTIONS = [SPELLCHECK_ACTION, HONORIFIC_ACTION, IMPROVE_ACTION, TITLE_SUGGEST_ACTION];
   const COMMENT_ACTIONS = [SPELLCHECK_ACTION, HONORIFIC_ACTION, IMPROVE_ACTION, DECORATE_ACTION];
-  const LABELS = Object.fromEntries([...BODY_ACTIONS, ...COMMENT_ACTIONS].map(action => [action.id, action.label]));
+  const LABELS = Object.fromEntries([...BODY_ACTIONS, ...COMMENT_ACTIONS, POST_SUMMARY_ACTION, COMMENT_REACTION_ACTION]
+    .map(action => [action.id, action.label]));
   const MEDIA_LEAF_SELECTOR = 'img, video, audio, iframe, canvas, object, embed';
   const MEDIA_WRAPPER_SELECTOR = 'figure, picture, a, [data-type="image"], [data-node-type="image"], [data-node-view-wrapper], [data-youtube-video], .image-resizer';
   const POST_EDITOR_PATH_PATTERN = /\/(?:write|edit)(?:\/|$)/;
+  const POST_VIEW_PATH_PATTERN = /^\/[^/?#]+\/\d+(?:\/|$)/;
+  const POST_SUMMARY_SOURCE_LIMIT = 15000;
+  const COMMENT_REACTION_POST_LIMIT = 6000;
+  const COMMENT_REACTION_COMMENTS_LIMIT = 9000;
+  const ARTICLE_BODY_SELECTORS = [
+    '[data-aiang-article-body]',
+    '[itemprop="articleBody"]',
+    '#bo_v_con',
+    '.bo_v_con',
+    '.board-view-content',
+    '.article-content',
+    '.article-body',
+    '.post-content',
+    '.view-content',
+    '.view_content',
+    '.xe_content'
+  ];
+  const ARTICLE_CONTENT_EXCLUDE_SELECTOR = [
+    'script', 'style', 'noscript', 'template', 'nav', 'aside', 'footer', 'form',
+    'button', 'input', 'textarea', 'select', '[contenteditable="true"]', '[hidden]',
+    '[aria-hidden="true"]', '.aiang-summary-slot', '[class*="comment"]', '[id*="comment"]',
+    '[class*="advert"]', '[id*="advert"]', '[class~="ad"]', '[id^="ad-"]',
+    '[class*="share"]', '[class*="reaction"]', '[class*="signature"]'
+  ].join(',');
+  const COMMENT_ROOT_SELECTORS = [
+    '[data-aiang-comments]',
+    '[data-role="comments"]',
+    '#comments',
+    '#comment',
+    '.comments',
+    '.comment-list',
+    '.comments-list',
+    '[class*="comment-list"]',
+    '[id*="comment-list"]'
+  ];
+  const COMMENT_ITEM_SELECTORS = [
+    '[data-aiang-comment]',
+    '[data-comment-id]',
+    '[data-role="comment"]',
+    '.comment-item',
+    '.comment-row',
+    '.reply-item',
+    'li[class*="comment"]'
+  ];
+  const COMMENT_TEXT_SELECTORS = [
+    '[data-aiang-comment-text]',
+    '[data-comment-content]',
+    '[data-role="comment-content"]',
+    '.comment-content',
+    '.comment-body',
+    '.reply-content',
+    '.comment_text',
+    '.cmt-content',
+    '.prose-sm'
+  ];
+  const COMMENT_CONTENT_EXCLUDE_SELECTOR = [
+    'script', 'style', 'noscript', 'template', 'nav', 'aside', 'footer', 'form',
+    'button', 'input', 'textarea', 'select', 'time', '[contenteditable="true"]', '[hidden]',
+    '[aria-hidden="true"]', '.aiang-toolbar-slot', '.aiang-summary-slot',
+    '[class*="author"]', '[class*="profile"]', '[class*="avatar"]', '[class*="meta"]',
+    '[class*="action"]', '[class*="control"]', '[class*="vote"]', '[class*="reaction"]'
+  ].join(',');
   const REVIEW_ICON_URL = chrome.runtime.getURL('icons/icon48.png');
   const BLOCK_TAGS = new Set([
     'ADDRESS', 'ARTICLE', 'ASIDE', 'BLOCKQUOTE', 'DIV', 'DL', 'FIGCAPTION', 'FIGURE',
@@ -42,7 +107,7 @@
   }
 
   function scanPage() {
-    cleanupDetachedToolbars();
+    cleanupDetachedControls();
     if (!extensionEnabled) return;
 
     document.querySelectorAll('[contenteditable="true"].tiptap.ProseMirror, textarea[placeholder*="댓글을 입력하세요"]')
@@ -50,6 +115,7 @@
         const kind = classifyEditor(editor);
         if (kind) injectEditorToolbar(editor, kind);
       });
+    scanArticleSummary();
   }
 
   function classifyEditor(editor) {
@@ -136,8 +202,11 @@
     return borderedSides >= 2;
   }
 
-  function cleanupDetachedToolbars() {
+  function cleanupDetachedControls() {
     document.querySelectorAll('.aiang-toolbar-slot').forEach(slot => {
+      if (!slot._aiangTarget?.isConnected) slot.remove();
+    });
+    document.querySelectorAll('.aiang-summary-slot').forEach(slot => {
       if (!slot._aiangTarget?.isConnected) slot.remove();
     });
   }
@@ -151,11 +220,335 @@
       }
       slot.remove();
     });
+    document.querySelectorAll('.aiang-summary-slot').forEach(slot => {
+      if (slot._aiangTarget) delete slot._aiangTarget._aiangSummarySlot;
+      slot.remove();
+    });
     document.querySelectorAll('.aiang-title-row').forEach(row => {
       const input = row.querySelector('input#title');
       if (input) row.replaceWith(input);
       else row.remove();
     });
+  }
+
+  function scanArticleSummary() {
+    const fixtureBody = document.querySelector('[data-aiang-article-body]');
+    if (POST_EDITOR_PATH_PATTERN.test(location.pathname)
+      || (!POST_VIEW_PATH_PATTERN.test(location.pathname) && !fixtureBody)) return;
+    const articleBody = fixtureBody || findArticleBody();
+    if (!articleBody || articleBody._aiangSummarySlot?.isConnected) return;
+
+    const slot = document.createElement('div');
+    slot.className = 'aiang-summary-slot aiang-no-select';
+    slot._aiangTarget = articleBody;
+
+    const postButton = document.createElement('button');
+    postButton.type = 'button';
+    postButton.className = 'aiang-summary-button';
+    postButton.innerHTML = `${ICONS[POST_SUMMARY_ACTION.icon]}<span>${POST_SUMMARY_ACTION.label}</span>`;
+    postButton.addEventListener('click', () => {
+      toastToolbarAnchor = slot;
+      runPostSummary(articleBody, postButton);
+    });
+
+    const reactionButton = document.createElement('button');
+    reactionButton.type = 'button';
+    reactionButton.className = 'aiang-summary-button';
+    reactionButton.innerHTML = `${ICONS[COMMENT_REACTION_ACTION.icon]}<span>${COMMENT_REACTION_ACTION.label}</span>`;
+    reactionButton.addEventListener('click', () => {
+      toastToolbarAnchor = slot;
+      runCommentReactionSummary(articleBody, reactionButton);
+    });
+    slot.append(postButton, reactionButton);
+    articleBody.insertAdjacentElement('beforebegin', slot);
+    articleBody._aiangSummarySlot = slot;
+  }
+
+  function findArticleBody() {
+    for (const selector of ARTICLE_BODY_SELECTORS) {
+      const candidate = Array.from(document.querySelectorAll(selector)).find(isLikelyArticleBody);
+      if (candidate) return candidate;
+    }
+
+    const roots = Array.from(document.querySelectorAll([
+      'article',
+      'main article',
+      'main [role="article"]',
+      'main .text-card-foreground.flex.flex-col'
+    ].join(',')));
+    const candidates = roots.flatMap(root => [
+      ...root.querySelectorAll(':scope > section, :scope > div, :scope > div > section, :scope > div > div, :scope > div > div > section, :scope > div > div > div')
+    ]).filter(isLikelyArticleBody);
+    return candidates.sort((left, right) => scoreArticleBody(right) - scoreArticleBody(left))[0] || null;
+  }
+
+  function isLikelyArticleBody(candidate) {
+    if (!(candidate instanceof HTMLElement)
+      || candidate.matches(ARTICLE_CONTENT_EXCLUDE_SELECTOR)
+      || candidate.closest('[class*="comment"], [id*="comment"], aside, footer, nav')
+      || candidate.querySelector('[contenteditable="true"]')) return false;
+    const textLength = extractArticleText(candidate).length;
+    return textLength >= 20 || Boolean(candidate.querySelector('img, video, iframe, blockquote'));
+  }
+
+  function scoreArticleBody(candidate) {
+    const textLength = extractArticleText(candidate).length;
+    const mediaCount = candidate.querySelectorAll('img, video, iframe, blockquote').length;
+    const controlPenalty = candidate.querySelectorAll('button, input, nav, [class*="share"], [class*="reaction"]').length * 120;
+    const visibleHeight = Math.min(candidate.getBoundingClientRect().height, 2400);
+    return textLength + mediaCount * 160 + visibleHeight / 4 - controlPenalty;
+  }
+
+  function extractArticleText(articleBody) {
+    const bodyMarkdown = Array.from(articleBody.childNodes).map(convertArticleNodeToMarkdown).join('')
+      .replace(/[ \t]+\n/g, '\n')
+      .replace(/\n[ \t]+/g, '\n')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim();
+    const title = findArticleTitle(articleBody);
+    return [title ? `# ${title}` : '', bodyMarkdown].filter(Boolean).join('\n\n');
+  }
+
+  function convertArticleNodeToMarkdown(node) {
+    if (node.nodeType === Node.TEXT_NODE) return String(node.nodeValue || '').replace(/\s+/g, ' ');
+    if (!(node instanceof HTMLElement) || node.matches(ARTICLE_CONTENT_EXCLUDE_SELECTOR)) return '';
+    const style = getComputedStyle(node);
+    if (style.display === 'none' || style.visibility === 'hidden') return '';
+
+    const tag = node.tagName;
+    if (tag === 'BR') return '\n';
+    if (tag === 'IMG') {
+      const alternative = String(node.getAttribute('alt') || '').trim();
+      return alternative ? `\n[이미지: ${alternative}]\n` : '';
+    }
+    if (node.matches('VIDEO, AUDIO, IFRAME')) {
+      const title = String(node.getAttribute('title') || node.getAttribute('aria-label') || '').trim();
+      return title ? `\n[미디어: ${title}]\n` : '';
+    }
+    if (tag === 'PRE') return `\n\`\`\`\n${node.textContent || ''}\n\`\`\`\n`;
+    if (tag === 'TABLE') return convertArticleTableToMarkdown(node);
+
+    let content = Array.from(node.childNodes).map(convertArticleNodeToMarkdown).join('');
+    if (!content.trim()) return '';
+    if (/^H[1-6]$/.test(tag)) return `\n${'#'.repeat(Number(tag[1]))} ${content.trim()}\n`;
+    if (tag === 'STRONG' || tag === 'B') return `**${content.trim()}**`;
+    if (tag === 'EM' || tag === 'I') return `*${content.trim()}*`;
+    if (tag === 'DEL' || tag === 'S') return `~~${content.trim()}~~`;
+    if (tag === 'CODE') return `\`${content.trim()}\``;
+    if (tag === 'BLOCKQUOTE') {
+      return `\n${content.trim().split('\n').map(line => `> ${line}`).join('\n')}\n`;
+    }
+    if (tag === 'LI') {
+      const parent = node.parentElement;
+      const marker = parent?.tagName === 'OL'
+        ? `${Array.from(parent.children).indexOf(node) + 1}.`
+        : '-';
+      return `\n${marker} ${content.trim()}`;
+    }
+    if (tag === 'UL' || tag === 'OL') return `\n${content.trim()}\n`;
+    if (tag === 'HR') return '\n---\n';
+    if (BLOCK_TAGS.has(tag)) return `\n${content.trim()}\n`;
+    return content;
+  }
+
+  function convertArticleTableToMarkdown(table) {
+    const rows = Array.from(table.querySelectorAll('tr')).map(row => Array.from(row.querySelectorAll('th, td'))
+      .map(cell => cell.textContent.replace(/\s+/g, ' ').trim().replace(/\|/g, '\\|')));
+    if (!rows.length || !rows[0].length) return '';
+    const width = Math.max(...rows.map(row => row.length));
+    const formatRow = row => `| ${Array.from({ length: width }, (_, index) => row[index] || '').join(' | ')} |`;
+    return `\n${formatRow(rows[0])}\n${formatRow(Array(width).fill('---'))}\n${rows.slice(1).map(formatRow).join('\n')}\n`;
+  }
+
+  function findArticleTitle(articleBody) {
+    const root = articleBody.closest('article, [role="article"], .text-card-foreground.flex.flex-col')
+      || articleBody.parentElement;
+    const headings = root ? Array.from(root.querySelectorAll('h1, h2')) : [];
+    const heading = headings.find(candidate => !articleBody.contains(candidate)
+      && Boolean(candidate.compareDocumentPosition(articleBody) & Node.DOCUMENT_POSITION_FOLLOWING));
+    const title = String(heading?.textContent || '').replace(/\s+/g, ' ').trim();
+    return title.slice(0, 300);
+  }
+
+  function limitPostSummarySource(text, limit = POST_SUMMARY_SOURCE_LIMIT, tailLength = 3000) {
+    if (text.length <= limit) return text;
+    const headLength = limit - tailLength - 80;
+    return `${text.slice(0, headLength).trimEnd()}\n\n[중간 본문 일부 생략: 입력 길이 제한]\n\n${text.slice(-tailLength).trimStart()}`;
+  }
+
+  async function runPostSummary(articleBody, button) {
+    const text = limitPostSummarySource(extractArticleText(articleBody));
+    if (!text) {
+      showToast('요약할 게시물 본문을 찾지 못했습니다.', 'warning');
+      return;
+    }
+    closeReview();
+    setButtonLoading(button, true, POST_SUMMARY_ACTION.id);
+    try {
+      const response = await sendMessage({
+        type: 'SUMMARIZE_POST',
+        requestId: `aiang-${Date.now()}-${++requestSequence}`,
+        text
+      });
+      if (!response?.ok) throw new Error(response?.error || '게시물을 요약하지 못했습니다.');
+      showPostSummary(response.summary, POST_SUMMARY_ACTION.label);
+    } catch (error) {
+      showToast(error?.message || '게시물을 요약하지 못했습니다.', 'error', 3200, true);
+    } finally {
+      setButtonLoading(button, false, POST_SUMMARY_ACTION.id);
+    }
+  }
+
+  async function runCommentReactionSummary(articleBody, button) {
+    const comments = collectCommentTexts(articleBody);
+    if (!comments.length) {
+      showToast('요약할 댓글이 없습니다.', 'warning');
+      return;
+    }
+
+    const postText = limitPostSummarySource(
+      extractArticleText(articleBody),
+      COMMENT_REACTION_POST_LIMIT,
+      1200
+    );
+    const commentsSource = buildCommentReactionSource(comments);
+    closeReview();
+    setButtonLoading(button, true, COMMENT_REACTION_ACTION.id);
+    try {
+      const response = await sendMessage({
+        type: 'SUMMARIZE_REACTIONS',
+        requestId: `aiang-${Date.now()}-${++requestSequence}`,
+        postText,
+        commentsText: commentsSource.text,
+        commentCount: comments.length,
+        sampledCommentCount: commentsSource.sampledCount
+      });
+      if (!response?.ok) throw new Error(response?.error || '댓글 반응을 요약하지 못했습니다.');
+      showPostSummary(response.summary, COMMENT_REACTION_ACTION.label);
+    } catch (error) {
+      showToast(error?.message || '댓글 반응을 요약하지 못했습니다.', 'error', 3200, true);
+    } finally {
+      setButtonLoading(button, false, COMMENT_REACTION_ACTION.id);
+    }
+  }
+
+  function collectCommentTexts(articleBody) {
+    const followsArticle = element => Boolean(articleBody.compareDocumentPosition(element) & Node.DOCUMENT_POSITION_FOLLOWING);
+    const roots = findCommentRoots(articleBody);
+    const commentItemSelector = COMMENT_ITEM_SELECTORS.join(',');
+    const explicitContents = COMMENT_TEXT_SELECTORS.flatMap(selector => Array.from(document.querySelectorAll(selector)))
+      .filter(element => followsArticle(element)
+        && !element.matches('[contenteditable="true"]')
+        && !element.closest('.aiang-toolbar-slot')
+        && (roots.some(root => root.contains(element)) || Boolean(element.closest(commentItemSelector))));
+    let candidates = keepInnermostElements(explicitContents);
+
+    if (!candidates.length) {
+      const items = COMMENT_ITEM_SELECTORS.flatMap(selector => Array.from(document.querySelectorAll(selector)))
+        .filter(followsArticle);
+      candidates = items.map(item => COMMENT_TEXT_SELECTORS
+        .map(selector => item.querySelector(selector)).find(Boolean) || item);
+    }
+
+    if (!candidates.length) {
+      candidates = roots.flatMap(root => Array.from(root.querySelectorAll('p, li, [class*="content"], [class*="body"], [class*="text"]')))
+        .filter(element => !element.querySelector('p, li, [class*="content"], [class*="body"], [class*="text"]'));
+    }
+
+    const seen = new Set();
+    return candidates.map(extractCommentText)
+      .map(text => text.trim())
+      .filter(text => text.length >= 2 && !isCommentInterfaceText(text))
+      .filter(text => {
+        const key = text.replace(/\s+/g, ' ').toLocaleLowerCase();
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+  }
+
+  function findCommentRoots(articleBody) {
+    const followsArticle = element => Boolean(articleBody.compareDocumentPosition(element) & Node.DOCUMENT_POSITION_FOLLOWING);
+    const roots = COMMENT_ROOT_SELECTORS.flatMap(selector => Array.from(document.querySelectorAll(selector)))
+      .filter(followsArticle);
+    document.querySelectorAll('textarea[placeholder*="댓글을 입력하세요"]').forEach(editor => {
+      const root = editor.closest('[data-role="comments"], section, [class*="comment"]') || editor.parentElement?.parentElement;
+      if (root && followsArticle(root)) roots.push(root);
+    });
+    return keepOutermostElements(roots);
+  }
+
+  function keepInnermostElements(elements) {
+    const unique = [...new Set(elements)].filter(element => element instanceof HTMLElement && element.isConnected);
+    return unique.filter(element => !unique.some(other => other !== element && element.contains(other)));
+  }
+
+  function keepOutermostElements(elements) {
+    const unique = [...new Set(elements)].filter(element => element instanceof HTMLElement && element.isConnected);
+    return unique.filter(element => !unique.some(other => other !== element && other.contains(element)));
+  }
+
+  function extractCommentText(element) {
+    const chunks = [];
+    const visit = node => {
+      if (node.nodeType === Node.TEXT_NODE) {
+        chunks.push(node.nodeValue || '');
+        return;
+      }
+      if (!(node instanceof HTMLElement) || node.matches(COMMENT_CONTENT_EXCLUDE_SELECTOR)) return;
+      const style = getComputedStyle(node);
+      if (style.display === 'none' || style.visibility === 'hidden') return;
+      if (node.tagName === 'A' && /(?:member|profile|user|author)/i.test(node.getAttribute('href') || '')) return;
+      if (node.tagName === 'BR') {
+        chunks.push('\n');
+        return;
+      }
+      if (node.tagName === 'IMG') {
+        const alternative = String(node.getAttribute('alt') || '').trim();
+        if (alternative && !/프로필|아바타/i.test(alternative)) chunks.push(`[이미지: ${alternative}]`);
+        return;
+      }
+      const block = BLOCK_TAGS.has(node.tagName);
+      if (block) chunks.push('\n');
+      node.childNodes.forEach(visit);
+      if (block) chunks.push('\n');
+    };
+    element.childNodes.forEach(visit);
+    return chunks.join('')
+      .split('\n')
+      .map(line => line.replace(/[ \t\f\v]+/g, ' ').trim())
+      .filter(line => line && !isCommentMetaLine(line))
+      .join('\n')
+      .trim();
+  }
+
+  function isCommentMetaLine(line) {
+    return /^(?:답글|신고|수정|삭제|차단|추천|비추천|공감|더보기)(?:\s|$)/.test(line)
+      || /^(?:방금|\d+\s*(?:초|분|시간|일)\s*전)$/.test(line)
+      || /^\d{4}[./-]\d{1,2}[./-]\d{1,2}(?:\s+\d{1,2}:\d{2}(?::\d{2})?)?$/.test(line);
+  }
+
+  function isCommentInterfaceText(text) {
+    return /^(?:댓글|댓글을 입력하세요|등록|새 댓글|댓글 없음|댓글이 없습니다)(?:\s*\d+)?$/.test(text.trim());
+  }
+
+  function buildCommentReactionSource(comments) {
+    const maximumSamples = 40;
+    const sampleCount = Math.min(comments.length, maximumSamples);
+    const indices = Array.from({ length: sampleCount }, (_, index) => sampleCount === 1
+      ? 0
+      : Math.round(index * (comments.length - 1) / (sampleCount - 1)));
+    const sampled = indices.map(index => comments[index]);
+    const perCommentLimit = Math.max(120, Math.floor(
+      (COMMENT_REACTION_COMMENTS_LIMIT - sampled.length * 20) / Math.max(1, sampled.length)
+    ));
+    const text = sampled.map((comment, index) => {
+      const shortened = comment.length > perCommentLimit
+        ? `${comment.slice(0, perCommentLimit - 1).trimEnd()}…`
+        : comment;
+      return `[댓글 ${indices[index] + 1}]\n${shortened}`;
+    }).join('\n\n');
+    return { text, sampledCount: sampled.length };
   }
 
   async function runAction(target, action, button) {
@@ -1217,6 +1610,227 @@
     showModalPanel(panel);
   }
 
+  function showPostSummary(summary, title = POST_SUMMARY_ACTION.label) {
+    const text = String(summary || '').trim();
+    if (!text) throw new Error('AI가 빈 요약을 반환했습니다. 다시 시도해 주세요.');
+
+    closeReview();
+    const panel = document.createElement('section');
+    panel.className = 'aiang-review aiang-review-modal aiang-title-review aiang-summary-review';
+    panel.setAttribute('role', 'dialog');
+    panel.setAttribute('aria-modal', 'true');
+    panel.setAttribute('aria-label', `${title} 결과`);
+
+    const header = document.createElement('header');
+    header.className = 'aiang-review-header aiang-no-select';
+    header.innerHTML = `<div><img class="aiang-review-badge" src="${REVIEW_ICON_URL}" alt=""><strong>${title}</strong></div>`;
+    const close = document.createElement('button');
+    close.type = 'button';
+    close.className = 'aiang-close';
+    close.setAttribute('aria-label', '닫기');
+    close.textContent = '×';
+    close.addEventListener('click', closeReview);
+    header.append(close);
+    panel.append(header);
+
+    const body = document.createElement('div');
+    body.className = 'aiang-review-body';
+    const content = document.createElement('div');
+    content.className = 'aiang-summary-content';
+    renderSummaryMarkdown(content, text);
+    body.append(content);
+    panel.append(body);
+
+    const footer = document.createElement('footer');
+    footer.className = 'aiang-review-footer aiang-no-select';
+    const done = document.createElement('button');
+    done.type = 'button';
+    done.className = 'aiang-secondary';
+    done.textContent = '닫기';
+    done.addEventListener('click', closeReview);
+    footer.append(done);
+    panel.append(footer);
+    showModalPanel(panel);
+  }
+
+  function renderSummaryMarkdown(container, markdown) {
+    container.replaceChildren();
+    const lines = String(markdown || '').replace(/\r\n?/g, '\n').split('\n');
+    let index = 0;
+    while (index < lines.length) {
+      const line = lines[index];
+      if (!line.trim()) {
+        index += 1;
+        continue;
+      }
+
+      const fence = line.match(/^\s*```([\w+-]*)\s*$/);
+      if (fence) {
+        const codeLines = [];
+        index += 1;
+        while (index < lines.length && !/^\s*```\s*$/.test(lines[index])) codeLines.push(lines[index++]);
+        if (index < lines.length) index += 1;
+        const pre = document.createElement('pre');
+        const code = document.createElement('code');
+        if (fence[1]) code.className = `language-${fence[1].toLowerCase()}`;
+        code.textContent = codeLines.join('\n');
+        pre.append(code);
+        container.append(pre);
+        continue;
+      }
+
+      const heading = line.match(/^\s{0,3}(#{1,6})\s+(.+?)\s*#*\s*$/);
+      if (heading) {
+        const element = document.createElement(`h${heading[1].length}`);
+        appendSummaryInlineMarkdown(element, heading[2]);
+        container.append(element);
+        index += 1;
+        continue;
+      }
+
+      if (/^\s{0,3}(?:-{3,}|\*{3,}|_{3,})\s*$/.test(line)) {
+        container.append(document.createElement('hr'));
+        index += 1;
+        continue;
+      }
+
+      if (line.includes('|') && index + 1 < lines.length && isMarkdownTableDivider(lines[index + 1])) {
+        const tableLines = [line];
+        index += 2;
+        while (index < lines.length && lines[index].includes('|') && lines[index].trim()) tableLines.push(lines[index++]);
+        container.append(createSummaryMarkdownTable(tableLines));
+        continue;
+      }
+
+      if (/^\s*>/.test(line)) {
+        const quoteLines = [];
+        while (index < lines.length && /^\s*>/.test(lines[index])) {
+          quoteLines.push(lines[index++].replace(/^\s*>\s?/, ''));
+        }
+        const blockquote = document.createElement('blockquote');
+        renderSummaryMarkdown(blockquote, quoteLines.join('\n'));
+        container.append(blockquote);
+        continue;
+      }
+
+      const listMatch = line.match(/^\s*(?:([-+*])|(\d+)[.)])\s+(.+)$/);
+      if (listMatch) {
+        const ordered = Boolean(listMatch[2]);
+        const list = document.createElement(ordered ? 'ol' : 'ul');
+        while (index < lines.length) {
+          const itemMatch = lines[index].match(/^\s*(?:([-+*])|(\d+)[.)])\s+(.+)$/);
+          if (!itemMatch || Boolean(itemMatch[2]) !== ordered) break;
+          const item = document.createElement('li');
+          appendSummaryInlineMarkdown(item, itemMatch[3]);
+          list.append(item);
+          index += 1;
+        }
+        container.append(list);
+        continue;
+      }
+
+      const paragraphLines = [line.trim()];
+      index += 1;
+      while (index < lines.length && lines[index].trim() && !isSummaryMarkdownBlockStart(lines, index)) {
+        paragraphLines.push(lines[index].trim());
+        index += 1;
+      }
+      const paragraph = document.createElement('p');
+      paragraphLines.forEach((paragraphLine, lineIndex) => {
+        if (lineIndex) paragraph.append(document.createElement('br'));
+        appendSummaryInlineMarkdown(paragraph, paragraphLine);
+      });
+      container.append(paragraph);
+    }
+  }
+
+  function isSummaryMarkdownBlockStart(lines, index) {
+    const line = lines[index];
+    return /^\s*```/.test(line)
+      || /^\s{0,3}#{1,6}\s+/.test(line)
+      || /^\s{0,3}(?:-{3,}|\*{3,}|_{3,})\s*$/.test(line)
+      || /^\s*>/.test(line)
+      || /^\s*(?:[-+*]|\d+[.)])\s+/.test(line)
+      || (line.includes('|') && index + 1 < lines.length && isMarkdownTableDivider(lines[index + 1]));
+  }
+
+  function isMarkdownTableDivider(line) {
+    const cells = splitMarkdownTableRow(line);
+    return cells.length > 0 && cells.every(cell => /^:?-{3,}:?$/.test(cell.trim()));
+  }
+
+  function splitMarkdownTableRow(line) {
+    return line.trim().replace(/^\||\|$/g, '').split(/(?<!\\)\|/).map(cell => cell.trim().replace(/\\\|/g, '|'));
+  }
+
+  function createSummaryMarkdownTable(lines) {
+    const table = document.createElement('table');
+    const thead = document.createElement('thead');
+    const tbody = document.createElement('tbody');
+    const rows = lines.map(splitMarkdownTableRow);
+    const appendRow = (parent, cells, cellName) => {
+      const row = document.createElement('tr');
+      cells.forEach(value => {
+        const cell = document.createElement(cellName);
+        appendSummaryInlineMarkdown(cell, value);
+        row.append(cell);
+      });
+      parent.append(row);
+    };
+    appendRow(thead, rows[0], 'th');
+    rows.slice(1).forEach(row => appendRow(tbody, row, 'td'));
+    table.append(thead, tbody);
+    return table;
+  }
+
+  function appendSummaryInlineMarkdown(parent, source) {
+    const text = String(source || '');
+    const tokenPattern = /(`[^`\n]+`|\*\*[^*\n]+\*\*|__[^_\n]+__|~~[^~\n]+~~|\[[^\]\n]+\]\([^)\s]+\)|\*[^*\n]+\*|_[^_\n]+_)/g;
+    let offset = 0;
+    for (const match of text.matchAll(tokenPattern)) {
+      if (match.index > offset) parent.append(document.createTextNode(text.slice(offset, match.index)));
+      const token = match[0];
+      if (token.startsWith('`')) {
+        const code = document.createElement('code');
+        code.textContent = token.slice(1, -1);
+        parent.append(code);
+      } else if (token.startsWith('**') || token.startsWith('__')) {
+        const strong = document.createElement('strong');
+        appendSummaryInlineMarkdown(strong, token.slice(2, -2));
+        parent.append(strong);
+      } else if (token.startsWith('~~')) {
+        const deletion = document.createElement('del');
+        appendSummaryInlineMarkdown(deletion, token.slice(2, -2));
+        parent.append(deletion);
+      } else if (token.startsWith('[')) {
+        const linkMatch = token.match(/^\[([^\]]+)\]\(([^)]+)\)$/);
+        const link = linkMatch ? createSafeSummaryLink(linkMatch[1], linkMatch[2]) : null;
+        parent.append(link || document.createTextNode(linkMatch?.[1] || token));
+      } else {
+        const emphasis = document.createElement('em');
+        appendSummaryInlineMarkdown(emphasis, token.slice(1, -1));
+        parent.append(emphasis);
+      }
+      offset = match.index + token.length;
+    }
+    if (offset < text.length) parent.append(document.createTextNode(text.slice(offset)));
+  }
+
+  function createSafeSummaryLink(label, href) {
+    try {
+      const url = new URL(href, location.href);
+      if (!['http:', 'https:', 'mailto:'].includes(url.protocol)) return null;
+      const link = document.createElement('a');
+      link.href = url.href;
+      link.target = '_blank';
+      link.rel = 'noopener noreferrer';
+      link.textContent = label;
+      return link;
+    } catch {
+      return null;
+    }
+  }
+
   function createSuggestionsDetails(suggestions) {
     const details = document.createElement('details');
     details.className = 'aiang-suggestions';
@@ -1656,7 +2270,9 @@
         const rect = toolbar.getBoundingClientRect();
         return rect.width > 0 && rect.height > 0 && rect.bottom > 0 && rect.top < window.innerHeight;
       });
-    const anchor = toastToolbarAnchor?.isConnected && visibleToolbars.includes(toastToolbarAnchor)
+    const preferredRect = toastToolbarAnchor?.isConnected ? toastToolbarAnchor.getBoundingClientRect() : null;
+    const anchor = preferredRect?.width > 0 && preferredRect?.height > 0
+      && preferredRect.bottom > 0 && preferredRect.top < window.innerHeight
       ? toastToolbarAnchor
       : visibleToolbars[0];
     if (!anchor) {

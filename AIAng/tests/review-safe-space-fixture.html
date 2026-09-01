@@ -31,7 +31,7 @@
           if (message.type === 'PROCESS_TEXT') return callback({
             ok: true,
             correctedText: message.text.replace('기슬', '기술'),
-            suggestions: [{ original: '기슬', replacement: '기술', start: 48, end: 50, reason: '맞춤법 교정' }]
+            suggestions: [{ original: '기슬', replacement: '기술', start: 47, end: 49, reason: '맞춤법 교정' }]
           });
           callback({ ok: true });
         }

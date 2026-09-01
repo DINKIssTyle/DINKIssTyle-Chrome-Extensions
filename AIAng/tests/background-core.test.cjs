@@ -31,9 +31,12 @@ function loadCore(fetchImplementation = fetch) {
     parseEditingResponse,
     buildPrompts,
     buildTitleSuggestionPrompts,
+    buildPostSummaryPrompts,
+    buildCommentReactionSummaryPrompts,
     normalizeSuggestions,
     applySuggestions,
     parseTitleSuggestions,
+    parsePostSummary,
     callOpenAICompatible,
     listModels
   };`, context);
@@ -205,4 +208,37 @@ test('parses exactly five unique title suggestions and limits each to 200 charac
   assert.equal(titles.length, 5);
   assert.equal(titles[0].length, 200);
   assert.deepEqual(Array.from(titles.slice(1)), ['두 번째 제목', '세 번째 제목', '네 번째 제목', '다섯 번째 제목']);
+});
+
+test('builds a detailed Markdown post summary prompt from structured content', () => {
+  const prompts = core.buildPostSummaryPrompts('첫 문단  \n\n\n둘째 문단');
+  assert.equal(
+    prompts.system,
+    '당신은 웹 기사, 게시물 및 기타 콘텐츠를 처리하는 전문가입니다. 게시물을 요약해주세요.'
+  );
+  assert.match(prompts.user, /<content>\n첫 문단\n\n둘째 문단\n<\/content>/);
+  assert.match(prompts.user, /Markdown 문단과 목록/);
+  assert.match(prompts.user, /지나치게 짧고 추상적인 요약은 피하세요/);
+  assert.match(prompts.user, /요약문만 반환하세요/);
+});
+
+test('accepts plain text and JSON post summaries', () => {
+  assert.equal(core.parsePostSummary('핵심 요약입니다.'), '핵심 요약입니다.');
+  assert.equal(core.parsePostSummary('{"summary":"JSON 요약입니다."}'), 'JSON 요약입니다.');
+  assert.throws(() => core.parsePostSummary(''), /빈 요약/);
+});
+
+test('builds a grounded Markdown comment reaction prompt', () => {
+  const prompts = core.buildCommentReactionSummaryPrompts(
+    '# 게시물\n본문 내용',
+    '[댓글 1]\n동의합니다.\n\n[댓글 4]\n다른 의견입니다.',
+    4,
+    2
+  );
+  assert.match(prompts.system, /댓글 반응을 분석하는 전문가/);
+  assert.match(prompts.user, /전체 댓글 4개.*2개를 분석/);
+  assert.match(prompts.user, /소수 의견을 전체 반응처럼 확대하지 말고/);
+  assert.match(prompts.user, /<post>\n# 게시물\n본문 내용\n<\/post>/);
+  assert.match(prompts.user, /<comments total="4" sampled="2">/);
+  assert.match(prompts.user, /Markdown 문단과 목록/);
 });

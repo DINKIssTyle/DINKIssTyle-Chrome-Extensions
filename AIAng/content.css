@@ -39,6 +39,7 @@
 .aiang-section-no-change,
 .aiang-title-intro,
 .aiang-title-option,
+.aiang-summary-slot,
 .aiang-no-change,
 .aiang-inline-navigator,
 .aiang-inline-tooltip,
@@ -48,7 +49,8 @@
 }
 
 .aiang-action,
-.aiang-settings-button {
+.aiang-settings-button,
+.aiang-summary-button {
   appearance: none;
   border: 1px solid var(--aiang-border);
   background: var(--aiang-control-background);
@@ -59,7 +61,8 @@
 }
 
 .aiang-action:hover,
-.aiang-settings-button:hover {
+.aiang-settings-button:hover,
+.aiang-summary-button:hover {
   background: var(--aiang-control-hover);
   color: var(--aiang-hover-foreground);
 }
@@ -76,6 +79,7 @@
 
 .aiang-action:focus-visible,
 .aiang-settings-button:focus-visible,
+.aiang-summary-button:focus-visible,
 .aiang-review button:focus-visible,
 .aiang-inline-navigator button:focus-visible,
 .aiang-inline-tooltip button:focus-visible {
@@ -86,6 +90,7 @@
 
 .aiang-action svg,
 .aiang-settings-button svg,
+.aiang-summary-button svg,
 .aiang-no-change svg {
   width: 16px;
   height: 16px;
@@ -105,6 +110,36 @@
   align-items: center;
   justify-content: center;
   margin: 10px 0 4px;
+}
+
+.aiang-summary-slot {
+  position: relative;
+  z-index: 5;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 16px 0;
+}
+
+.aiang-summary-button {
+  position: relative;
+  min-height: 36px;
+  padding: 0 15px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  white-space: nowrap;
+  box-shadow: var(--aiang-shadow-xs);
+}
+
+.aiang-summary-button:disabled {
+  cursor: wait;
+  opacity: 0.72;
 }
 
 .aiang-toolbar {
@@ -179,11 +214,13 @@
   opacity: 0.72;
 }
 
-.aiang-action.is-loading {
+.aiang-action.is-loading,
+.aiang-summary-button.is-loading {
   position: relative;
 }
 
-.aiang-action.is-loading > :not(.aiang-loading-content) {
+.aiang-action.is-loading > :not(.aiang-loading-content),
+.aiang-summary-button.is-loading > :not(.aiang-loading-content) {
   visibility: hidden;
 }
 
@@ -667,6 +704,110 @@
   overflow-wrap: anywhere;
   font-size: 13px;
   line-height: 1.45;
+}
+
+.aiang-summary-content {
+  padding: 18px 20px 22px;
+  overflow-wrap: anywhere;
+  color: var(--aiang-text);
+  font-size: 14px;
+  line-height: 1.75;
+}
+
+.aiang-summary-content > :first-child { margin-top: 0; }
+.aiang-summary-content > :last-child { margin-bottom: 0; }
+
+.aiang-summary-content h1,
+.aiang-summary-content h2,
+.aiang-summary-content h3,
+.aiang-summary-content h4,
+.aiang-summary-content h5,
+.aiang-summary-content h6 {
+  margin: 1.25em 0 0.5em;
+  color: var(--aiang-text);
+  font-weight: 750;
+  line-height: 1.35;
+}
+
+.aiang-summary-content h1 { font-size: 1.42em; }
+.aiang-summary-content h2 { font-size: 1.28em; }
+.aiang-summary-content h3 { font-size: 1.16em; }
+.aiang-summary-content h4,
+.aiang-summary-content h5,
+.aiang-summary-content h6 { font-size: 1.05em; }
+.aiang-summary-content p { margin: 0.75em 0; }
+
+.aiang-summary-content ul,
+.aiang-summary-content ol {
+  margin: 0.75em 0;
+  padding-left: 1.55em;
+}
+
+.aiang-summary-content li + li { margin-top: 0.3em; }
+
+.aiang-summary-content blockquote {
+  margin: 0.9em 0;
+  padding: 0.15em 0 0.15em 0.9em;
+  border-left: 3px solid var(--aiang-ring);
+  color: var(--aiang-text-muted);
+}
+
+.aiang-summary-content blockquote > :first-child { margin-top: 0; }
+.aiang-summary-content blockquote > :last-child { margin-bottom: 0; }
+
+.aiang-summary-content code {
+  padding: 0.12em 0.35em;
+  border-radius: 4px;
+  background: var(--aiang-surface-muted);
+  font: 0.92em/1.5 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+.aiang-summary-content pre {
+  margin: 0.9em 0;
+  padding: 12px 14px;
+  overflow: auto;
+  border: 1px solid var(--aiang-border);
+  border-radius: var(--aiang-radius-md);
+  background: var(--aiang-surface-muted);
+}
+
+.aiang-summary-content pre code {
+  padding: 0;
+  background: transparent;
+  white-space: pre;
+}
+
+.aiang-summary-content a {
+  color: var(--aiang-ring);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.aiang-summary-content hr {
+  margin: 1em 0;
+  border: 0;
+  border-top: 1px solid var(--aiang-border);
+}
+
+.aiang-summary-content table {
+  width: 100%;
+  margin: 0.9em 0;
+  border-collapse: collapse;
+  display: block;
+  overflow-x: auto;
+}
+
+.aiang-summary-content th,
+.aiang-summary-content td {
+  padding: 7px 9px;
+  border: 1px solid var(--aiang-border);
+  text-align: left;
+  vertical-align: top;
+}
+
+.aiang-summary-content th {
+  background: var(--aiang-surface-muted);
+  font-weight: 700;
 }
 
 .aiang-review-footer {
