@@ -9,6 +9,7 @@
   const LABELS = Object.fromEntries([...BODY_ACTIONS, ...COMMENT_ACTIONS].map(action => [action.id, action.label]));
   const MEDIA_LEAF_SELECTOR = 'img, video, audio, iframe, canvas, object, embed';
   const MEDIA_WRAPPER_SELECTOR = 'figure, picture, a, [data-type="image"], [data-node-type="image"], [data-node-view-wrapper], [data-youtube-video], .image-resizer';
+  const POST_EDITOR_PATH_PATTERN = /\/(?:write|edit)(?:\/|$)/;
   const REVIEW_ICON_URL = chrome.runtime.getURL('icons/icon48.png');
   const BLOCK_TAGS = new Set([
     'ADDRESS', 'ARTICLE', 'ASIDE', 'BLOCKQUOTE', 'DIV', 'DL', 'FIGCAPTION', 'FIGURE',
@@ -51,7 +52,7 @@
   function classifyEditor(editor) {
     if (editor.matches('textarea[placeholder*="댓글을 입력하세요"]')) return 'comment';
     if (editor.matches('.prose-sm') || editor.querySelector('[data-placeholder*="댓글을 입력하세요"]')) return 'comment';
-    if (/\/write(?:\/|$)/.test(location.pathname) && editor.matches('[contenteditable="true"].ProseMirror')) return 'body';
+    if (POST_EDITOR_PATH_PATTERN.test(location.pathname) && editor.matches('[contenteditable="true"].ProseMirror')) return 'body';
     return null;
   }
 
