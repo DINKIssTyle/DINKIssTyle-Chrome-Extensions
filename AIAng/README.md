@@ -2,6 +2,8 @@
 
 `damoang.net`의 제목, 본문, 댓글 입력기에 AI 교정 도구를 추가하는 Chrome 확장 프로그램입니다.
 
+<div align="center"><img src="docs/aiang.gif"></div>
+
 ## 기능
 
 - 글쓰기 툴바의 맞춤법 검사로 제목과 본문을 함께 검토하고 한 번에 반영
