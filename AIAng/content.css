@@ -403,21 +403,6 @@
   color: var(--aiang-primary-foreground);
 }
 
-.aiang-inline-navigator [data-aiang-inline-count] {
-  min-width: 42px;
-  text-align: center;
-  font-size: 12px;
-  font-weight: 800;
-  font-variant-numeric: tabular-nums;
-}
-
-.aiang-inline-divider {
-  width: 1px;
-  height: 18px;
-  margin: 0 2px;
-  background: var(--aiang-border);
-}
-
 .aiang-inline-mirror {
   z-index: -1;
 }

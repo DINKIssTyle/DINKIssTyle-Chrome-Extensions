@@ -811,7 +811,7 @@
     document.addEventListener('keydown', handleReviewKeydown, true);
     window.addEventListener('resize', scheduleInlineReviewRender);
     renderInlineReview();
-    focusInlineChange(inlineReviewSession.activeChangeId, { scroll: false });
+    focusInlineChange(inlineReviewSession.activeChangeId);
   }
 
   function reserveInlineReviewSafeSpace(session) {
@@ -927,17 +927,9 @@
     navigator.setAttribute('role', 'toolbar');
     navigator.setAttribute('aria-label', 'AI 교정 제안');
     navigator.innerHTML = [
-      '<button type="button" data-aiang-inline="previous" title="이전 교정" aria-label="이전 교정">‹</button>',
-      '<span data-aiang-inline-count>0 / 0</span>',
-      '<button type="button" data-aiang-inline="next" title="다음 교정" aria-label="다음 교정">›</button>',
-      '<span class="aiang-inline-divider" aria-hidden="true"></span>',
-      '<button type="button" data-aiang-inline="apply" title="현재 교정 적용">적용</button>',
-      '<button type="button" class="aiang-inline-apply-all" data-aiang-inline="apply-all" title="모든 교정 적용">모두 적용</button>',
-      '<button type="button" data-aiang-inline="close" title="교정 표시 닫기" aria-label="교정 표시 닫기">×</button>'
+      '<button type="button" class="aiang-inline-cancel" data-aiang-inline="close" title="교정 취소">취소</button>',
+      '<button type="button" class="aiang-inline-apply-all" data-aiang-inline="apply-all" title="모든 교정 적용">모두 적용</button>'
     ].join('');
-    navigator.querySelector('[data-aiang-inline="previous"]').addEventListener('click', () => moveInlineChange(-1));
-    navigator.querySelector('[data-aiang-inline="next"]').addEventListener('click', () => moveInlineChange(1));
-    navigator.querySelector('[data-aiang-inline="apply"]').addEventListener('click', applyActiveInlineChange);
     navigator.querySelector('[data-aiang-inline="apply-all"]').addEventListener('click', applyAllInlineChanges);
     navigator.querySelector('[data-aiang-inline="close"]').addEventListener('click', closeInlineReview);
     return navigator;
@@ -960,8 +952,6 @@
       index = 0;
       inlineReviewSession.activeChangeId = records[0].change.id;
     }
-    const count = inlineReviewSession.navigator.querySelector('[data-aiang-inline-count]');
-    if (count) count.textContent = records.length ? `${index + 1} / ${records.length}` : '0 / 0';
     positionInlineNavigator(records[index]?.entry?.target || inlineReviewSession.entries[0]?.target);
   }
 
@@ -994,47 +984,17 @@
     navigator.style.bottom = 'auto';
   }
 
-  function moveInlineChange(delta) {
-    const records = getInlineChangeRecords();
-    if (!records.length || !inlineReviewSession) return;
-    const currentIndex = Math.max(0, records.findIndex(record => record.change.id === inlineReviewSession.activeChangeId));
-    const nextIndex = (currentIndex + delta + records.length) % records.length;
-    focusInlineChange(records[nextIndex].change.id);
-  }
-
-  function focusInlineChange(changeId, { scroll = true } = {}) {
+  function focusInlineChange(changeId) {
     if (!inlineReviewSession) return;
     const record = findInlineChangeRecord(changeId);
     if (!record) return;
     inlineReviewSession.activeChangeId = changeId;
-    if (scroll) scrollInlineChangeIntoView(record);
     scheduleInlineReviewRender();
     requestAnimationFrame(() => {
       if (!inlineReviewSession) return;
       renderInlineReview();
       showInlineTooltip(changeId);
     });
-  }
-
-  function scrollInlineChangeIntoView({ entry, change }) {
-    const target = entry.target;
-    if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement) {
-      target.focus({ preventScroll: true });
-      target.setSelectionRange(change.start, change.start);
-      target.scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'smooth' });
-      return;
-    }
-    const mapped = buildContentEditableMap(entry);
-    const position = mapped?.units[change.start]?.start || mapped?.units[change.start - 1]?.end;
-    const element = position?.container instanceof Element
-      ? position.container
-      : position?.container?.parentElement;
-    (element || target).scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'smooth' });
-  }
-
-  function applyActiveInlineChange() {
-    if (!inlineReviewSession) return;
-    applyInlineChange(inlineReviewSession.activeChangeId);
   }
 
   function applyInlineChange(changeId) {
@@ -1065,7 +1025,7 @@
       }
       inlineReviewSession.activeChangeId = records[0].change.id;
       renderInlineReview();
-      focusInlineChange(inlineReviewSession.activeChangeId, { scroll: false });
+      focusInlineChange(inlineReviewSession.activeChangeId);
     } catch (error) {
       if (inlineReviewSession) inlineReviewSession.applying = false;
       closeInlineReview();
@@ -2171,46 +2131,78 @@
   }
 
   function writeTargetText(target, text, media = []) {
-    target.focus();
-    if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement) {
-      const prototype = target instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
-      Object.getOwnPropertyDescriptor(prototype, 'value').set.call(target, text);
-      target.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: text }));
-      target.dispatchEvent(new Event('change', { bubbles: true }));
-      return;
-    }
-
-    if (!media.every(item => countOccurrences(text, item.token) === 1)) {
-      throw new Error('이미지 위치 정보가 손상되어 교정문을 반영하지 않았습니다.');
-    }
-
-    const backup = Array.from(target.childNodes, node => node.cloneNode(true));
-
+    const scrollState = captureScrollState(target);
     try {
-      const selection = window.getSelection();
-      const range = document.createRange();
-      range.selectNodeContents(target);
-      selection.removeAllRanges();
-      selection.addRange(range);
-      const applied = document.execCommand?.('insertText', false, text);
-      selection.removeAllRanges();
-
-      if (!applied) rebuildEditorContent(target, text, media);
-      const restoredCount = restoreMediaTokens(target, media);
-      if (restoredCount !== media.length) {
-        rebuildEditorContent(target, text, media);
-        if (countRestoredMedia(target, media) !== media.length) {
-          throw new Error('이미지 복원에 실패하여 원래 내용을 되돌렸습니다.');
-        }
+      target.focus({ preventScroll: true });
+      if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement) {
+        const prototype = target instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+        Object.getOwnPropertyDescriptor(prototype, 'value').set.call(target, text);
+        target.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: text }));
+        target.dispatchEvent(new Event('change', { bubbles: true }));
+        return;
       }
-      target.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertReplacementText', data: null }));
-      target.dispatchEvent(new Event('change', { bubbles: true }));
-    } catch (error) {
-      window.getSelection()?.removeAllRanges();
-      target.replaceChildren(...backup.map(node => node.cloneNode(true)));
-      target.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertReplacementText', data: null }));
-      target.dispatchEvent(new Event('change', { bubbles: true }));
-      throw error;
+
+      if (!media.every(item => countOccurrences(text, item.token) === 1)) {
+        throw new Error('이미지 위치 정보가 손상되어 교정문을 반영하지 않았습니다.');
+      }
+
+      const backup = Array.from(target.childNodes, node => node.cloneNode(true));
+
+      try {
+        const selection = window.getSelection();
+        const range = document.createRange();
+        range.selectNodeContents(target);
+        selection.removeAllRanges();
+        selection.addRange(range);
+        const applied = document.execCommand?.('insertText', false, text);
+        selection.removeAllRanges();
+
+        if (!applied) rebuildEditorContent(target, text, media);
+        const restoredCount = restoreMediaTokens(target, media);
+        if (restoredCount !== media.length) {
+          rebuildEditorContent(target, text, media);
+          if (countRestoredMedia(target, media) !== media.length) {
+            throw new Error('이미지 복원에 실패하여 원래 내용을 되돌렸습니다.');
+          }
+        }
+        target.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertReplacementText', data: null }));
+        target.dispatchEvent(new Event('change', { bubbles: true }));
+      } catch (error) {
+        window.getSelection()?.removeAllRanges();
+        target.replaceChildren(...backup.map(node => node.cloneNode(true)));
+        target.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertReplacementText', data: null }));
+        target.dispatchEvent(new Event('change', { bubbles: true }));
+        throw error;
+      }
+    } finally {
+      restoreScrollState(scrollState);
+    }
+  }
+
+  function captureScrollState(target) {
+    const elements = [];
+    for (let element = target; element; element = element.parentElement) elements.push(element);
+    if (document.scrollingElement && !elements.includes(document.scrollingElement)) {
+      elements.push(document.scrollingElement);
+    }
+    return {
+      viewportLeft: window.scrollX,
+      viewportTop: window.scrollY,
+      elements: elements.map(element => ({
+        element,
+        left: element.scrollLeft,
+        top: element.scrollTop
+      }))
+    };
+  }
+
+  function restoreScrollState(state) {
+    for (const item of state.elements) {
+      item.element.scrollLeft = item.left;
+      item.element.scrollTop = item.top;
+    }
+    if (window.scrollX !== state.viewportLeft || window.scrollY !== state.viewportTop) {
+      window.scrollTo(state.viewportLeft, state.viewportTop);
     }
   }
 
