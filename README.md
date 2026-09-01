@@ -26,6 +26,7 @@ Since these are unpacked extensions, you need to install them via Chrome's Devel
 *   **Visual-Effects**: Apply various visual effects and page transitions to web pages via a menu.
 *   **Zoom-To**: Double-click on empty space within a content container to smart zoom the entire page to fit that content using native browser zoom. Double-click again to restore.
 *   **PowerCache-Cleaner**: Powerfully clear website cache (Cache Storage) and unregister Service Workers with a single click to reset the site to its initial state.
+*   **Translator**: Translate visible webpage text in place with LM Studio or the OpenAI Responses API, with batching, progress, cancellation, and original-text restoration.
 
 ---
 
@@ -57,3 +58,4 @@ Since these are unpacked extensions, you need to install them via Chrome's Devel
 *   **Visual-Effects**: 메뉴를 통해 웹 페이지에 다양한 시각 효과와 페이지 전환 효과를 적용합니다.
 *   **Zoom-To**: 콘텐츠 컨테이너 내의 빈 공간을 더블 클릭하면 브라우저의 기본 줌 기능을 사용하여 해당 콘텐츠에 맞춰 페이지 전체를 스마트 줌 합니다. 다시 더블 클릭하면 복원됩니다.
 *   **PowerCache-Cleaner**: 클릭 한 번으로 웹사이트의 캐시(Cache Storage)를 강력하게 삭제하고 등록된 서비스 워커를 해제하여 사이트를 초기 상태로 되돌립니다.
+*   **Translator**: LM Studio 또는 OpenAI Responses API로 웹페이지의 보이는 텍스트를 원래 위치에서 번역하며, 배치 처리, 진행률, 취소 및 원문 복원을 지원합니다.

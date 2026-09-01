@@ -1,0 +1,589 @@
+:root {
+  --aiang-background: var(--background, oklch(100% 0 0));
+  --aiang-surface: var(--popover, var(--background, oklch(100% 0 0)));
+  --aiang-surface-muted: var(--muted, oklch(93.9% .002 247.845));
+  --aiang-text: var(--popover-foreground, var(--foreground, oklch(12.9% .042 264.695)));
+  --aiang-text-muted: var(--muted-foreground, oklch(55.6% .012 196.88));
+  --aiang-border: var(--border, oklch(88.9% .005 203.53));
+  --aiang-input: var(--input, oklch(92.9% .013 255.508));
+  --aiang-ring: var(--ring, oklch(70.4% .04 256.788));
+  --aiang-primary: var(--primary, oklch(20.8% .042 265.755));
+  --aiang-primary-foreground: var(--primary-foreground, oklch(98.4% .003 247.858));
+  --aiang-hover-foreground: var(--accent-foreground, oklch(20.8% .042 265.755));
+  --aiang-control-background: var(--background, oklch(100% 0 0));
+  --aiang-control-border: var(--input, oklch(92.9% .013 255.508));
+  --aiang-control-hover: var(--accent, oklch(96.8% .007 247.896));
+  --aiang-danger: var(--destructive, oklch(57.7% .245 27.325));
+  --aiang-success: oklch(52.7% .154 150.069);
+  --aiang-warning: oklch(66.6% .179 58.318);
+  --aiang-radius: var(--radius, .625rem);
+  --aiang-radius-md: calc(var(--aiang-radius) - 2px);
+  --aiang-shadow-xs: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+  --aiang-shadow-popover: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+}
+
+.dark,
+.amoled,
+[data-theme="dark"],
+[data-theme="amoled"] {
+  --aiang-control-background: color-mix(in oklch, var(--aiang-input) 30%, transparent);
+  --aiang-control-hover: color-mix(in oklch, var(--aiang-input) 50%, transparent);
+  --aiang-success: oklch(72.3% .219 149.579);
+}
+
+.aiang-action,
+.aiang-settings-button {
+  appearance: none;
+  border: 1px solid var(--aiang-border);
+  background: var(--aiang-control-background);
+  color: var(--aiang-text);
+  font: 500 12px/1 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  cursor: pointer;
+  transition: all 150ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.aiang-action:hover,
+.aiang-settings-button:hover {
+  background: var(--aiang-control-hover);
+  color: var(--aiang-hover-foreground);
+}
+
+.aiang-action:hover,
+.aiang-settings-button:hover {
+  border-color: transparent;
+}
+
+.aiang-action:active,
+.aiang-settings-button:active {
+  background: var(--aiang-control-hover);
+}
+
+.aiang-action:focus-visible,
+.aiang-settings-button:focus-visible,
+.aiang-review button:focus-visible {
+  outline: none;
+  border-color: var(--aiang-ring);
+  box-shadow: 0 0 0 3px color-mix(in oklch, var(--aiang-ring) 50%, transparent);
+}
+
+.aiang-action svg,
+.aiang-settings-button svg,
+.aiang-no-change svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.aiang-toolbar-slot {
+  position: relative;
+  z-index: 5;
+  width: 100%;
+  max-width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 10px 0 4px;
+}
+
+.aiang-toolbar {
+  width: fit-content;
+  max-width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 5px;
+  border: 1px solid var(--aiang-border);
+  border-radius: var(--aiang-radius);
+  background: var(--aiang-background);
+  box-shadow: var(--aiang-shadow-xs);
+}
+
+.aiang-action-group {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+}
+
+.aiang-action {
+  min-height: 32px;
+  padding: 0 10px;
+  border-color: transparent;
+  border-radius: var(--aiang-radius-md);
+  background: transparent;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+}
+
+.aiang-action + .aiang-action {
+  position: relative;
+}
+
+.aiang-action + .aiang-action::before {
+  content: "";
+  position: absolute;
+  left: -1px;
+  width: 1px;
+  height: 14px;
+  background: var(--aiang-border);
+}
+
+.aiang-action:hover::before,
+.aiang-action:hover + .aiang-action::before {
+  opacity: 0;
+}
+
+.aiang-settings-button {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border-color: transparent;
+  border-radius: var(--aiang-radius-md);
+  background: transparent;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.aiang-short-label {
+  display: none;
+}
+
+.aiang-action:disabled {
+  cursor: wait;
+  opacity: 0.72;
+}
+
+.aiang-spinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 999px;
+  animation: aiang-spin 700ms linear infinite;
+}
+
+@keyframes aiang-spin {
+  to { transform: rotate(360deg); }
+}
+
+.aiang-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 2147483645;
+  padding: 24px;
+  display: grid;
+  place-items: center;
+  background: rgb(0 0 0 / 0.5);
+}
+
+.aiang-review {
+  color: var(--aiang-text);
+  background: var(--aiang-surface);
+  border: 1px solid var(--aiang-border);
+  box-shadow: var(--aiang-shadow-popover);
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  overflow: hidden;
+}
+
+.aiang-review-modal {
+  width: min(720px, calc(100vw - 32px));
+  max-height: min(720px, calc(100vh - 48px));
+  border-radius: var(--aiang-radius);
+  overflow-y: auto;
+}
+
+.aiang-review-popover {
+  position: fixed;
+  z-index: 2147483646;
+  width: min(520px, calc(100vw - 20px));
+  max-height: min(620px, calc(100vh - 20px));
+  border-radius: var(--aiang-radius-md);
+  overflow-y: auto;
+}
+
+.aiang-review-header {
+  min-height: 52px;
+  padding: 12px 14px 12px 16px;
+  border-bottom: 1px solid var(--aiang-border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.aiang-review-header > div {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.aiang-review-header strong {
+  font-size: 14px;
+}
+
+.aiang-media-note {
+  margin: 12px 14px 0;
+  padding: 9px 11px;
+  border: 1px solid var(--aiang-border);
+  border-radius: var(--aiang-radius-md);
+  background: var(--aiang-surface-muted);
+  color: var(--aiang-text-muted);
+  font-size: 11px;
+  font-weight: 650;
+  line-height: 1.45;
+}
+
+.aiang-review-badge {
+  width: 28px;
+  height: 28px;
+  border-radius: var(--aiang-radius-md);
+  display: inline-grid;
+  place-items: center;
+  background: var(--aiang-primary);
+  color: var(--aiang-primary-foreground);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: -0.2px;
+}
+
+.aiang-close {
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--aiang-radius-md);
+  background: transparent;
+  color: var(--aiang-text-muted);
+  font: 400 24px/1 system-ui, sans-serif;
+  cursor: pointer;
+}
+
+.aiang-close:hover {
+  background: var(--aiang-control-hover);
+  color: var(--aiang-hover-foreground);
+}
+
+.aiang-comparison {
+  padding: 14px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.aiang-text-card {
+  min-width: 0;
+  border: 1px solid var(--aiang-border);
+  border-radius: var(--aiang-radius-md);
+  background: var(--aiang-surface-muted);
+  overflow: hidden;
+}
+
+.aiang-card-label {
+  display: block;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--aiang-border);
+  color: var(--aiang-text-muted);
+  font-size: 11px;
+  font-weight: 750;
+}
+
+.aiang-card-content {
+  max-height: 270px;
+  overflow: auto;
+  padding: 11px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: var(--aiang-text);
+  font-size: 13px;
+  line-height: 1.58;
+}
+
+.aiang-before .aiang-diff {
+  border-radius: 3px;
+  background: color-mix(in oklch, var(--aiang-danger) 16%, transparent);
+  color: var(--aiang-danger);
+  text-decoration: line-through;
+}
+
+.aiang-after .aiang-diff {
+  border-radius: 3px;
+  background: color-mix(in oklch, var(--aiang-success) 16%, transparent);
+  color: var(--aiang-success);
+}
+
+.aiang-suggestions {
+  margin: 0 14px 4px;
+  border: 1px solid var(--aiang-border);
+  border-radius: var(--aiang-radius-md);
+  background: var(--aiang-surface-muted);
+}
+
+.aiang-suggestions summary {
+  padding: 10px 12px;
+  border-radius: var(--aiang-radius-md);
+  color: var(--aiang-text-muted);
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  user-select: none;
+  transition: background-color 150ms cubic-bezier(0.4, 0, 0.2, 1), color 150ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.aiang-suggestions summary:hover {
+  background: var(--aiang-control-hover);
+  color: var(--aiang-hover-foreground);
+}
+
+.aiang-suggestions summary:focus-visible {
+  outline: none;
+  box-shadow: inset 0 0 0 2px color-mix(in oklch, var(--aiang-ring) 50%, transparent);
+}
+
+.aiang-suggestions > div {
+  max-height: 180px;
+  overflow: auto;
+  padding: 0 10px 8px;
+}
+
+.aiang-suggestion {
+  padding: 8px 3px;
+  border-top: 1px solid var(--aiang-border);
+}
+
+.aiang-suggestion-change {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+}
+
+.aiang-suggestion del { color: var(--aiang-danger); }
+.aiang-suggestion ins { color: var(--aiang-success); text-decoration: none; font-weight: 700; }
+.aiang-suggestion small { display: block; margin-top: 4px; color: var(--aiang-text-muted); font-size: 11px; }
+
+.aiang-result-sections {
+  padding: 14px;
+  display: grid;
+  gap: 12px;
+}
+
+.aiang-result-section {
+  border: 1px solid var(--aiang-border);
+  border-radius: var(--aiang-radius-md);
+  background: var(--aiang-surface);
+  overflow: hidden;
+}
+
+.aiang-result-section h3 {
+  margin: 0;
+  padding: 9px 12px;
+  border-bottom: 1px solid var(--aiang-border);
+  background: var(--aiang-surface-muted);
+  color: var(--aiang-text);
+  font-size: 12px;
+}
+
+.aiang-section-comparison {
+  padding: 10px;
+}
+
+.aiang-result-section .aiang-suggestions {
+  margin: 0 10px 10px;
+}
+
+.aiang-section-no-change {
+  min-height: 48px;
+  padding: 11px 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--aiang-text-muted);
+  font-size: 12px;
+}
+
+.aiang-section-no-change svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: var(--aiang-success);
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.aiang-title-review {
+  width: min(640px, calc(100vw - 32px));
+}
+
+.aiang-title-intro {
+  margin: 0;
+  padding: 13px 14px 8px;
+  color: var(--aiang-text-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.aiang-title-list {
+  padding: 4px 14px 2px;
+  display: grid;
+  gap: 8px;
+}
+
+.aiang-title-option {
+  width: 100%;
+  min-height: 44px;
+  padding: 9px 11px;
+  border: 1px solid var(--aiang-control-border);
+  border-radius: var(--aiang-radius-md);
+  background: var(--aiang-control-background);
+  color: var(--aiang-text);
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  text-align: left;
+  cursor: pointer;
+  box-shadow: var(--aiang-shadow-xs);
+  transition: background-color 150ms cubic-bezier(0.4, 0, 0.2, 1), color 150ms cubic-bezier(0.4, 0, 0.2, 1), border-color 150ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.aiang-title-option:hover {
+  background: var(--aiang-control-hover);
+  color: var(--aiang-hover-foreground);
+}
+
+.aiang-title-number {
+  width: 24px;
+  height: 24px;
+  flex: 0 0 24px;
+  border-radius: var(--aiang-radius-md);
+  display: inline-grid;
+  place-items: center;
+  background: var(--aiang-surface-muted);
+  color: var(--aiang-text-muted);
+  font-size: 11px;
+  font-weight: 750;
+}
+
+.aiang-title-text {
+  padding-top: 2px;
+  overflow-wrap: anywhere;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.aiang-review-footer {
+  padding: 12px 14px 14px;
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.aiang-review-footer button {
+  min-width: 70px;
+  height: 34px;
+  padding: 0 15px;
+  border-radius: var(--aiang-radius-md);
+  font: 500 12px/1 system-ui, sans-serif;
+  cursor: pointer;
+  transition: all 150ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.aiang-secondary {
+  border: 1px solid var(--aiang-control-border);
+  background: var(--aiang-control-background);
+  color: var(--aiang-text);
+  box-shadow: var(--aiang-shadow-xs);
+}
+
+.aiang-secondary:hover {
+  background: var(--aiang-control-hover);
+  color: var(--aiang-hover-foreground);
+}
+
+.aiang-primary {
+  border: 1px solid transparent;
+  background: var(--aiang-primary);
+  color: var(--aiang-primary-foreground);
+  box-shadow: var(--aiang-shadow-xs);
+}
+
+.aiang-primary:hover {
+  background: color-mix(in oklch, var(--aiang-primary) 90%, transparent);
+}
+
+.aiang-no-change {
+  padding: 28px 20px 18px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  text-align: center;
+}
+
+.aiang-no-change svg {
+  width: 30px;
+  height: 30px;
+  margin-bottom: 3px;
+  padding: 6px;
+  border-radius: 999px;
+  background: color-mix(in oklch, var(--aiang-success) 13%, transparent);
+  color: var(--aiang-success);
+}
+
+.aiang-no-change strong { font-size: 14px; }
+.aiang-no-change span { color: var(--aiang-text-muted); font-size: 12px; }
+
+.aiang-toast {
+  position: fixed;
+  right: 18px;
+  bottom: 18px;
+  z-index: 2147483647;
+  max-width: min(440px, calc(100vw - 36px));
+  padding: 11px 12px 11px 14px;
+  border: 1px solid var(--aiang-border);
+  border-radius: var(--aiang-radius-md);
+  background: var(--aiang-surface);
+  color: var(--aiang-text);
+  box-shadow: var(--aiang-shadow-popover);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font: 600 12px/1.45 system-ui, sans-serif;
+  animation: aiang-toast-in 180ms ease-out;
+}
+
+.aiang-toast-error { border-left: 4px solid var(--aiang-danger); }
+.aiang-toast-success { border-left: 4px solid var(--aiang-success); }
+.aiang-toast-warning { border-left: 4px solid var(--aiang-warning); }
+.aiang-toast button { border: 0; border-radius: var(--aiang-radius-md); background: transparent; color: var(--aiang-text); font-weight: 700; cursor: pointer; }
+.aiang-toast button:hover { background: var(--aiang-control-hover); color: var(--aiang-hover-foreground); }
+
+@keyframes aiang-toast-in {
+  from { opacity: 0; transform: translateY(8px); }
+}
+
+@media (max-width: 680px) {
+  .aiang-toolbar { width: 100%; justify-content: space-between; gap: 2px; }
+  .aiang-action-group { flex: 1 1 auto; }
+  .aiang-action { flex: 1 1 auto; justify-content: center; padding: 0 5px; font-size: 11px; }
+  .aiang-action svg { display: none; }
+  .aiang-long-label { display: none; }
+  .aiang-short-label { display: inline; }
+  .aiang-comparison { grid-template-columns: 1fr; }
+  .aiang-card-content { max-height: 190px; }
+  .aiang-overlay { padding: 10px; }
+  .aiang-review-modal { width: calc(100vw - 20px); max-height: calc(100vh - 20px); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .aiang-spinner,
+  .aiang-toast { animation: none; }
+}

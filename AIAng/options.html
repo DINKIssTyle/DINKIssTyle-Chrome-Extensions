@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="ko">
+
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AIAng 설정</title>
+  <link rel="icon" type="image/png" sizes="16x16" href="icons/icon16.png">
+  <link rel="stylesheet" href="options.css">
+</head>
+
+<body>
+  <main class="shell">
+    <header class="hero">
+      <img class="logo" src="icons/icon128.png" alt="" width="52" height="52">
+      <div>
+        <p class="eyebrow">Damoang writing assistant</p>
+        <h1>AIAng</h1>
+        <p>다모앙 글과 댓글을 내 AI로 교정합니다.</p>
+      </div>
+    </header>
+
+    <form id="settings-form">
+      <section class="card">
+        <div class="section-heading">
+          <div>
+            <h2>AI 연결</h2>
+            <p>LM Studio 같은 OpenAI 호환 서버 또는 Chrome 내장 Gemini Nano를 선택하세요.</p>
+          </div>
+          <label class="switch-row">
+            <input id="enabled" type="checkbox">
+            <span class="switch" aria-hidden="true"></span>
+            <span>사용</span>
+          </label>
+        </div>
+
+        <div class="field-grid">
+          <label class="field full">
+            <span>AI 제공자</span>
+            <select id="provider">
+              <option value="openai">OpenAI 호환 API · LM Studio</option>
+              <option value="gemini">Google Gemini Nano · Chrome 내장</option>
+            </select>
+          </label>
+
+          <div id="openai-fields" class="subgrid full">
+            <label class="field full">
+              <span>API 기본 주소</span>
+              <input id="endpoint" type="url" placeholder="localhost:1234" autocomplete="off" spellcheck="false">
+              <small>주소:포트 만 입력하세요.</small>
+            </label>
+
+            <label class="field full">
+              <span>API 키 <em>선택</em></span>
+              <div class="password-row">
+                <input id="api-key" type="password" placeholder="로컬 서버는 비워 둘 수 있습니다" autocomplete="off"
+                  spellcheck="false">
+                <button id="toggle-key" class="text-button" type="button">보기</button>
+              </div>
+              <small>API Key가 PC에 저장됩니다. 공용 PC 및 보안이 확실하지 않은곳에서 입력하지 마세요.</small>
+            </label>
+
+            <label class="field full">
+              <span>모델</span>
+              <div class="model-control">
+                <div class="model-row">
+                  <input id="model" type="text" list="model-list" placeholder="local-model" autocomplete="off"
+                    spellcheck="false" role="combobox" aria-autocomplete="list" aria-controls="model-menu"
+                    aria-expanded="false">
+                  <datalist id="model-list"></datalist>
+                  <button id="load-models" class="outline-button" type="button">모델 불러오기</button>
+                </div>
+                <div id="model-menu" class="model-menu" role="listbox" aria-label="사용 가능한 모델" hidden></div>
+              </div>
+            </label>
+
+            <label class="field full">
+              <span>Temperature</span>
+              <input id="temperature" type="number" min="0" max="2" step="0.1">
+            </label>
+          </div>
+
+          <div id="gemini-note" class="notice full" hidden>
+            Gemini Nano는 지원되는 데스크톱 Chrome과 기기에서만 작동합니다. 한국어 사용에는 Chrome의 다국어 Prompt API 지원이 필요하며, 첫 사용 시 모델을 내려받을 수
+            있습니다.
+          </div>
+        </div>
+      </section>
+
+      <section class="card">
+        <div class="section-heading compact">
+          <div>
+            <h2>개인화</h2>
+            <p>모든 교정 작업에 덧붙일 나만의 글쓰기 지침입니다.</p>
+          </div>
+        </div>
+        <label class="field">
+          <span class="sr-only">개인화 사용자 지침</span>
+          <textarea id="personalization" rows="6" maxlength="4000"
+            placeholder="예: 나는 언제나 친절한 사람입니다. 다정한 말투와 교양 있는 문장을 사용해 주세요."></textarea>
+          <small class="counter"><span id="personalization-count">0</span>/4000</small>
+        </label>
+      </section>
+
+      <div class="footer-actions">
+        <p id="status" role="status" aria-live="polite"></p>
+        <button id="test" class="outline-button" type="button">연결 테스트</button>
+        <button class="primary-button" type="submit">저장</button>
+      </div>
+    </form>
+
+    <footer class="settings-footer">
+      <p>더 많은 DKST Apps: <a href="https://dinkisstyle.net/apps" target="_blank"
+          rel="noopener noreferrer">https://dinkisstyle.net/apps</a></p>
+      <p>© 2026 DINKI'ssTyle</p>
+    </footer>
+  </main>
+  <script src="options.js"></script>
+</body>
+
+</html>
