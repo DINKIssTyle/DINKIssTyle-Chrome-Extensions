@@ -407,7 +407,13 @@
     if (cancelButtonRequest(button)) return;
     const comments = collectCommentTexts(articleBody);
     if (!comments.length) {
-      showToast('요약할 댓글이 없습니다.', 'warning');
+      const declaredCount = getDeclaredDamoangCommentCount(articleBody);
+      showToast(
+        declaredCount > 0
+          ? '댓글을 아직 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.'
+          : '요약할 댓글이 아직 없습니다.',
+        'info'
+      );
       return;
     }
 
@@ -439,6 +445,12 @@
 
   function collectCommentTexts(articleBody) {
     const followsArticle = element => Boolean(articleBody.compareDocumentPosition(element) & Node.DOCUMENT_POSITION_FOLLOWING);
+    const damoangRoot = findDamoangCommentRoot(articleBody);
+    if (damoangRoot) {
+      const commentBodies = Array.from(damoangRoot.querySelectorAll('li.comment-item .comment-body'));
+      return normalizeCollectedCommentTexts(commentBodies);
+    }
+
     const roots = findCommentRoots(articleBody);
     const commentItemSelector = COMMENT_ITEM_SELECTORS.join(',');
     const explicitContents = COMMENT_TEXT_SELECTORS.flatMap(selector => Array.from(document.querySelectorAll(selector)))
@@ -460,6 +472,10 @@
         .filter(element => !element.querySelector('p, li, [class*="content"], [class*="body"], [class*="text"]'));
     }
 
+    return normalizeCollectedCommentTexts(candidates);
+  }
+
+  function normalizeCollectedCommentTexts(candidates) {
     const seen = new Set();
     return candidates.map(extractCommentText)
       .map(text => text.trim())
@@ -470,6 +486,21 @@
         seen.add(key);
         return true;
       });
+  }
+
+  function findDamoangCommentRoot(articleBody) {
+    const root = document.querySelector('#comments');
+    return root && Boolean(articleBody.compareDocumentPosition(root) & Node.DOCUMENT_POSITION_FOLLOWING)
+      ? root
+      : null;
+  }
+
+  function getDeclaredDamoangCommentCount(articleBody) {
+    const root = findDamoangCommentRoot(articleBody);
+    const heading = root && Array.from(root.querySelectorAll('h1, h2, h3, h4'))
+      .find(element => /^댓글(?:\s|\(|$)/.test(element.textContent.trim()));
+    const match = heading?.textContent.match(/댓글\s*\(?\s*(\d+)/);
+    return match ? Number(match[1]) : null;
   }
 
   function findCommentRoots(articleBody) {
