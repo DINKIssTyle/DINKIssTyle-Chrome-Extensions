@@ -9,6 +9,7 @@
   const LABELS = Object.fromEntries([...BODY_ACTIONS, ...COMMENT_ACTIONS].map(action => [action.id, action.label]));
   const MEDIA_LEAF_SELECTOR = 'img, video, audio, iframe, canvas, object, embed';
   const MEDIA_WRAPPER_SELECTOR = 'figure, picture, a, [data-type="image"], [data-node-type="image"], [data-node-view-wrapper], [data-youtube-video], .image-resizer';
+  const REVIEW_ICON_URL = chrome.runtime.getURL('icons/icon48.png');
   const BLOCK_TAGS = new Set([
     'ADDRESS', 'ARTICLE', 'ASIDE', 'BLOCKQUOTE', 'DIV', 'DL', 'FIGCAPTION', 'FIGURE',
     'FOOTER', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'HEADER', 'HR', 'LI', 'MAIN',
@@ -267,11 +268,14 @@
     button.disabled = loading;
     button.classList.toggle('is-loading', loading);
     if (loading) {
-      button.dataset.previousHtml = button.innerHTML;
-      button.innerHTML = '<span class="aiang-spinner" aria-hidden="true"></span><span>처리 중</span>';
-    } else if (button.dataset.previousHtml) {
-      button.innerHTML = button.dataset.previousHtml;
-      delete button.dataset.previousHtml;
+      if (!button.querySelector('.aiang-loading-content')) {
+        const loadingContent = document.createElement('span');
+        loadingContent.className = 'aiang-loading-content';
+        loadingContent.innerHTML = '<span class="aiang-spinner" aria-hidden="true"></span><span>처리 중</span>';
+        button.append(loadingContent);
+      }
+    } else {
+      button.querySelector('.aiang-loading-content')?.remove();
     }
     button.setAttribute('aria-label', loading ? `${LABELS[action]} 처리 중` : LABELS[action]);
   }
@@ -287,7 +291,7 @@
 
     const header = document.createElement('header');
     header.className = 'aiang-review-header';
-    header.innerHTML = `<div><span class="aiang-review-badge">AI</span><strong>${LABELS[action]}</strong></div>`;
+    header.innerHTML = `<div><img class="aiang-review-badge" src="${REVIEW_ICON_URL}" alt=""><strong>${LABELS[action]}</strong></div>`;
     const close = document.createElement('button');
     close.type = 'button';
     close.className = 'aiang-close';
@@ -382,7 +386,7 @@
 
     const header = document.createElement('header');
     header.className = 'aiang-review-header';
-    header.innerHTML = '<div><span class="aiang-review-badge">AI</span><strong>맞춤법 검사</strong></div>';
+    header.innerHTML = `<div><img class="aiang-review-badge" src="${REVIEW_ICON_URL}" alt=""><strong>맞춤법 검사</strong></div>`;
     const close = document.createElement('button');
     close.type = 'button';
     close.className = 'aiang-close';
@@ -482,7 +486,7 @@
 
     const header = document.createElement('header');
     header.className = 'aiang-review-header';
-    header.innerHTML = '<div><span class="aiang-review-badge">AI</span><strong>글 제목 추천</strong></div>';
+    header.innerHTML = `<div><img class="aiang-review-badge" src="${REVIEW_ICON_URL}" alt=""><strong>글 제목 추천</strong></div>`;
     const close = document.createElement('button');
     close.type = 'button';
     close.className = 'aiang-close';

@@ -195,7 +195,7 @@ function buildPrompts(action, text, personalization) {
       '원문에 없는 주장이나 정보를 추가하지 마세요.'
     ],
     decorate: [
-      '커뮤니티 게시글로 읽기 좋게 문단, 줄바꿈, 불릿과 절제된 기호 또는 이모지를 활용하세요.',
+      '기호 또는 이모지를 적절히 추가해 글을 다듬으세요.',
       'HTML이나 Markdown 문법은 출력하지 말고 일반 텍스트만 사용하세요. 원문에 없는 사실을 추가하지 마세요.'
     ]
   };
@@ -501,9 +501,11 @@ async function testConnection(settings) {
     if (!model) throw new Error('Gemini Nano Prompt API를 찾지 못했습니다.');
     const availability = await getGeminiAvailability(model);
     if (['no', 'unavailable'].includes(availability)) throw new Error('이 기기에서는 Gemini Nano를 사용할 수 없습니다.');
-    return { message: ['after-download', 'downloadable', 'downloading'].includes(availability)
-      ? 'Gemini Nano를 사용할 수 있으며, 첫 실행 때 모델을 내려받습니다.'
-      : 'Gemini Nano를 사용할 수 있습니다.' };
+    return {
+      message: ['after-download', 'downloadable', 'downloading'].includes(availability)
+        ? 'Gemini Nano를 사용할 수 있으며, 첫 실행 때 모델을 내려받습니다.'
+        : 'Gemini Nano를 사용할 수 있습니다.'
+    };
   }
   const models = await listModels(settings);
   return { message: `연결되었습니다${models.length ? ` · 모델 ${models.length}개` : ''}.`, models };

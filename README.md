@@ -1,8 +1,9 @@
-# DINKIssTyle Chrome Extensions
+# DKST Chrome Extensions
+by DINKI'ssTyle  
 
-A collection of Chrome extensions that I created because I might need them, and perhaps someone else does too.
+> A collection of Chrome extensions that I created because I might need them, and perhaps someone else does too.
 
-This repository contains various unpacked Chrome extensions designed for specific utility purposes.
+### This repository contains various unpacked Chrome extensions designed for specific utility purposes.
 
 ## How to Install
 
@@ -17,24 +18,31 @@ Since these are unpacked extensions, you need to install them via Chrome's Devel
     *   *Note: Do not select the root folder of this repository. Select the individual folder for the extension you wish to use.*
 7.  The extension is now installed and ready to use!
 
-## Extensions List
+## Extension List
 
-*   **Article-View**: Extract articles and posts into a clean, ad-free reader window with zoom controls, font toggle (Serif/Sans), theme modes (Light/Dark/Auto), advanced settings (custom font, line spacing), fullscreen, and Save as PDF.
-*   **Image-Information**: Right-click on any image (even those behind layers) to view detailed metadata like filename, MIME type, size, and dimensions.
-*   **LM-Studio**: Process selected text with a local LLM via LM Studio API. Features chat-style bubble UI, conversation history, streaming responses, and customizable prompts.
-*   **save-image-as-type**: Context menu options to save images as different formats (JPG, PNG, WebP) or the original.
-*   **Visual-Effects**: Apply various visual effects and page transitions to web pages via a menu.
-*   **Zoom-To**: Double-click on empty space within a content container to smart zoom the entire page to fit that content using native browser zoom. Double-click again to restore.
-*   **PowerCache-Cleaner**: Powerfully clear website cache (Cache Storage) and unregister Service Workers with a single click to reset the site to its initial state.
-*   **Translator**: Translate visible webpage text in place with LM Studio or the OpenAI Responses API, with batching, progress, cancellation, and original-text restoration.
+*   **Article-View**: Extracts articles and posts into a clean, ad-free reader view. Features zoom control, font toggling (serif/sans-serif), theme modes (light/dark/auto), advanced settings (custom fonts, line spacing), fullscreen view, and PDF export.
+*   **Image-Information**: Right-click on any image (including background/layered images) to inspect detailed metadata such as file name, MIME type, file size, and dimensions.
+*   **Local-AI-Assistant**: Processes selected text with local LLMs via the LM Studio API. Features a chat-bubble UI, conversation history, streaming responses, and custom prompts. [README.md](Local-AI-Assistant/README.md)
+*   **Save-image-as-type**: Saves images in various formats (JPG, PNG, WebP) or in their original format via the context menu.
+*   **Visual-Effects**: Applies various visual effects and page transitions to web pages via the menu.
+*   **Zoom-To**: Double-click empty space within a content container to smartly zoom the entire page to fit the content using native browser zoom. Double-click again to reset.
+*   **PowerCache-Cleaner**: Completely clears website Cache Storage and unregisters active service workers in a single click, resetting the site to its initial state.
+*   **AIAng**: Provides AI-powered writing and commenting assistance for the online community Damoang (https://damoang.net). [README.md](AIAng/README.md)
+
+### Experimental Extensions (Proof of Concept / Testing)
+
+*   **3D-Extractor**: Extracts WebGL assets from web pages.
+*   **Video-Download-Helper**: Extracts videos from web pages.
+
 
 ---
 
-# DINKIssTyle 크롬 확장 프로그램
+# DKST 크롬 확장 프로그램
+DINKI'ssTyle 제작
 
-제가 필요해서, 그리고 다른 사람들도 필요할지도 몰라서 만든 크롬 확장 프로그램 모음입니다.
+> 제가 필요해서, 그리고 다른 사람들도 필요할지도 몰라서 만든 크롬 확장 프로그램 모음입니다.
 
-이 저장소에는 특정한 유틸리티 목적을 위해 설계된 다양한 압축 해제된(unpacked) 크롬 확장 프로그램들이 포함되어 있습니다.
+### 이 저장소에는 특정한 유틸리티 목적을 위해 설계된 다양한 압축 해제된(unpacked) 크롬 확장 프로그램들이 포함되어 있습니다.
 
 ## 설치 방법
 
@@ -53,9 +61,15 @@ Since these are unpacked extensions, you need to install them via Chrome's Devel
 
 *   **Article-View**: 기사와 게시물을 광고 없는 깔끔한 리더 창으로 추출합니다. 줌 조절, 글꼴 전환(세리프/산세리프), 테마 모드(라이트/다크/자동), 고급 설정(사용자 지정 글꼴, 줄 간격), 전체 화면 및 PDF 저장 기능을 제공합니다.
 *   **Image-Information**: (레이어 뒤에 있는 이미지 포함) 이미지 위에서 우클릭하여 파일명, MIME 타입, 크기, 치수와 같은 상세 메타데이터를 확인합니다.
-*   **LM-Studio**: 선택한 텍스트를 LM Studio API를 통해 로컬 LLM으로 처리합니다. 채팅 스타일 버블 UI, 대화 히스토리, 스트리밍 응답, 사용자 정의 프롬프트 기능을 제공합니다.
-*   **save-image-as-type**: 우클릭 메뉴 옵션을 통해 이미지를 다양한 형식(JPG, PNG, WebP) 또는 원본으로 저장합니다.
+*   **Local-Al-Assistant**: 선택한 텍스트를 LM Studio API를 통해 로컬 LLM으로 처리합니다. 채팅 스타일 버블 UI, 대화 히스토리, 스트리밍 응답, 사용자 정의 프롬프트 기능을 제공합니다. [README.md](Local-AI-Assistant/README.md)
+*   **Save-image-as-type**: 우클릭 메뉴 옵션을 통해 이미지를 다양한 형식(JPG, PNG, WebP) 또는 원본으로 저장합니다.
 *   **Visual-Effects**: 메뉴를 통해 웹 페이지에 다양한 시각 효과와 페이지 전환 효과를 적용합니다.
 *   **Zoom-To**: 콘텐츠 컨테이너 내의 빈 공간을 더블 클릭하면 브라우저의 기본 줌 기능을 사용하여 해당 콘텐츠에 맞춰 페이지 전체를 스마트 줌 합니다. 다시 더블 클릭하면 복원됩니다.
 *   **PowerCache-Cleaner**: 클릭 한 번으로 웹사이트의 캐시(Cache Storage)를 강력하게 삭제하고 등록된 서비스 워커를 해제하여 사이트를 초기 상태로 되돌립니다.
-*   **Translator**: LM Studio 또는 OpenAI Responses API로 웹페이지의 보이는 텍스트를 원래 위치에서 번역하며, 배치 처리, 진행률, 취소 및 원문 복원을 지원합니다.
+*   **AlAng**: 인터넷 커뮤니티 다모앙(https://damoang.net)에서 AI를 활용하여 글쓰기와 댓글 작성을 지원합니다. [README.md](AIAng/README.md)
+
+
+
+### 실험적 확장 프로그램 목록 (작동 확인 또는 개념 검토용)
+* **3D-Extrator**: 웹 페이지 내의 WebGL을 추출합니다.
+* **Video-Download-Helper**: 웹 페이지 내의 영상물을 추출합니다.

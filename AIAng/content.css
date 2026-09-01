@@ -1,7 +1,7 @@
 :root {
   --aiang-background: var(--background, oklch(100% 0 0));
   --aiang-surface: var(--popover, var(--background, oklch(100% 0 0)));
-  --aiang-surface-muted: var(--muted, oklch(93.9% .002 247.845));
+  --aiang-surface-muted: var(--aiang-surface);
   --aiang-text: var(--popover-foreground, var(--foreground, oklch(12.9% .042 264.695)));
   --aiang-text-muted: var(--muted-foreground, oklch(55.6% .012 196.88));
   --aiang-border: var(--border, oklch(88.9% .005 203.53));
@@ -161,6 +161,24 @@
   opacity: 0.72;
 }
 
+.aiang-action.is-loading {
+  position: relative;
+}
+
+.aiang-action.is-loading > :not(.aiang-loading-content) {
+  visibility: hidden;
+}
+
+.aiang-loading-content {
+  position: absolute;
+  inset: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  white-space: nowrap;
+}
+
 .aiang-spinner {
   width: 14px;
   height: 14px;
@@ -243,14 +261,9 @@
 .aiang-review-badge {
   width: 28px;
   height: 28px;
-  border-radius: var(--aiang-radius-md);
-  display: inline-grid;
-  place-items: center;
-  background: var(--aiang-primary);
-  color: var(--aiang-primary-foreground);
-  font-size: 10px;
-  font-weight: 800;
-  letter-spacing: -0.2px;
+  display: block;
+  flex: 0 0 28px;
+  object-fit: contain;
 }
 
 .aiang-close {
