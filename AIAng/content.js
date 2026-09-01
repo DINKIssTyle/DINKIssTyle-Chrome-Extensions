@@ -20,6 +20,9 @@
   let scanFrame = 0;
   let requestSequence = 0;
   let extensionEnabled = false;
+  let inlineReviewSession = null;
+  let inlineReviewFrame = 0;
+  let toastToolbarAnchor = null;
 
   const ICONS = {
     check: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m4 12 5 5L20 6"/></svg>',
@@ -80,6 +83,7 @@
       button.dataset.action = action.id;
       button.innerHTML = `${ICONS[action.icon]}<span class="aiang-long-label">${action.label}</span><span class="aiang-short-label">${action.short}</span>`;
       button.addEventListener('click', () => {
+        toastToolbarAnchor = toolbar;
         if (kind === 'body' && action.id === 'spellcheck') {
           runPostSpellcheck(editor, button);
         } else if (kind === 'body' && action.id === 'suggest_title') {
@@ -163,6 +167,7 @@
       return;
     }
 
+    closeReview();
     setButtonLoading(button, true, action);
     try {
       const result = await requestEditingResult(
@@ -171,9 +176,9 @@
         target.closest('textarea') ? 'comment' : 'editor',
         snapshot
       );
-      showReview({ ...result, action });
+      showInlineReview([{ ...result, action }]);
     } catch (error) {
-      showToast(error?.message || 'AI 요청에 실패했습니다.', 'error', true);
+      showToast(error?.message || 'AI 요청에 실패했습니다.', 'error', 3200, true);
     } finally {
       setButtonLoading(button, false, action);
     }
@@ -198,6 +203,7 @@
       return;
     }
 
+    closeReview();
     setButtonLoading(button, true, 'spellcheck');
     try {
       const settled = await Promise.allSettled(candidates.map(async candidate => ({
@@ -206,9 +212,9 @@
       })));
       const failure = settled.find(result => result.status === 'rejected');
       if (failure) throw failure.reason;
-      showCombinedSpellcheckReview(settled.map(result => result.value));
+      showInlineReview(settled.map(result => ({ ...result.value, action: 'spellcheck' })));
     } catch (error) {
-      showToast(error?.message || '제목과 내용을 검사하지 못했습니다.', 'error', true);
+      showToast(error?.message || '제목과 내용을 검사하지 못했습니다.', 'error', 3200, true);
     } finally {
       setButtonLoading(button, false, 'spellcheck');
     }
@@ -248,6 +254,7 @@
       return;
     }
 
+    closeReview();
     setButtonLoading(button, true, 'suggest_title');
     try {
       const response = await sendMessage({
@@ -258,7 +265,7 @@
       if (!response?.ok) throw new Error(response?.error || '제목을 추천하지 못했습니다.');
       showTitleSuggestions(title, editor, snapshot, response.titles || []);
     } catch (error) {
-      showToast(error?.message || '제목을 추천하지 못했습니다.', 'error', true);
+      showToast(error?.message || '제목을 추천하지 못했습니다.', 'error', 3200, true);
     } finally {
       setButtonLoading(button, false, 'suggest_title');
     }
@@ -279,6 +286,661 @@
       button.querySelector('.aiang-loading-content')?.remove();
     }
     button.setAttribute('aria-label', loading ? `${LABELS[action]} 처리 중` : LABELS[action]);
+  }
+
+  function showInlineReview(results) {
+    closeReview();
+    const entries = results.map((result, entryIndex) => {
+      const changes = createInlineChanges(result, entryIndex);
+      return {
+        target: result.target,
+        action: result.action,
+        label: result.label || LABELS[result.action],
+        snapshot: result.snapshot,
+        currentText: result.originalText,
+        changes
+      };
+    }).filter(entry => entry.changes.length);
+
+    if (!entries.length) {
+      showToast('수정할 내용이 없습니다.', 'success');
+      return;
+    }
+
+    const layer = document.createElement('div');
+    layer.className = 'aiang-inline-layer';
+    const navigator = createInlineNavigator();
+    document.body.append(layer, navigator);
+
+    inlineReviewSession = {
+      entries,
+      layer,
+      navigator,
+      tooltip: null,
+      activeChangeId: entries[0].changes[0].id,
+      applying: false,
+      resizeObserver: typeof ResizeObserver === 'function' ? new ResizeObserver(scheduleInlineReviewRender) : null,
+      inputHandlers: new Map(),
+      safeSpaceStyles: new Map()
+    };
+
+    reserveInlineReviewSafeSpace(inlineReviewSession);
+    for (const entry of entries) {
+      const handleInput = () => {
+        if (inlineReviewSession?.applying) return;
+        closeInlineReview();
+        showToast('입력 내용이 변경되어 교정 표시를 닫았습니다. 다시 실행해 주세요.', 'warning');
+      };
+      entry.target.addEventListener('input', handleInput);
+      inlineReviewSession.inputHandlers.set(entry.target, handleInput);
+      inlineReviewSession.resizeObserver?.observe(entry.target);
+    }
+    document.addEventListener('scroll', scheduleInlineReviewRender, true);
+    document.addEventListener('keydown', handleReviewKeydown, true);
+    window.addEventListener('resize', scheduleInlineReviewRender);
+    renderInlineReview();
+    focusInlineChange(inlineReviewSession.activeChangeId, { scroll: false });
+  }
+
+  function reserveInlineReviewSafeSpace(session) {
+    const reservedSpace = Math.ceil(session.navigator.getBoundingClientRect().height) + 20;
+    for (const target of new Set(session.entries.map(entry => entry.target))) {
+      if (!(target instanceof HTMLTextAreaElement) && !target.isContentEditable) continue;
+      const computed = getComputedStyle(target);
+      const properties = ['padding-bottom', 'scroll-padding-bottom'];
+      const previous = Object.fromEntries(properties.map(property => [property, {
+        value: target.style.getPropertyValue(property),
+        priority: target.style.getPropertyPriority(property)
+      }]));
+      session.safeSpaceStyles.set(target, previous);
+
+      const paddingBottom = Number.parseFloat(computed.paddingBottom) || 0;
+      const scrollPaddingBottom = Number.parseFloat(computed.scrollPaddingBottom) || 0;
+      target.style.setProperty('padding-bottom', `${paddingBottom + reservedSpace}px`, 'important');
+      target.style.setProperty('scroll-padding-bottom', `${scrollPaddingBottom + reservedSpace}px`);
+    }
+  }
+
+  function restoreInlineReviewSafeSpace(session) {
+    for (const [target, properties] of session.safeSpaceStyles || []) {
+      for (const [property, previous] of Object.entries(properties)) {
+        if (previous.value) target.style.setProperty(property, previous.value, previous.priority);
+        else target.style.removeProperty(property);
+      }
+    }
+    session.safeSpaceStyles?.clear();
+  }
+
+  function createInlineChanges(result, entryIndex) {
+    const supplied = result.action === 'spellcheck' && Array.isArray(result.suggestions)
+      ? result.suggestions.map(suggestion => ({
+        original: String(suggestion.original || ''),
+        replacement: String(suggestion.replacement || ''),
+        start: Number(suggestion.start),
+        end: Number(suggestion.end),
+        reason: String(suggestion.reason || '').trim()
+      }))
+      : [];
+    const candidates = supplied.length
+      ? supplied
+      : buildInlineChangesFromDiff(result.originalText, result.correctedText, LABELS[result.action]);
+    return candidates
+      .filter(change => Number.isInteger(change.start)
+        && Number.isInteger(change.end)
+        && change.start >= 0
+        && change.end >= change.start
+        && result.originalText.slice(change.start, change.end) === change.original
+        && change.original !== change.replacement)
+      .sort((left, right) => left.start - right.start || left.end - right.end)
+      .filter((change, index, list) => index === 0 || change.start >= list[index - 1].end)
+      .map((change, changeIndex) => ({
+        ...change,
+        id: `aiang-change-${Date.now()}-${entryIndex}-${changeIndex}`,
+        reason: change.reason || `${LABELS[result.action]} 제안`
+      }));
+  }
+
+  function buildInlineChangesFromDiff(originalText, correctedText, reason = '') {
+    if (originalText === correctedText) return [];
+    const parts = wordDiff(originalText, correctedText);
+    if (!parts) {
+      let prefix = 0;
+      const limit = Math.min(originalText.length, correctedText.length);
+      while (prefix < limit && originalText[prefix] === correctedText[prefix]) prefix += 1;
+      let originalEnd = originalText.length;
+      let correctedEnd = correctedText.length;
+      while (originalEnd > prefix && correctedEnd > prefix
+        && originalText[originalEnd - 1] === correctedText[correctedEnd - 1]) {
+        originalEnd -= 1;
+        correctedEnd -= 1;
+      }
+      return [{
+        original: originalText.slice(prefix, originalEnd),
+        replacement: correctedText.slice(prefix, correctedEnd),
+        start: prefix,
+        end: originalEnd,
+        reason
+      }];
+    }
+
+    const changes = [];
+    let originalOffset = 0;
+    let pending = null;
+    const flush = () => {
+      if (!pending) return;
+      changes.push({ ...pending, end: pending.start + pending.original.length, reason });
+      pending = null;
+    };
+    for (const part of parts) {
+      if (part.type === 'same') {
+        flush();
+        originalOffset += part.value.length;
+        continue;
+      }
+      if (!pending) pending = { original: '', replacement: '', start: originalOffset };
+      if (part.type === 'removed') {
+        pending.original += part.value;
+        originalOffset += part.value.length;
+      } else if (part.type === 'added') {
+        pending.replacement += part.value;
+      }
+    }
+    flush();
+    return changes;
+  }
+
+  function createInlineNavigator() {
+    const navigator = document.createElement('div');
+    navigator.className = 'aiang-inline-navigator aiang-no-select';
+    navigator.setAttribute('role', 'toolbar');
+    navigator.setAttribute('aria-label', 'AI 교정 제안');
+    navigator.innerHTML = [
+      '<button type="button" data-aiang-inline="previous" title="이전 교정" aria-label="이전 교정">‹</button>',
+      '<span data-aiang-inline-count>0 / 0</span>',
+      '<button type="button" data-aiang-inline="next" title="다음 교정" aria-label="다음 교정">›</button>',
+      '<span class="aiang-inline-divider" aria-hidden="true"></span>',
+      '<button type="button" data-aiang-inline="apply" title="현재 교정 적용">적용</button>',
+      '<button type="button" class="aiang-inline-apply-all" data-aiang-inline="apply-all" title="모든 교정 적용">모두 적용</button>',
+      '<button type="button" data-aiang-inline="close" title="교정 표시 닫기" aria-label="교정 표시 닫기">×</button>'
+    ].join('');
+    navigator.querySelector('[data-aiang-inline="previous"]').addEventListener('click', () => moveInlineChange(-1));
+    navigator.querySelector('[data-aiang-inline="next"]').addEventListener('click', () => moveInlineChange(1));
+    navigator.querySelector('[data-aiang-inline="apply"]').addEventListener('click', applyActiveInlineChange);
+    navigator.querySelector('[data-aiang-inline="apply-all"]').addEventListener('click', applyAllInlineChanges);
+    navigator.querySelector('[data-aiang-inline="close"]').addEventListener('click', closeInlineReview);
+    return navigator;
+  }
+
+  function getInlineChangeRecords() {
+    if (!inlineReviewSession) return [];
+    return inlineReviewSession.entries.flatMap(entry => entry.changes.map(change => ({ entry, change })));
+  }
+
+  function findInlineChangeRecord(changeId) {
+    return getInlineChangeRecords().find(record => record.change.id === changeId) || null;
+  }
+
+  function updateInlineNavigator() {
+    if (!inlineReviewSession) return;
+    const records = getInlineChangeRecords();
+    let index = records.findIndex(record => record.change.id === inlineReviewSession.activeChangeId);
+    if (index < 0 && records.length) {
+      index = 0;
+      inlineReviewSession.activeChangeId = records[0].change.id;
+    }
+    const count = inlineReviewSession.navigator.querySelector('[data-aiang-inline-count]');
+    if (count) count.textContent = records.length ? `${index + 1} / ${records.length}` : '0 / 0';
+    positionInlineNavigator(records[index]?.entry?.target || inlineReviewSession.entries[0]?.target);
+  }
+
+  function positionInlineNavigator(target) {
+    const session = inlineReviewSession;
+    const navigator = session?.navigator;
+    if (!navigator?.isConnected || !target?.isConnected) return;
+
+    const targetRect = target.getBoundingClientRect();
+    const navigatorRect = navigator.getBoundingClientRect();
+    const margin = 10;
+    const floatingBottomGap = window.innerWidth <= 680 ? 12 : 24;
+    const desiredCenter = targetRect.left + targetRect.width / 2;
+    const halfWidth = Math.min(
+      navigatorRect.width / 2,
+      Math.max(0, window.innerWidth / 2 - margin)
+    );
+    const minimumCenter = margin + halfWidth;
+    const maximumCenter = window.innerWidth - margin - halfWidth;
+    const center = minimumCenter <= maximumCenter
+      ? Math.min(Math.max(desiredCenter, minimumCenter), maximumCenter)
+      : window.innerWidth / 2;
+
+    navigator.style.left = `${center}px`;
+    const boundaryBottom = Math.max(...session.entries
+      .filter(entry => entry.target.isConnected)
+      .map(entry => entry.target.getBoundingClientRect().bottom));
+    const floatingTop = window.innerHeight - floatingBottomGap - navigatorRect.height;
+    navigator.style.top = `${Math.min(floatingTop, boundaryBottom - margin - navigatorRect.height)}px`;
+    navigator.style.bottom = 'auto';
+  }
+
+  function moveInlineChange(delta) {
+    const records = getInlineChangeRecords();
+    if (!records.length || !inlineReviewSession) return;
+    const currentIndex = Math.max(0, records.findIndex(record => record.change.id === inlineReviewSession.activeChangeId));
+    const nextIndex = (currentIndex + delta + records.length) % records.length;
+    focusInlineChange(records[nextIndex].change.id);
+  }
+
+  function focusInlineChange(changeId, { scroll = true } = {}) {
+    if (!inlineReviewSession) return;
+    const record = findInlineChangeRecord(changeId);
+    if (!record) return;
+    inlineReviewSession.activeChangeId = changeId;
+    if (scroll) scrollInlineChangeIntoView(record);
+    scheduleInlineReviewRender();
+    requestAnimationFrame(() => {
+      if (!inlineReviewSession) return;
+      renderInlineReview();
+      showInlineTooltip(changeId);
+    });
+  }
+
+  function scrollInlineChangeIntoView({ entry, change }) {
+    const target = entry.target;
+    if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement) {
+      target.focus({ preventScroll: true });
+      target.setSelectionRange(change.start, change.start);
+      target.scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'smooth' });
+      return;
+    }
+    const mapped = buildContentEditableMap(entry);
+    const position = mapped?.units[change.start]?.start || mapped?.units[change.start - 1]?.end;
+    const element = position?.container instanceof Element
+      ? position.container
+      : position?.container?.parentElement;
+    (element || target).scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'smooth' });
+  }
+
+  function applyActiveInlineChange() {
+    if (!inlineReviewSession) return;
+    applyInlineChange(inlineReviewSession.activeChangeId);
+  }
+
+  function applyInlineChange(changeId) {
+    const record = findInlineChangeRecord(changeId);
+    if (!record || !inlineReviewSession) return;
+    const { entry, change } = record;
+    try {
+      assertInlineEntryCurrent(entry);
+      const replacementText = entry.currentText.slice(0, change.start)
+        + change.replacement
+        + entry.currentText.slice(change.end);
+      inlineReviewSession.applying = true;
+      writeTargetText(entry.target, replacementText, entry.snapshot.media);
+      inlineReviewSession.applying = false;
+      const delta = change.replacement.length - (change.end - change.start);
+      entry.currentText = replacementText;
+      entry.changes = entry.changes.filter(candidate => candidate.id !== change.id).map(candidate => {
+        if (candidate.start < change.end) return candidate;
+        return { ...candidate, start: candidate.start + delta, end: candidate.end + delta };
+      });
+      entry.snapshot.signature = createTargetSignature(entry.target);
+
+      const records = getInlineChangeRecords();
+      if (!records.length) {
+        closeInlineReview();
+        showToast('모든 교정을 반영했습니다.', 'success');
+        return;
+      }
+      inlineReviewSession.activeChangeId = records[0].change.id;
+      renderInlineReview();
+      focusInlineChange(inlineReviewSession.activeChangeId, { scroll: false });
+    } catch (error) {
+      if (inlineReviewSession) inlineReviewSession.applying = false;
+      closeInlineReview();
+      showToast(error?.message || '교정문을 반영하지 못했습니다.', 'error');
+    }
+  }
+
+  function applyAllInlineChanges() {
+    if (!inlineReviewSession) return;
+    const session = inlineReviewSession;
+    try {
+      session.entries.forEach(assertInlineEntryCurrent);
+      session.applying = true;
+      for (const entry of session.entries) {
+        let text = entry.currentText;
+        for (const change of [...entry.changes].sort((left, right) => right.start - left.start)) {
+          text = text.slice(0, change.start) + change.replacement + text.slice(change.end);
+        }
+        writeTargetText(entry.target, text, entry.snapshot.media);
+      }
+      session.applying = false;
+      closeInlineReview();
+      showToast('모든 교정을 반영했습니다.', 'success');
+    } catch (error) {
+      session.applying = false;
+      closeInlineReview();
+      showToast(error?.message || '교정문을 반영하지 못했습니다.', 'error');
+    }
+  }
+
+  function assertInlineEntryCurrent(entry) {
+    if (!entry.target.isConnected || createTargetSignature(entry.target) !== entry.snapshot.signature) {
+      throw new Error('교정 중 입력 내용이 변경되어 결과를 적용하지 않았습니다. 다시 실행해 주세요.');
+    }
+  }
+
+  function closeInlineReview() {
+    cancelAnimationFrame(inlineReviewFrame);
+    inlineReviewFrame = 0;
+    const session = inlineReviewSession;
+    if (!session) return;
+    for (const [target, handler] of session.inputHandlers) target.removeEventListener('input', handler);
+    session.resizeObserver?.disconnect();
+    restoreInlineReviewSafeSpace(session);
+    document.removeEventListener('scroll', scheduleInlineReviewRender, true);
+    document.removeEventListener('keydown', handleReviewKeydown, true);
+    window.removeEventListener('resize', scheduleInlineReviewRender);
+    session.layer.remove();
+    session.navigator.remove();
+    session.tooltip?.remove();
+    document.querySelectorAll('.aiang-inline-mirror').forEach(element => element.remove());
+    inlineReviewSession = null;
+  }
+
+  function scheduleInlineReviewRender() {
+    if (!inlineReviewSession || inlineReviewFrame) return;
+    inlineReviewFrame = requestAnimationFrame(() => {
+      inlineReviewFrame = 0;
+      renderInlineReview();
+    });
+  }
+
+  function renderInlineReview() {
+    const session = inlineReviewSession;
+    if (!session) return;
+    session.layer.replaceChildren();
+    document.querySelectorAll('.aiang-inline-mirror').forEach(element => element.remove());
+
+    for (const entry of session.entries) {
+      if (!entry.target.isConnected) {
+        closeInlineReview();
+        return;
+      }
+      const rectsByChange = entry.target instanceof HTMLInputElement || entry.target instanceof HTMLTextAreaElement
+        ? getTextControlChangeRects(entry)
+        : getContentEditableChangeRects(entry);
+      for (const change of entry.changes) {
+        for (const rect of rectsByChange.get(change.id) || []) {
+          const marker = document.createElement('button');
+          marker.type = 'button';
+          marker.className = 'aiang-inline-marker';
+          marker.classList.toggle('is-active', change.id === session.activeChangeId);
+          marker.dataset.aiangChangeId = change.id;
+          marker.setAttribute('aria-label', `${change.original || '삽입 위치'} 교정 제안`);
+          marker.style.left = `${rect.left}px`;
+          marker.style.top = `${rect.top}px`;
+          marker.style.width = `${Math.max(3, rect.width)}px`;
+          marker.style.height = `${Math.max(3, rect.height)}px`;
+          marker.addEventListener('mouseenter', () => {
+            clearTimeout(session.tooltipHideTimer);
+            session.activeChangeId = change.id;
+            updateInlineNavigator();
+            showInlineTooltip(change.id);
+            session.layer.querySelectorAll('.aiang-inline-marker').forEach(element => {
+              element.classList.toggle('is-active', element.dataset.aiangChangeId === change.id);
+            });
+          });
+          marker.addEventListener('mouseleave', scheduleInlineTooltipHide);
+          marker.addEventListener('click', event => {
+            event.preventDefault();
+            event.stopPropagation();
+            session.activeChangeId = change.id;
+            showInlineTooltip(change.id);
+          });
+          session.layer.append(marker);
+        }
+      }
+    }
+    updateInlineNavigator();
+    if (session.tooltip && session.activeChangeId) positionInlineTooltip(session.activeChangeId);
+  }
+
+  function showInlineTooltip(changeId) {
+    const session = inlineReviewSession;
+    const record = findInlineChangeRecord(changeId);
+    if (!session || !record) return;
+    clearTimeout(session.tooltipHideTimer);
+    session.tooltip?.remove();
+
+    const tooltip = document.createElement('div');
+    tooltip.className = 'aiang-inline-tooltip';
+    tooltip.dataset.aiangChangeId = changeId;
+    const replacement = document.createElement('button');
+    replacement.type = 'button';
+    replacement.className = 'aiang-inline-replacement';
+    replacement.textContent = record.change.replacement || '(삭제)';
+    replacement.title = '이 교정 적용';
+    replacement.addEventListener('click', event => {
+      event.preventDefault();
+      event.stopPropagation();
+      applyInlineChange(changeId);
+    });
+    tooltip.append(replacement);
+    if (record.change.reason) {
+      const reason = document.createElement('span');
+      reason.className = 'aiang-inline-reason';
+      reason.textContent = record.change.reason;
+      tooltip.append(reason);
+    }
+    tooltip.addEventListener('mouseenter', () => clearTimeout(session.tooltipHideTimer));
+    tooltip.addEventListener('mouseleave', scheduleInlineTooltipHide);
+    document.body.append(tooltip);
+    session.tooltip = tooltip;
+    positionInlineTooltip(changeId);
+  }
+
+  function positionInlineTooltip(changeId) {
+    const session = inlineReviewSession;
+    const tooltip = session?.tooltip;
+    if (!session || !tooltip) return;
+    const markers = Array.from(session.layer.querySelectorAll('.aiang-inline-marker'))
+      .filter(marker => marker.dataset.aiangChangeId === changeId);
+    if (!markers.length) {
+      tooltip.hidden = true;
+      return;
+    }
+    tooltip.hidden = false;
+    const markerRect = markers[0].getBoundingClientRect();
+    const tooltipRect = tooltip.getBoundingClientRect();
+    const margin = 10;
+    const left = Math.min(
+      Math.max(margin, markerRect.left),
+      window.innerWidth - tooltipRect.width - margin
+    );
+    let top = markerRect.top - tooltipRect.height - 8;
+    if (top < margin) top = Math.min(window.innerHeight - tooltipRect.height - margin, markerRect.bottom + 8);
+    tooltip.style.left = `${left}px`;
+    tooltip.style.top = `${Math.max(margin, top)}px`;
+  }
+
+  function scheduleInlineTooltipHide() {
+    const session = inlineReviewSession;
+    if (!session) return;
+    clearTimeout(session.tooltipHideTimer);
+    session.tooltipHideTimer = window.setTimeout(() => {
+      if (!inlineReviewSession) return;
+      inlineReviewSession.tooltip?.remove();
+      inlineReviewSession.tooltip = null;
+    }, 140);
+  }
+
+  function getContentEditableChangeRects(entry) {
+    const output = new Map();
+    const mapped = buildContentEditableMap(entry);
+    if (!mapped || mapped.text !== entry.currentText) return output;
+    const targetRect = entry.target.getBoundingClientRect();
+    for (const change of entry.changes) {
+      const startPosition = mapped.units[change.start]?.start
+        || mapped.units[change.start - 1]?.end
+        || mapped.start;
+      const endPosition = change.end > change.start
+        ? mapped.units[change.end - 1]?.end
+        : startPosition;
+      if (!startPosition || !endPosition) continue;
+      const range = document.createRange();
+      try {
+        range.setStart(startPosition.container, startPosition.offset);
+        range.setEnd(endPosition.container, endPosition.offset);
+      } catch {
+        continue;
+      }
+      let rects = Array.from(range.getClientRects());
+      if (!rects.length) rects = [range.getBoundingClientRect()];
+      output.set(change.id, rects.map(rect => clipInlineRect(rect, targetRect)).filter(Boolean));
+    }
+    return output;
+  }
+
+  function buildContentEditableMap(entry) {
+    const target = entry.target;
+    const roots = collectMediaRoots(target);
+    const mediaByNode = new Map(roots.map((node, index) => [node, entry.snapshot.media[index]]));
+    const units = [];
+    const positionBefore = node => ({
+      container: node.parentNode,
+      offset: Array.prototype.indexOf.call(node.parentNode?.childNodes || [], node)
+    });
+    const positionAfter = node => {
+      const position = positionBefore(node);
+      return { ...position, offset: position.offset + 1 };
+    };
+    const appendVirtual = (text, start, end) => {
+      for (const char of text) units.push({ char, start, end });
+    };
+    const visit = node => {
+      if (node.nodeType === Node.TEXT_NODE) {
+        const value = node.nodeValue || '';
+        for (let index = 0; index < value.length; index += 1) {
+          units.push({
+            char: value[index],
+            start: { container: node, offset: index },
+            end: { container: node, offset: index + 1 }
+          });
+        }
+        return;
+      }
+      if (!(node instanceof Element)) return;
+      const media = mediaByNode.get(node);
+      if (media) {
+        appendVirtual(media.token, positionBefore(node), positionAfter(node));
+        if (media.block) appendVirtual('\n', positionAfter(node), positionAfter(node));
+        return;
+      }
+      if (node.tagName === 'BR') {
+        appendVirtual('\n', positionBefore(node), positionAfter(node));
+        return;
+      }
+      Array.from(node.childNodes).forEach(visit);
+      if (BLOCK_TAGS.has(node.tagName)) appendVirtual('\n', positionAfter(node), positionAfter(node));
+    };
+    Array.from(target.childNodes).forEach(visit);
+    const normalized = normalizeMappedUnits(units);
+    return {
+      units: normalized,
+      text: normalized.map(unit => unit.char).join(''),
+      start: { container: target, offset: 0 },
+      end: { container: target, offset: target.childNodes.length }
+    };
+  }
+
+  function normalizeMappedUnits(units) {
+    const normalized = [];
+    for (const source of units) {
+      const unit = source.char === '\u00a0' ? { ...source, char: ' ' } : source;
+      if (unit.char === '\n') {
+        while (normalized.length && [' ', '\t'].includes(normalized.at(-1).char)) normalized.pop();
+        let newlineCount = 0;
+        for (let index = normalized.length - 1; index >= 0 && normalized[index].char === '\n'; index -= 1) {
+          newlineCount += 1;
+        }
+        if (newlineCount >= 2) continue;
+      }
+      normalized.push(unit);
+    }
+    if (normalized.at(-1)?.char === '\n') normalized.pop();
+    return normalized;
+  }
+
+  function getTextControlChangeRects(entry) {
+    const output = new Map();
+    const target = entry.target;
+    const targetRect = target.getBoundingClientRect();
+    if (targetRect.width <= 0 || targetRect.height <= 0) return output;
+    const style = getComputedStyle(target);
+    const mirror = document.createElement('div');
+    mirror.className = 'aiang-inline-mirror';
+    const properties = [
+      'borderTopWidth', 'borderRightWidth', 'borderBottomWidth', 'borderLeftWidth',
+      'borderTopStyle', 'borderRightStyle', 'borderBottomStyle', 'borderLeftStyle',
+      'paddingTop', 'paddingRight', 'paddingBottom', 'paddingLeft',
+      'fontFamily', 'fontSize', 'fontStyle', 'fontWeight', 'fontStretch',
+      'lineHeight', 'letterSpacing', 'textAlign', 'textIndent', 'textTransform',
+      'wordSpacing', 'tabSize', 'direction'
+    ];
+    for (const property of properties) mirror.style[property] = style[property];
+    Object.assign(mirror.style, {
+      position: 'fixed',
+      left: `${targetRect.left}px`,
+      top: `${targetRect.top}px`,
+      width: `${targetRect.width}px`,
+      height: `${targetRect.height}px`,
+      boxSizing: 'border-box',
+      whiteSpace: target instanceof HTMLTextAreaElement ? 'pre-wrap' : 'pre',
+      overflowWrap: target instanceof HTMLTextAreaElement ? 'break-word' : 'normal',
+      wordBreak: style.wordBreak,
+      overflow: target instanceof HTMLTextAreaElement ? style.overflow : 'hidden',
+      visibility: 'hidden',
+      pointerEvents: 'none'
+    });
+
+    const spans = new Map();
+    let offset = 0;
+    for (const change of entry.changes) {
+      if (change.start > offset) mirror.append(document.createTextNode(entry.currentText.slice(offset, change.start)));
+      const span = document.createElement('span');
+      span.dataset.aiangChangeId = change.id;
+      span.textContent = entry.currentText.slice(change.start, change.end) || '\u200b';
+      mirror.append(span);
+      spans.set(change.id, span);
+      offset = change.end;
+    }
+    if (offset < entry.currentText.length) mirror.append(document.createTextNode(entry.currentText.slice(offset)));
+    if (target instanceof HTMLTextAreaElement) mirror.append(document.createTextNode('\u200b'));
+    document.body.append(mirror);
+    mirror.scrollTop = target.scrollTop;
+    mirror.scrollLeft = target.scrollLeft;
+
+    for (const [changeId, span] of spans) {
+      const rects = Array.from(span.getClientRects())
+        .map(rect => clipInlineRect(rect, targetRect))
+        .filter(Boolean);
+      output.set(changeId, rects);
+    }
+    return output;
+  }
+
+  function clipInlineRect(rect, clippingRect) {
+    const viewport = { left: 0, top: 0, right: window.innerWidth, bottom: window.innerHeight };
+    const left = Math.max(rect.left, clippingRect.left, viewport.left);
+    const top = Math.max(rect.top, clippingRect.top, viewport.top);
+    const right = Math.min(rect.right, clippingRect.right, viewport.right);
+    const bottom = Math.min(rect.bottom, clippingRect.bottom, viewport.bottom);
+    if (right < left || bottom < top) return null;
+    const width = Math.max(0, right - left);
+    const height = Math.max(0, bottom - top);
+    if (width === 0 && height === 0) return null;
+    return { left, top, width, height };
   }
 
   function showReview({ target, action, originalText, correctedText, suggestions, anchor, snapshot }) {
@@ -674,6 +1336,7 @@
   }
 
   function closeReview() {
+    closeInlineReview();
     document.querySelectorAll('.aiang-overlay, .aiang-review-popover').forEach(element => element.remove());
     document.removeEventListener('keydown', handleReviewKeydown, true);
   }
@@ -945,7 +1608,9 @@
   }
 
   function showToast(message, kind = 'info', duration = 3200, withSettings = false) {
-    document.querySelector('.aiang-toast')?.remove();
+    const previous = document.querySelector('.aiang-toast');
+    previous?._aiangCleanup?.();
+    previous?.remove();
     const toast = document.createElement('div');
     toast.className = `aiang-toast aiang-toast-${kind}`;
     const text = document.createElement('span');
@@ -959,7 +1624,64 @@
       toast.append(settings);
     }
     document.body.append(toast);
-    setTimeout(() => toast.remove(), duration);
+    let positionFrame = 0;
+    let removeTimer = 0;
+    const schedulePosition = () => {
+      if (positionFrame || !toast.isConnected) return;
+      positionFrame = requestAnimationFrame(() => {
+        positionFrame = 0;
+        positionToastAboveToolbar(toast);
+      });
+    };
+    const cleanup = () => {
+      clearTimeout(removeTimer);
+      cancelAnimationFrame(positionFrame);
+      document.removeEventListener('scroll', schedulePosition, true);
+      window.removeEventListener('resize', schedulePosition);
+    };
+    toast._aiangCleanup = cleanup;
+    document.addEventListener('scroll', schedulePosition, true);
+    window.addEventListener('resize', schedulePosition);
+    positionToastAboveToolbar(toast);
+    removeTimer = window.setTimeout(() => {
+      cleanup();
+      toast.remove();
+    }, duration);
+  }
+
+  function positionToastAboveToolbar(toast) {
+    if (!toast?.isConnected) return;
+    const visibleToolbars = Array.from(document.querySelectorAll('.aiang-toolbar'))
+      .filter(toolbar => {
+        const rect = toolbar.getBoundingClientRect();
+        return rect.width > 0 && rect.height > 0 && rect.bottom > 0 && rect.top < window.innerHeight;
+      });
+    const anchor = toastToolbarAnchor?.isConnected && visibleToolbars.includes(toastToolbarAnchor)
+      ? toastToolbarAnchor
+      : visibleToolbars[0];
+    if (!anchor) {
+      toast.style.left = '50%';
+      toast.style.right = 'auto';
+      toast.style.top = 'auto';
+      toast.style.bottom = '72px';
+      toast.style.transform = 'translateX(-50%)';
+      return;
+    }
+
+    const anchorRect = anchor.getBoundingClientRect();
+    const toastRect = toast.getBoundingClientRect();
+    const margin = 10;
+    const left = Math.min(
+      Math.max(margin, anchorRect.left + (anchorRect.width - toastRect.width) / 2),
+      window.innerWidth - toastRect.width - margin
+    );
+    let top = anchorRect.top - toastRect.height - margin;
+    if (top < margin) top = Math.min(window.innerHeight - toastRect.height - margin, anchorRect.bottom + margin);
+    toast.style.left = `${left}px`;
+    toast.style.right = 'auto';
+    toast.style.top = `${Math.max(margin, top)}px`;
+    toast.style.bottom = 'auto';
+    toast.style.transform = 'none';
   }
 
   function sendMessage(message) {
