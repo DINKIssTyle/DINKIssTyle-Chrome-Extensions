@@ -9,6 +9,7 @@ const model = $('#model');
 const modelList = $('#model-list');
 const modelMenu = $('#model-menu');
 const temperature = $('#temperature');
+const temperatureAuto = $('#temperature-auto');
 const personalization = $('#personalization');
 const personalizationCount = $('#personalization-count');
 const openAIFields = $('#openai-fields');
@@ -21,6 +22,7 @@ let loadedModels = [];
 
 document.addEventListener('DOMContentLoaded', loadSettings);
 provider.addEventListener('change', updateProviderUI);
+temperatureAuto.addEventListener('change', updateTemperatureUI);
 personalization.addEventListener('input', updatePersonalizationCount);
 model.addEventListener('focus', () => renderModelMenu(model.value));
 model.addEventListener('input', () => renderModelMenu(model.value));
@@ -104,8 +106,10 @@ async function loadSettings() {
     apiKey.value = settings.apiKey;
     model.value = settings.model;
     temperature.value = settings.temperature;
+    temperatureAuto.checked = settings.temperatureAuto;
     personalization.value = settings.personalization;
     updateProviderUI();
+    updateTemperatureUI();
     updatePersonalizationCount();
   } catch (error) {
     showStatus(error.message, 'error');
@@ -120,6 +124,7 @@ function collectSettings() {
     apiKey: apiKey.value,
     model: model.value,
     temperature: temperature.value,
+    temperatureAuto: temperatureAuto.checked,
     personalization: personalization.value
   };
 }
@@ -128,6 +133,10 @@ function updateProviderUI() {
   const isGemini = provider.value === 'gemini';
   openAIFields.hidden = isGemini;
   geminiNote.hidden = !isGemini;
+}
+
+function updateTemperatureUI() {
+  temperature.disabled = temperatureAuto.checked;
 }
 
 function updatePersonalizationCount() {

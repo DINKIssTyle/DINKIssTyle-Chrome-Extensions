@@ -74,10 +74,16 @@
               </div>
             </label>
 
-            <label class="field full">
-              <span>Temperature</span>
+            <div class="field full">
+              <div class="field-label-row">
+                <label for="temperature">Temperature</label>
+                <label class="checkbox-row" for="temperature-auto">
+                  <input id="temperature-auto" type="checkbox">
+                  <span>자동</span>
+                </label>
+              </div>
               <input id="temperature" type="number" min="0" max="2" step="0.1">
-            </label>
+            </div>
           </div>
 
           <div id="gemini-note" class="notice full" hidden>

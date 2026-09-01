@@ -66,7 +66,7 @@
     slot._aiangTarget = editor;
 
     const toolbar = document.createElement('div');
-    toolbar.className = 'aiang-toolbar';
+    toolbar.className = 'aiang-toolbar aiang-no-select';
     toolbar.dataset.aiangKind = kind;
     toolbar._aiangTarget = editor;
 
@@ -291,7 +291,7 @@
     panel.setAttribute('aria-label', `${LABELS[action]} 결과`);
 
     const header = document.createElement('header');
-    header.className = 'aiang-review-header';
+    header.className = 'aiang-review-header aiang-no-select';
     header.innerHTML = `<div><img class="aiang-review-badge" src="${REVIEW_ICON_URL}" alt=""><strong>${LABELS[action]}</strong></div>`;
     const close = document.createElement('button');
     close.type = 'button';
@@ -302,32 +302,36 @@
     header.append(close);
     panel.append(header);
 
+    const body = document.createElement('div');
+    body.className = 'aiang-review-body';
+
     if (snapshot.media.length) {
       const mediaNote = document.createElement('div');
       mediaNote.className = 'aiang-media-note';
       mediaNote.textContent = `이미지·미디어 ${snapshot.media.length}개는 원래 DOM과 순서를 유지합니다.`;
-      panel.append(mediaNote);
+      body.append(mediaNote);
     }
 
     if (unchanged) {
       const empty = document.createElement('div');
       empty.className = 'aiang-no-change';
       empty.innerHTML = `${ICONS.check}<strong>수정할 내용이 없습니다.</strong><span>현재 문장을 그대로 사용해도 좋습니다.</span>`;
-      panel.append(empty);
+      body.append(empty);
     } else {
       const comparison = document.createElement('div');
       comparison.className = 'aiang-comparison';
       comparison.append(createTextCard('현재', originalText, correctedText, 'before', snapshot.media));
       comparison.append(createTextCard('제안', correctedText, originalText, 'after', snapshot.media));
-      panel.append(comparison);
+      body.append(comparison);
 
       if (suggestions.length) {
-        panel.append(createSuggestionsDetails(suggestions));
+        body.append(createSuggestionsDetails(suggestions));
       }
     }
+    panel.append(body);
 
     const footer = document.createElement('footer');
-    footer.className = 'aiang-review-footer';
+    footer.className = 'aiang-review-footer aiang-no-select';
     const cancel = document.createElement('button');
     cancel.type = 'button';
     cancel.className = 'aiang-secondary';
@@ -386,7 +390,7 @@
     panel.setAttribute('aria-label', '맞춤법 검사 결과');
 
     const header = document.createElement('header');
-    header.className = 'aiang-review-header';
+    header.className = 'aiang-review-header aiang-no-select';
     header.innerHTML = `<div><img class="aiang-review-badge" src="${REVIEW_ICON_URL}" alt=""><strong>맞춤법 검사</strong></div>`;
     const close = document.createElement('button');
     close.type = 'button';
@@ -397,12 +401,15 @@
     header.append(close);
     panel.append(header);
 
+    const body = document.createElement('div');
+    body.className = 'aiang-review-body';
+
     const mediaCount = results.reduce((count, result) => count + result.snapshot.media.length, 0);
     if (mediaCount) {
       const mediaNote = document.createElement('div');
       mediaNote.className = 'aiang-media-note';
       mediaNote.textContent = `내용의 이미지·미디어 ${mediaCount}개는 원래 DOM과 순서를 유지합니다.`;
-      panel.append(mediaNote);
+      body.append(mediaNote);
     }
 
     const sections = document.createElement('div');
@@ -430,10 +437,11 @@
       }
       sections.append(section);
     }
-    panel.append(sections);
+    body.append(sections);
+    panel.append(body);
 
     const footer = document.createElement('footer');
-    footer.className = 'aiang-review-footer';
+    footer.className = 'aiang-review-footer aiang-no-select';
     const cancel = document.createElement('button');
     cancel.type = 'button';
     cancel.className = 'aiang-secondary';
@@ -486,7 +494,7 @@
     panel.setAttribute('aria-label', '글 제목 추천 결과');
 
     const header = document.createElement('header');
-    header.className = 'aiang-review-header';
+    header.className = 'aiang-review-header aiang-no-select';
     header.innerHTML = `<div><img class="aiang-review-badge" src="${REVIEW_ICON_URL}" alt=""><strong>글 제목 추천</strong></div>`;
     const close = document.createElement('button');
     close.type = 'button';
@@ -497,10 +505,13 @@
     header.append(close);
     panel.append(header);
 
+    const body = document.createElement('div');
+    body.className = 'aiang-review-body';
+
     const intro = document.createElement('p');
     intro.className = 'aiang-title-intro';
     intro.textContent = '사용할 제목을 선택하면 제목 입력창에 바로 반영합니다.';
-    panel.append(intro);
+    body.append(intro);
 
     const list = document.createElement('div');
     list.className = 'aiang-title-list';
@@ -529,10 +540,11 @@
       });
       list.append(option);
     });
-    panel.append(list);
+    body.append(list);
+    panel.append(body);
 
     const footer = document.createElement('footer');
-    footer.className = 'aiang-review-footer';
+    footer.className = 'aiang-review-footer aiang-no-select';
     const cancel = document.createElement('button');
     cancel.type = 'button';
     cancel.className = 'aiang-secondary';

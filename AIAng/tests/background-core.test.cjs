@@ -137,6 +137,42 @@ test('does not send a maximum output token limit to the LLM server', async () =>
   assert.equal(Object.hasOwn(requestBody, 'max_completion_tokens'), false);
 });
 
+test('omits temperature from the request when automatic temperature is enabled', async () => {
+  let requestBody;
+  const requestCore = loadCore(async (_url, init) => {
+    requestBody = JSON.parse(init.body);
+    return {
+      ok: true,
+      json: async () => ({ choices: [{ message: { content: '{"corrected_text":"본문","suggestions":[]}' } }] })
+    };
+  });
+  await requestCore.callOpenAICompatible({
+    endpoint: 'http://localhost:1234/v1',
+    model: 'test-model',
+    temperature: 0.2,
+    temperatureAuto: true
+  }, { system: 'system', user: '본문' });
+  assert.equal(Object.hasOwn(requestBody, 'temperature'), false);
+});
+
+test('sends temperature when automatic temperature is disabled', async () => {
+  let requestBody;
+  const requestCore = loadCore(async (_url, init) => {
+    requestBody = JSON.parse(init.body);
+    return {
+      ok: true,
+      json: async () => ({ choices: [{ message: { content: '{"corrected_text":"본문","suggestions":[]}' } }] })
+    };
+  });
+  await requestCore.callOpenAICompatible({
+    endpoint: 'http://localhost:1234/v1',
+    model: 'test-model',
+    temperature: 0.7,
+    temperatureAuto: false
+  }, { system: 'system', user: '본문' });
+  assert.equal(requestBody.temperature, 0.7);
+});
+
 test('reads and deduplicates model names from compatible model-list responses', async () => {
   const requestCore = loadCore(async () => ({
     ok: true,

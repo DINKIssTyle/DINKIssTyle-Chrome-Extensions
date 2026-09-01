@@ -5,6 +5,7 @@ const DEFAULT_SETTINGS = Object.freeze({
   apiKey: '',
   model: 'local-model',
   temperature: 0.2,
+  temperatureAuto: false,
   personalization: ''
 });
 
@@ -100,6 +101,7 @@ function sanitizeSettings(input = {}) {
     apiKey: String(input.apiKey || '').trim(),
     model: String(input.model || '').trim() || 'local-model',
     temperature: clampNumber(input.temperature, 0, 2, DEFAULT_SETTINGS.temperature),
+    temperatureAuto: input.temperatureAuto === true,
     personalization: String(input.personalization || '').trim().slice(0, 4000)
   };
 }
@@ -282,7 +284,7 @@ async function callOpenAICompatible(settings, prompts, signal) {
         { role: 'system', content: prompts.system },
         { role: 'user', content: prompts.user }
       ],
-      temperature: settings.temperature,
+      ...(!settings.temperatureAuto ? { temperature: settings.temperature } : {}),
       stream: false
     }),
     signal
