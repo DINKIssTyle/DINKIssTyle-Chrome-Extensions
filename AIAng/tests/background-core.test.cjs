@@ -123,7 +123,7 @@ test('adds personalization to the system prompt without changing the output cont
   assert.match(prompts.system, /다정하고 교양 있게/);
   assert.match(prompts.user, /corrected_text/);
   assert.match(prompts.user, /<content>\n본문\n<\/content>/);
-  assert.match(prompts.user, /각 토큰의 글자, 순서, 개수를 바꾸지 말고/);
+  assert.match(prompts.user, /글자, 순서, 개수를 바꾸지 말고/);
 });
 
 test('keeps a protected media token while applying spelling suggestions', () => {
@@ -158,7 +158,7 @@ test('does not send a maximum output token limit to the LLM server', async () =>
     requestBody = JSON.parse(init.body);
     return {
       ok: true,
-      json: async () => ({ choices: [{ message: { content: '{"corrected_text":"본문","suggestions":[]}' } }] })
+      json: async () => ({ choices: [{ message: { content: '{"corrected_text":"본문"}' } }] })
     };
   });
   await requestCore.callOpenAICompatible({
@@ -177,7 +177,7 @@ test('omits temperature from the request when automatic temperature is enabled',
     requestBody = JSON.parse(init.body);
     return {
       ok: true,
-      json: async () => ({ choices: [{ message: { content: '{"corrected_text":"본문","suggestions":[]}' } }] })
+      json: async () => ({ choices: [{ message: { content: '{"corrected_text":"본문"}' } }] })
     };
   });
   await requestCore.callOpenAICompatible({
@@ -195,7 +195,7 @@ test('sends temperature when automatic temperature is disabled', async () => {
     requestBody = JSON.parse(init.body);
     return {
       ok: true,
-      json: async () => ({ choices: [{ message: { content: '{"corrected_text":"본문","suggestions":[]}' } }] })
+      json: async () => ({ choices: [{ message: { content: '{"corrected_text":"본문"}' } }] })
     };
   });
   await requestCore.callOpenAICompatible({
@@ -226,9 +226,21 @@ test('builds title prompts from content without protected media tokens', () => {
     '다정하고 교양 있게'
   );
   assert.match(prompts.system, /다정하고 교양 있게/);
-  assert.match(prompts.user, /정확히 5개/);
+  assert.match(prompts.user, /5개를 추천/);
   assert.doesNotMatch(prompts.user, /AIANG_MEDIA/);
   assert.match(prompts.user, /본문 앞[\s\S]*본문 뒤/);
+});
+
+test('smartly trims long post content for title suggestions to save input tokens', () => {
+  const longHead = '머리말 '.repeat(400);
+  const longTail = '꼬리말 '.repeat(300);
+  const fullText = `${longHead}\n\n중간본문\n\n${longTail}`;
+  assert.ok(fullText.length > 2500);
+  const prompts = core.buildTitleSuggestionPrompts(fullText);
+  assert.match(prompts.user, /\[\.\.\.본문 일부 생략\.\.\.\]/);
+  assert.match(prompts.user, /머리말/);
+  assert.match(prompts.user, /꼬리말/);
+  assert.ok(prompts.user.length < fullText.length);
 });
 
 test('parses exactly five unique title suggestions and limits each to 200 characters', () => {
@@ -245,11 +257,11 @@ test('builds a detailed Markdown post summary prompt from structured content', (
   const prompts = core.buildPostSummaryPrompts('첫 문단  \n\n\n둘째 문단');
   assert.equal(
     prompts.system,
-    '당신은 웹 기사, 게시물 및 기타 콘텐츠를 처리하는 전문가입니다. 게시물을 요약해주세요.'
+    '당신은 웹 기사 및 커뮤니티 게시물 요약 전문가입니다.'
   );
   assert.match(prompts.user, /<content>\n첫 문단\n\n둘째 문단\n<\/content>/);
   assert.match(prompts.user, /Markdown 문단과 목록/);
-  assert.match(prompts.user, /지나치게 짧고 추상적인 요약은 피하세요/);
+  assert.match(prompts.user, /지나치게 짧거나 추상적인 요약은 피하고/);
   assert.match(prompts.user, /요약문만 반환하세요/);
 });
 
@@ -268,7 +280,7 @@ test('builds a grounded Markdown comment reaction prompt', () => {
   );
   assert.match(prompts.system, /댓글 반응을 분석하는 전문가/);
   assert.match(prompts.user, /전체 댓글 4개.*2개를 분석/);
-  assert.match(prompts.user, /소수 의견을 전체 반응처럼 확대하지 말고/);
+  assert.match(prompts.user, /소수 의견을 전체 반응으로 왜곡하지 마세요/);
   assert.match(prompts.user, /<post>\n# 게시물\n본문 내용\n<\/post>/);
   assert.match(prompts.user, /<comments total="4" sampled="2">/);
   assert.match(prompts.user, /Markdown 문단과 목록/);
@@ -276,11 +288,10 @@ test('builds a grounded Markdown comment reaction prompt', () => {
 
 test('builds a grounded dictionary-style glossary prompt from post content', () => {
   const prompts = core.buildTermGlossaryPrompts('# AI 가속기\nLLM은 GPU에서 실행됩니다.');
-  assert.equal(prompts.system, '당신은 웹 기사, 게시물 및 기타 콘텐츠를 처리하는 전문가입니다.');
+  assert.equal(prompts.system, '당신은 웹 기사 및 게시물 용어 정리 전문가입니다.');
   assert.match(prompts.user, /\[게시물\]\n# AI 가속기\nLLM은 GPU에서 실행됩니다\./);
-  assert.match(prompts.user, /\[질문\]\n게시물에 등장하는 용어들을 사전처럼 설명해주세요/);
-  assert.match(prompts.user, /용어를 굵게 표시한 읽기 쉬운 Markdown 목록/);
-  assert.doesNotMatch(prompts.user, /고유 개념|본문에 근거 없는 뜻|인사말/);
+  assert.match(prompts.user, /\[질문\]\n게시물을 이해하는 데 도움이 되는 전문용어/);
+  assert.match(prompts.user, /용어를 굵게 표시한 읽기 쉬운 Markdown 사전 목록/);
 });
 
 test('accepts Markdown and JSON glossary responses', () => {
@@ -325,7 +336,6 @@ test('chunks Gemini Nano editing, reports progress, and rebases spelling offsets
           promptedContentLengths.push(content.length);
           const start = content.indexOf('기슬');
           return JSON.stringify({
-            corrected_text: start >= 0 ? content.replace('기슬', '기술') : content,
             suggestions: start >= 0 ? [{
               original: '기슬',
               replacement: '기술',
@@ -361,7 +371,7 @@ test('chunks Gemini Nano editing, reports progress, and rebases spelling offsets
   assert.equal(result.suggestions.length, 1);
   assert.equal(result.suggestions[0].start, text.indexOf('기슬'));
   assert.ok(Math.max(...promptedContentLengths) <= 900);
-  assert.ok(promptOptionsSeen.every(options => options.responseConstraint?.required.includes('corrected_text')));
+  assert.ok(promptOptionsSeen.every(options => options.responseConstraint?.required.includes('suggestions')));
   assert.ok(promptOptionsSeen.every(options => options.omitResponseConstraintInput === true));
   assert.ok(sessions.length > progress.length);
 });

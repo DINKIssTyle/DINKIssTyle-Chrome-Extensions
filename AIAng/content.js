@@ -359,7 +359,15 @@
       const title = String(node.getAttribute('title') || node.getAttribute('aria-label') || '').trim();
       return title ? `\n[미디어: ${title}]\n` : '';
     }
-    if (tag === 'PRE') return `\n\`\`\`\n${node.textContent || ''}\n\`\`\`\n`;
+    if (tag === 'PRE') {
+      const codeText = node.textContent || '';
+      const lines = codeText.split('\n');
+      if (lines.length > 8 || codeText.length > 300) {
+        const preview = lines.slice(0, 6).join('\n').slice(0, 240);
+        return `\n\`\`\`\n${preview}\n[...코드 생략...]\n\`\`\`\n`;
+      }
+      return `\n\`\`\`\n${codeText}\n\`\`\`\n`;
+    }
     if (tag === 'TABLE') return convertArticleTableToMarkdown(node);
 
     let content = Array.from(node.childNodes).map(convertArticleNodeToMarkdown).join('');
@@ -530,17 +538,33 @@
     return normalizeCollectedCommentTexts(candidates);
   }
 
+  function isLowInformationComment(text) {
+    const cleaned = text.replace(/[\s\p{P}\p{S}]+/gu, '').toLowerCase();
+    if (cleaned.length <= 1) return true;
+    return /^(?:감사(?:합니다|드려요|해요)?|고맙습니다|잘보고갑니다|잘봤습니다|추천(?:합니다|이요|드려요)?|굿굿|대박|와우|동감(?:합니다)?|공감(?:합니다)?|[ㅋㅎㅠㅜ]+)$/i.test(cleaned);
+  }
+
   function normalizeCollectedCommentTexts(candidates) {
     const seen = new Set();
-    return candidates.map(extractCommentText)
+    const extracted = candidates.map(extractCommentText)
       .map(text => text.trim())
-      .filter(text => text.length >= 2 && !isCommentInterfaceText(text))
-      .filter(text => {
-        const key = text.replace(/\s+/g, ' ').toLocaleLowerCase();
-        if (seen.has(key)) return false;
-        seen.add(key);
-        return true;
-      });
+      .filter(text => text.length >= 2 && !isCommentInterfaceText(text));
+
+    const informative = [];
+    const lowInfo = [];
+
+    for (const text of extracted) {
+      const key = text.replace(/\s+/g, ' ').toLocaleLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      if (isLowInformationComment(text)) {
+        lowInfo.push(text);
+      } else {
+        informative.push(text);
+      }
+    }
+
+    return [...informative, ...lowInfo];
   }
 
   function findDamoangCommentRoot(articleBody) {
