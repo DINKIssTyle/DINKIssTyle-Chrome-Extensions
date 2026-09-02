@@ -96,6 +96,7 @@
   let inlineReviewFrame = 0;
   let toastToolbarAnchor = null;
   const buttonRequestStates = new WeakMap();
+  const requestButtonsById = new Map();
 
   const ICONS = {
     check: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m4 12 5 5L20 6"/></svg>',
@@ -184,6 +185,19 @@
     const insertionBoundary = findEditorInsertionBoundary(editor);
     insertionBoundary?.insertAdjacentElement('afterend', slot);
     editor._aiangToolbarSlot = slot;
+    requestAnimationFrame(() => syncImproveActionWidth(toolbar));
+  }
+
+  function syncImproveActionWidth(toolbar) {
+    const improveButton = toolbar?.querySelector('.aiang-action[data-action="improve"]');
+    if (!improveButton) return;
+    if (window.matchMedia('(max-width: 680px)').matches) {
+      improveButton.style.removeProperty('width');
+      return;
+    }
+    const spellcheckButton = toolbar.querySelector('.aiang-action[data-action="spellcheck"]');
+    const spellcheckWidth = spellcheckButton?.getBoundingClientRect().width || 0;
+    if (spellcheckWidth > 0) improveButton.style.width = `${spellcheckWidth}px`;
   }
 
   function findEditorInsertionBoundary(editor) {
@@ -770,12 +784,17 @@
 
   function createTrackedRequestId(button) {
     const requestId = createRequestId();
-    buttonRequestStates.get(button)?.requestIds.add(requestId);
+    const state = buttonRequestStates.get(button);
+    state?.requestIds.add(requestId);
+    if (state) requestButtonsById.set(requestId, { button, state });
     return requestId;
   }
 
   function finishButtonRequest(button, state) {
     if (buttonRequestStates.get(button) !== state) return;
+    state.requestIds.forEach(requestId => {
+      requestButtonsById.delete(requestId);
+    });
     buttonRequestStates.delete(button);
     setButtonLoading(button, false, state.action);
   }
@@ -2411,10 +2430,30 @@
     document.addEventListener('scroll', schedulePosition, true);
     window.addEventListener('resize', schedulePosition);
     positionToastAboveToolbar(toast);
-    removeTimer = window.setTimeout(() => {
-      cleanup();
-      toast.remove();
-    }, duration);
+    if (duration > 0) {
+      removeTimer = window.setTimeout(() => {
+        cleanup();
+        toast.remove();
+      }, duration);
+    }
+    return toast;
+  }
+
+  function updateRequestProgress(message) {
+    const requestId = String(message?.requestId || '');
+    const entry = requestButtonsById.get(requestId);
+    if (!entry || buttonRequestStates.get(entry.button) !== entry.state) return;
+    if (entry.state.cancelRequested) return;
+    const current = Math.max(1, Number(message.current) || 1);
+    const total = Math.max(current, Number(message.total) || current);
+    if (total <= 1) return;
+    const progressText = `${current}/${total} 처리 중`;
+    const loadingLabel = entry.button.querySelector('.aiang-loading-label');
+    if (loadingLabel) loadingLabel.textContent = progressText;
+    entry.button.setAttribute(
+      'aria-label',
+      `${LABELS[entry.state.action]} ${progressText}, 다시 누르면 취소`
+    );
   }
 
   function positionToastAboveToolbar(toast) {
@@ -2464,6 +2503,10 @@
     });
   }
 
+  chrome.runtime.onMessage?.addListener?.(message => {
+    if (message?.type === 'REQUEST_PROGRESS') updateRequestProgress(message);
+  });
+
   const observer = new MutationObserver(scheduleScan);
   observer.observe(document.documentElement, { childList: true, subtree: true });
   chrome.storage.onChanged.addListener((changes, areaName) => {
@@ -2475,6 +2518,7 @@
   window.addEventListener('resize', () => {
     const panel = document.querySelector('.aiang-review-popover');
     if (panel?._aiangAnchor) positionPopover(panel, panel._aiangAnchor);
+    document.querySelectorAll('.aiang-toolbar').forEach(syncImproveActionWidth);
   });
   sendMessage({ type: 'GET_SETTINGS' })
     .then(response => {

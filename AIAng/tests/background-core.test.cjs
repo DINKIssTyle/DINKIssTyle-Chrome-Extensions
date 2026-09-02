@@ -5,7 +5,7 @@ const path = require('node:path');
 const test = require('node:test');
 const vm = require('node:vm');
 
-function loadCore(fetchImplementation = fetch) {
+function loadCore(fetchImplementation = fetch, options = {}) {
   const source = fs.readFileSync(path.join(__dirname, '..', 'background.js'), 'utf8');
   const listeners = {};
   const chrome = {
@@ -15,7 +15,7 @@ function loadCore(fetchImplementation = fetch) {
       getURL: value => `chrome-extension://test/${value}`
     },
     action: { onClicked: { addListener: listener => { listeners.action = listener; } } },
-    storage: { local: { get: async defaults => defaults, set: async () => {} } }
+    storage: { local: { get: async defaults => ({ ...defaults, ...options.settings }), set: async () => {} } }
   };
   const context = {
     chrome,
@@ -24,7 +24,8 @@ function loadCore(fetchImplementation = fetch) {
     AbortController,
     DOMException,
     fetch: fetchImplementation,
-    URL
+    URL,
+    ...(options.LanguageModel ? { LanguageModel: options.LanguageModel } : {})
   };
   vm.createContext(context);
   vm.runInContext(`${source}\n;globalThis.__core = {
@@ -40,6 +41,9 @@ function loadCore(fetchImplementation = fetch) {
     parseTitleSuggestions,
     parsePostSummary,
     parseTermGlossary,
+    splitTextAtNaturalBoundaries,
+    isolateChunkWhitespace,
+    processGeminiEditingRequest,
     callOpenAICompatible,
     listModels,
     processTextRequest,
@@ -283,4 +287,81 @@ test('accepts Markdown and JSON glossary responses', () => {
   assert.equal(core.parseTermGlossary('- **LLM** — 대규모 언어 모델'), '- **LLM** — 대규모 언어 모델');
   assert.equal(core.parseTermGlossary('{"glossary":"- **GPU** — 그래픽 처리 장치"}'), '- **GPU** — 그래픽 처리 장치');
   assert.throws(() => core.parseTermGlossary(''), /빈 용어 사전/);
+});
+
+test('splits editing text at natural boundaries without splitting protected media tokens', () => {
+  const token = '[[AIANG_MEDIA_test_1]]';
+  const text = `첫 번째 문단입니다.\n\n${'긴문장 '.repeat(90)}${token}\n\n마지막 문단입니다.`;
+  const chunks = core.splitTextAtNaturalBoundaries(text, 400);
+  assert.ok(chunks.length > 1);
+  assert.equal(chunks.map(chunk => chunk.text).join(''), text);
+  assert.equal(chunks.filter(chunk => chunk.text.includes(token)).length, 1);
+  chunks.forEach((chunk, index) => {
+    assert.equal(chunk.start, index ? chunks[index - 1].end : 0);
+  });
+});
+
+test('preserves outer chunk whitespace separately from editable content', () => {
+  const parts = core.isolateChunkWhitespace('\n\n  교정할 문장입니다.  \n');
+  assert.equal(parts.leading, '\n\n  ');
+  assert.equal(parts.content, '교정할 문장입니다.');
+  assert.equal(parts.trailing, '  \n');
+});
+
+test('chunks Gemini Nano editing, reports progress, and rebases spelling offsets', async () => {
+  const sessions = [];
+  const promptedContentLengths = [];
+  const promptOptionsSeen = [];
+  const LanguageModel = {
+    availability: async () => 'available',
+    create: async () => {
+      const session = {
+        contextWindow: 5200,
+        contextUsage: 100,
+        measureContextUsage: async prompt => prompt.length,
+        prompt: async (prompt, options) => {
+          promptOptionsSeen.push(options);
+          const content = prompt.match(/<content>\n([\s\S]*?)\n<\/content>/)?.[1] || '';
+          promptedContentLengths.push(content.length);
+          const start = content.indexOf('기슬');
+          return JSON.stringify({
+            corrected_text: start >= 0 ? content.replace('기슬', '기술') : content,
+            suggestions: start >= 0 ? [{
+              original: '기슬',
+              replacement: '기술',
+              start,
+              end: start + 2,
+              reason: '맞춤법'
+            }] : []
+          });
+        },
+        destroy() {}
+      };
+      sessions.push(session);
+      return session;
+    }
+  };
+  const geminiCore = loadCore(fetch, { LanguageModel });
+  const paragraphs = Array.from({ length: 35 }, (_, index) => (
+    `${index + 1}번째 문단은 청크 경계를 검증하기 위한 충분히 긴 문장입니다. ${index === 15 ? '기슬을 확인합니다.' : '문맥을 유지합니다.'}`
+  ));
+  const text = paragraphs.join('\n\n');
+  const progress = [];
+  const result = await geminiCore.processGeminiEditingRequest(
+    'spellcheck',
+    text,
+    '',
+    new AbortController().signal,
+    event => progress.push({ ...event })
+  );
+
+  assert.ok(progress.length > 1);
+  assert.ok(progress.every(event => event.total > 1));
+  assert.equal(result.correctedText, text.replace('기슬', '기술'));
+  assert.equal(result.suggestions.length, 1);
+  assert.equal(result.suggestions[0].start, text.indexOf('기슬'));
+  assert.ok(Math.max(...promptedContentLengths) <= 900);
+  assert.ok(promptOptionsSeen.every(options => options.responseConstraint?.required.includes('corrected_text')));
+  assert.ok(promptOptionsSeen.every(options => options.omitResponseConstraintInput === true));
+  assert.ok(sessions.length > progress.length);
 });

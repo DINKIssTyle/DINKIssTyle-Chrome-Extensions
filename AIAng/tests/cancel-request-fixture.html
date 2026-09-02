@@ -19,10 +19,12 @@
   <script>
     window.aiangCancelTest = { started: [], cancelled: [] };
     const pending = new Map();
+    const runtimeListeners = [];
     window.chrome = {
       runtime: {
         lastError: null,
         getURL: value => value,
+        onMessage: { addListener(listener) { runtimeListeners.push(listener); } },
         sendMessage(message, callback) {
           if (message.type === 'GET_SETTINGS') {
             callback({ ok: true, settings: { enabled: true } });
@@ -32,6 +34,12 @@
             window.aiangCancelTest.started.push(message.requestId);
             document.body.dataset.startedRequest = message.requestId;
             pending.set(message.requestId, callback);
+            setTimeout(() => runtimeListeners.forEach(listener => listener({
+              type: 'REQUEST_PROGRESS',
+              requestId: message.requestId,
+              current: 1,
+              total: 3
+            })), 80);
             return;
           }
           if (message.type === 'CANCEL_REQUEST') {

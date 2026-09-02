@@ -10,6 +10,15 @@ const DEFAULT_SETTINGS = Object.freeze({
 });
 
 const activeRequests = new Map();
+const GEMINI_CHUNK_ACTIONS = new Set(['spellcheck', 'honorific', 'improve']);
+const GEMINI_CHUNK_CHAR_LIMITS = Object.freeze({
+  spellcheck: 900,
+  honorific: 1200,
+  improve: 1200
+});
+const GEMINI_MIN_CHUNK_CHARS = 240;
+const GEMINI_INPUT_BUDGET_RATIO = 0.3;
+const GEMINI_NEIGHBOR_CONTEXT_CHARS = 180;
 
 chrome.runtime.onInstalled.addListener(async () => {
   const current = await chrome.storage.local.get(DEFAULT_SETTINGS);
@@ -55,7 +64,9 @@ async function handleMessage(message, sender) {
       return {};
     case 'PROCESS_TEXT':
       assertDamoangPage(sender);
-      return await processTextRequest(message);
+      return await processTextRequest(message, progress => {
+        reportRequestProgress(sender, message.requestId, progress);
+      });
     case 'SUGGEST_TITLES':
       assertDamoangPage(sender);
       return await processTitleSuggestionsRequest(message);
@@ -94,6 +105,21 @@ function assertDamoangPage(sender) {
   }
   if (!['damoang.net', 'www.damoang.net'].includes(url.hostname)) {
     throw new Error('다모앙 페이지에서만 사용할 수 있습니다.');
+  }
+}
+
+function reportRequestProgress(sender, requestId, progress) {
+  if (!sender?.tab?.id || !chrome.tabs?.sendMessage || !requestId) return;
+  try {
+    const delivery = chrome.tabs.sendMessage(sender.tab.id, {
+      type: 'REQUEST_PROGRESS',
+      requestId: String(requestId),
+      current: progress.current,
+      total: progress.total
+    });
+    delivery?.catch?.(() => {});
+  } catch {
+    // The page may have navigated or closed while the local model was running.
   }
 }
 
@@ -140,7 +166,7 @@ function normalizeEndpoint(value) {
   }
 }
 
-async function processTextRequest(message) {
+async function processTextRequest(message, onProgress = () => {}) {
   const text = String(message.text || '');
   const action = String(message.action || '');
   if (!text.trim()) throw new Error('교정할 내용을 먼저 입력해 주세요.');
@@ -156,6 +182,15 @@ async function processTextRequest(message) {
   const controller = new AbortController();
   activeRequests.set(requestId, controller);
   try {
+    if (settings.provider === 'gemini' && GEMINI_CHUNK_ACTIONS.has(action)) {
+      return await processGeminiEditingRequest(
+        action,
+        text,
+        settings.personalization,
+        controller.signal,
+        onProgress
+      );
+    }
     const prompts = buildPrompts(action, text, settings.personalization);
     const raw = await callConfiguredModel(settings, prompts, controller.signal);
     return parseEditingResponse(raw, text, action);
@@ -268,7 +303,212 @@ async function processTermGlossaryRequest(message) {
   }
 }
 
-function buildPrompts(action, text, personalization) {
+async function processGeminiEditingRequest(action, text, personalization, signal, onProgress) {
+  const chunkLimit = await measureGeminiEditingChunkLimit(action, text, personalization, signal);
+  const chunks = splitTextAtNaturalBoundaries(text, chunkLimit);
+  const completed = [];
+  let index = 0;
+
+  while (index < chunks.length) {
+    if (signal.aborted) throw new DOMException('Aborted', 'AbortError');
+    const chunk = chunks[index];
+    const parts = isolateChunkWhitespace(chunk.text);
+    if (!parts.content) {
+      completed.push({ chunk, correctedText: chunk.text, suggestions: [] });
+      index += 1;
+      continue;
+    }
+
+    if (chunks.length > 1) onProgress({ current: index + 1, total: chunks.length });
+    const contentStart = chunk.start + parts.leading.length;
+    const contentEnd = contentStart + parts.content.length;
+    const prompts = buildPrompts(action, parts.content, personalization, {
+      before: getNeighborContext(text, contentStart, 'before'),
+      after: getNeighborContext(text, contentEnd, 'after')
+    });
+
+    try {
+      const raw = await callGeminiNano(prompts, signal, {
+        responseConstraint: buildEditingResponseConstraint(),
+        omitResponseConstraintInput: true
+      });
+      const parsed = parseEditingResponse(raw, parts.content, action);
+      completed.push({
+        chunk,
+        correctedText: `${parts.leading}${parsed.correctedText}${parts.trailing}`,
+        suggestions: parsed.suggestions.map(suggestion => ({
+          ...suggestion,
+          start: suggestion.start + contentStart,
+          end: suggestion.end + contentStart
+        }))
+      });
+      index += 1;
+    } catch (error) {
+      if (!isGeminiQuotaError(error) || parts.content.length <= GEMINI_MIN_CHUNK_CHARS) throw error;
+      const smallerLimit = Math.max(GEMINI_MIN_CHUNK_CHARS, Math.floor(chunk.text.length / 2));
+      const smallerChunks = splitTextAtNaturalBoundaries(chunk.text, smallerLimit, chunk.start);
+      if (smallerChunks.length < 2) throw error;
+      chunks.splice(index, 1, ...smallerChunks);
+    }
+  }
+
+  completed.sort((left, right) => left.chunk.start - right.chunk.start);
+  return {
+    correctedText: completed.map(result => result.correctedText).join(''),
+    suggestions: completed.flatMap(result => result.suggestions)
+  };
+}
+
+async function measureGeminiEditingChunkLimit(action, text, personalization, signal) {
+  const hardLimit = GEMINI_CHUNK_CHAR_LIMITS[action] || 1200;
+  if (text.length <= hardLimit) return text.length;
+  const prompts = buildPrompts(action, text, personalization);
+  const model = getLanguageModelAPI();
+  if (!model) throw new Error('이 Chrome에서는 Gemini Nano Prompt API를 사용할 수 없습니다.');
+  const availability = await getGeminiAvailability(model);
+  if (['no', 'unavailable'].includes(availability)) {
+    throw new Error('이 기기에서는 Gemini Nano를 사용할 수 없습니다.');
+  }
+
+  let session;
+  try {
+    const created = await createGeminiSession(model, prompts.system, signal);
+    session = created.session;
+    const measureUsage = session.measureContextUsage || session.measureInputUsage;
+    if (typeof measureUsage !== 'function') {
+      return Math.min(text.length, hardLimit);
+    }
+    const prompt = formatGeminiPrompt(prompts, created.systemPromptEmbedded);
+    let measured;
+    try {
+      measured = normalizeMeasuredContextUsage(await measureUsage.call(session, prompt));
+    } catch (error) {
+      if (error?.name === 'AbortError') throw error;
+      return Math.min(text.length, hardLimit);
+    }
+    const contextWindow = Number(session.contextWindow ?? session.inputQuota);
+    const contextUsage = Number(session.contextUsage ?? session.inputUsage) || 0;
+    const available = contextWindow - contextUsage;
+    if (!Number.isFinite(measured) || measured <= 0 || !Number.isFinite(available) || available <= 0) {
+      return Math.min(text.length, hardLimit);
+    }
+    const targetUsage = Math.max(1, Math.floor(available * GEMINI_INPUT_BUDGET_RATIO));
+    if (measured <= targetUsage) return Math.min(text.length, hardLimit);
+
+    const emptyPrompts = buildPrompts(action, '', personalization);
+    const emptyPrompt = formatGeminiPrompt(emptyPrompts, created.systemPromptEmbedded);
+    let fixedUsage = 0;
+    try {
+      fixedUsage = normalizeMeasuredContextUsage(await measureUsage.call(session, emptyPrompt));
+    } catch (error) {
+      if (error?.name === 'AbortError') throw error;
+    }
+    const variableUsage = Math.max(1, measured - (Number.isFinite(fixedUsage) ? fixedUsage : 0));
+    const variableBudget = Math.max(1, targetUsage - (Number.isFinite(fixedUsage) ? fixedUsage : 0));
+    const estimated = Math.floor(text.length * variableBudget / variableUsage);
+    return Math.max(
+      GEMINI_MIN_CHUNK_CHARS,
+      Math.min(text.length, hardLimit, estimated)
+    );
+  } finally {
+    session?.destroy?.();
+  }
+}
+
+function normalizeMeasuredContextUsage(value) {
+  if (typeof value === 'number') return value;
+  return Number(value?.usage ?? value?.contextUsage ?? value?.tokens ?? NaN);
+}
+
+function splitTextAtNaturalBoundaries(text, maxLength, baseOffset = 0) {
+  const source = String(text || '');
+  if (!source) return [];
+  const limit = Math.max(GEMINI_MIN_CHUNK_CHARS, Number(maxLength) || 1200);
+  const chunks = [];
+  let start = 0;
+  while (start < source.length) {
+    let end = Math.min(source.length, start + limit);
+    if (end < source.length) end = findNaturalChunkBoundary(source, start, end);
+    end = moveBoundaryPastProtectedToken(source, start, end);
+    if (end <= start) end = Math.min(source.length, start + limit);
+    chunks.push({ text: source.slice(start, end), start: baseOffset + start, end: baseOffset + end });
+    start = end;
+  }
+  return chunks;
+}
+
+function findNaturalChunkBoundary(text, start, idealEnd) {
+  const minimum = start + Math.floor((idealEnd - start) * 0.55);
+  const windowText = text.slice(minimum, idealEnd);
+  const patterns = [/\n{2,}/g, /\n/g, /[.!?…][”’"')\]]?\s+/g, /[ \t]+/g];
+  for (const pattern of patterns) {
+    let match;
+    let lastEnd = -1;
+    while ((match = pattern.exec(windowText))) lastEnd = minimum + match.index + match[0].length;
+    if (lastEnd > start) return lastEnd;
+  }
+  return idealEnd;
+}
+
+function moveBoundaryPastProtectedToken(text, start, boundary) {
+  const opening = text.lastIndexOf('[[AIANG_MEDIA_', boundary);
+  const closing = text.lastIndexOf(']]', boundary);
+  if (opening < start || opening <= closing) return boundary;
+  const tokenEnd = text.indexOf(']]', boundary);
+  return tokenEnd >= 0 ? tokenEnd + 2 : boundary;
+}
+
+function isolateChunkWhitespace(text) {
+  const source = String(text || '');
+  const leading = source.match(/^\s*/)?.[0] || '';
+  const remaining = source.slice(leading.length);
+  const trailing = remaining.match(/\s*$/)?.[0] || '';
+  return {
+    leading,
+    content: remaining.slice(0, remaining.length - trailing.length),
+    trailing
+  };
+}
+
+function getNeighborContext(text, offset, direction) {
+  const source = String(text || '');
+  const context = direction === 'before'
+    ? source.slice(Math.max(0, offset - GEMINI_NEIGHBOR_CONTEXT_CHARS), offset)
+    : source.slice(offset, Math.min(source.length, offset + GEMINI_NEIGHBOR_CONTEXT_CHARS));
+  return context.replace(/\[\[AIANG_MEDIA_[^\]]+\]\]/g, '[미디어]').trim();
+}
+
+function isGeminiQuotaError(error) {
+  return error?.name === 'QuotaExceededError' || /QuotaExceeded|context window|context.*exceed/i.test(error?.message || '');
+}
+
+function buildEditingResponseConstraint() {
+  return {
+    type: 'object',
+    properties: {
+      corrected_text: { type: 'string' },
+      suggestions: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: {
+            original: { type: 'string' },
+            replacement: { type: 'string' },
+            start: { type: 'integer', minimum: 0 },
+            end: { type: 'integer', minimum: 0 },
+            reason: { type: 'string' }
+          },
+          required: ['original', 'replacement', 'start', 'end'],
+          additionalProperties: false
+        }
+      }
+    },
+    required: ['corrected_text', 'suggestions'],
+    additionalProperties: false
+  };
+}
+
+function buildPrompts(action, text, personalization, editingContext = null) {
   const actionRules = {
     spellcheck: [
       '맞춤법, 문법, 띄어쓰기, 오탈자와 명백히 어색한 표현만 교정하세요.',
@@ -307,13 +547,26 @@ function buildPrompts(action, text, personalization) {
       '작업 규칙:',
       ...actionRules[action].map(rule => `- ${rule}`),
       '- URL, 이메일, 고유명사, 숫자와 이모티콘을 그대로 보존하세요.',
-      '- [[AIANG_MEDIA_...]] 형태는 이미지·미디어 위치를 나타내는 불변 보호 토큰입니다. 각 토큰의 글자, 순서, 개수를 바꾸지 말고 결과에 정확히 한 번씩 그대로 포함하세요.',
+      '- <content> 안의 [[AIANG_MEDIA_...]] 형태는 이미지·미디어 위치를 나타내는 불변 보호 토큰입니다. 각 토큰의 글자, 순서, 개수를 바꾸지 말고 결과에 정확히 한 번씩 그대로 포함하세요.',
+      ...(editingContext ? ['- <before_context>와 <after_context>는 문맥 확인용이며 수정하거나 corrected_text에 포함하지 마세요. <content> 안의 내용만 교정하세요.'] : []),
       '- corrected_text에는 생략 없는 전체 결과를 넣으세요.',
       `- 정확한 JSON 형태: ${outputShape}`,
       '',
+      ...(editingContext ? [
+        '<before_context>',
+        editingContext.before,
+        '</before_context>',
+        ''
+      ] : []),
       '<content>',
       text,
-      '</content>'
+      '</content>',
+      ...(editingContext ? [
+        '',
+        '<after_context>',
+        editingContext.after,
+        '</after_context>'
+      ] : [])
     ].join('\n')
   };
 }
@@ -483,7 +736,7 @@ async function getGeminiAvailability(model) {
   return typeof result === 'string' ? result : result?.available || result?.availability || 'available';
 }
 
-async function callGeminiNano(prompts, signal) {
+async function callGeminiNano(prompts, signal, promptOptions = {}) {
   const model = getLanguageModelAPI();
   if (!model) throw new Error('이 Chrome에서는 Gemini Nano Prompt API를 사용할 수 없습니다.');
   const availability = await getGeminiAvailability(model);
@@ -492,41 +745,57 @@ async function callGeminiNano(prompts, signal) {
   }
 
   let session;
-  let systemPromptEmbedded = false;
   try {
-    if (typeof model.create === 'function') {
-      try {
-        session = await model.create({
-          initialPrompts: [{ role: 'system', content: prompts.system }],
-          signal
-        });
-        systemPromptEmbedded = true;
-      } catch {
-        session = await model.create({ systemPrompt: prompts.system, signal });
-        systemPromptEmbedded = true;
-      }
-    } else if (typeof model.createTextSession === 'function') {
-      session = await model.createTextSession();
-    }
-    if (!session?.prompt) throw new Error('Gemini Nano 세션을 만들 수 없습니다.');
+    const created = await createGeminiSession(model, prompts.system, signal);
+    session = created.session;
     if (signal.aborted) throw new DOMException('Aborted', 'AbortError');
-    const prompt = !systemPromptEmbedded
-      ? `System:\n${prompts.system}\n\nUser:\n${prompts.user}`
-      : prompts.user;
+    const prompt = formatGeminiPrompt(prompts, created.systemPromptEmbedded);
     let result;
     try {
-      result = await session.prompt(prompt, { signal });
+      result = await session.prompt(prompt, { signal, ...promptOptions });
     } catch (error) {
-      if (error?.name === 'NotAllowedError') {
+      if (promptOptions.responseConstraint
+        && ['NotSupportedError', 'TypeError'].includes(error?.name)) {
+        result = await session.prompt(prompt, { signal });
+      } else if (error?.name === 'NotAllowedError') {
         throw new Error('Gemini Nano 모델 다운로드를 시작하려면 버튼을 다시 눌러 주세요.');
+      } else {
+        throw error;
       }
-      throw error;
     }
     if (signal.aborted) throw new DOMException('Aborted', 'AbortError');
     return String(result || '');
   } finally {
     session?.destroy?.();
   }
+}
+
+async function createGeminiSession(model, systemPrompt, signal) {
+  let session;
+  let systemPromptEmbedded = false;
+  if (typeof model.create === 'function') {
+    try {
+      session = await model.create({
+        initialPrompts: [{ role: 'system', content: systemPrompt }],
+        signal
+      });
+      systemPromptEmbedded = true;
+    } catch (error) {
+      if (error?.name === 'AbortError') throw error;
+      session = await model.create({ systemPrompt, signal });
+      systemPromptEmbedded = true;
+    }
+  } else if (typeof model.createTextSession === 'function') {
+    session = await model.createTextSession();
+  }
+  if (!session?.prompt) throw new Error('Gemini Nano 세션을 만들 수 없습니다.');
+  return { session, systemPromptEmbedded };
+}
+
+function formatGeminiPrompt(prompts, systemPromptEmbedded) {
+  return systemPromptEmbedded
+    ? prompts.user
+    : `System:\n${prompts.system}\n\nUser:\n${prompts.user}`;
 }
 
 function parseEditingResponse(raw, originalText, action) {

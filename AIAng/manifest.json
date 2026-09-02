@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "AIAng",
-  "version": "0.1.11",
+  "version": "0.2.00",
   "description": "다모앙 글쓰기와 댓글 작성을 돕는 로컬·온디바이스 AI 교정 도구",
   "icons": {
     "16": "icons/icon16.png",
