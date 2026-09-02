@@ -117,7 +117,7 @@ function reportRequestProgress(sender, requestId, progress) {
       current: progress.current,
       total: progress.total
     });
-    delivery?.catch?.(() => {});
+    delivery?.catch?.(() => { });
   } catch {
     // The page may have navigated or closed while the local model was running.
   }
@@ -166,7 +166,7 @@ function normalizeEndpoint(value) {
   }
 }
 
-async function processTextRequest(message, onProgress = () => {}) {
+async function processTextRequest(message, onProgress = () => { }) {
   const text = String(message.text || '');
   const action = String(message.action || '');
   if (!text.trim()) throw new Error('교정할 내용을 먼저 입력해 주세요.');
@@ -533,8 +533,8 @@ function buildPrompts(action, text, personalization, editingContext = null) {
       '원문에 없는 내용을 추가하지 마세요.'
     ],
     decorate: [
-      '기호나 이모지를 적절히 추가해 글을 다듬으세요.',
-      'HTML/Markdown 문법 없이 일반 텍스트만 사용하세요.'
+      '글 내용에 어울리는 이모지를 곧곧마다 추가해 글이 풍부하게 다듬으세요.',
+      '이모지 외의 HTML/Markdown 문법은 사용하지 마세요.'
     ]
   };
 
@@ -682,7 +682,7 @@ function buildTermGlossaryPrompts(text) {
       content,
       '',
       '[질문]',
-      '게시물을 이해하는 데 도움이 되는 전문용어, 약어, 개념들을 골라 용어를 굵게 표시한 읽기 쉬운 Markdown 사전 목록으로 설명해주세요.'
+      '게시물을 이해하는 데 도움이 되는 전문용어, 약어, 개념들을 골라 용어를 굵게 표시한 읽기 쉬운 Markdown 형식의 사전 목록으로 설명해주세요.'
     ].join('\n')
   };
 }
