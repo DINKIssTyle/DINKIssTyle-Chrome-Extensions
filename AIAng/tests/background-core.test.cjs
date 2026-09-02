@@ -34,10 +34,12 @@ function loadCore(fetchImplementation = fetch) {
     buildTitleSuggestionPrompts,
     buildPostSummaryPrompts,
     buildCommentReactionSummaryPrompts,
+    buildTermGlossaryPrompts,
     normalizeSuggestions,
     applySuggestions,
     parseTitleSuggestions,
     parsePostSummary,
+    parseTermGlossary,
     callOpenAICompatible,
     listModels,
     processTextRequest,
@@ -266,4 +268,19 @@ test('builds a grounded Markdown comment reaction prompt', () => {
   assert.match(prompts.user, /<post>\n# 게시물\n본문 내용\n<\/post>/);
   assert.match(prompts.user, /<comments total="4" sampled="2">/);
   assert.match(prompts.user, /Markdown 문단과 목록/);
+});
+
+test('builds a grounded dictionary-style glossary prompt from post content', () => {
+  const prompts = core.buildTermGlossaryPrompts('# AI 가속기\nLLM은 GPU에서 실행됩니다.');
+  assert.equal(prompts.system, '당신은 웹 기사, 게시물 및 기타 콘텐츠를 처리하는 전문가입니다.');
+  assert.match(prompts.user, /\[게시물\]\n# AI 가속기\nLLM은 GPU에서 실행됩니다\./);
+  assert.match(prompts.user, /\[질문\]\n게시물에 등장하는 용어들을 사전처럼 설명해주세요/);
+  assert.match(prompts.user, /용어를 굵게 표시한 읽기 쉬운 Markdown 목록/);
+  assert.doesNotMatch(prompts.user, /고유 개념|본문에 근거 없는 뜻|인사말/);
+});
+
+test('accepts Markdown and JSON glossary responses', () => {
+  assert.equal(core.parseTermGlossary('- **LLM** — 대규모 언어 모델'), '- **LLM** — 대규모 언어 모델');
+  assert.equal(core.parseTermGlossary('{"glossary":"- **GPU** — 그래픽 처리 장치"}'), '- **GPU** — 그래픽 처리 장치');
+  assert.throws(() => core.parseTermGlossary(''), /빈 용어 사전/);
 });

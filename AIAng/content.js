@@ -6,9 +6,16 @@
   const TITLE_SUGGEST_ACTION = { id: 'suggest_title', label: '글 제목 추천', short: '제목 추천', icon: 'title' };
   const POST_SUMMARY_ACTION = { id: 'summarize_post', label: '게시물 요약', short: '요약', icon: 'sparkle' };
   const COMMENT_REACTION_ACTION = { id: 'summarize_reactions', label: '댓글 반응 요약', short: '댓글 요약', icon: 'chat' };
+  const TERM_GLOSSARY_ACTION = { id: 'build_glossary', label: '용어 사전', short: '용어 사전', icon: 'book' };
   const BODY_ACTIONS = [SPELLCHECK_ACTION, HONORIFIC_ACTION, IMPROVE_ACTION, TITLE_SUGGEST_ACTION];
   const COMMENT_ACTIONS = [SPELLCHECK_ACTION, HONORIFIC_ACTION, IMPROVE_ACTION, DECORATE_ACTION];
-  const LABELS = Object.fromEntries([...BODY_ACTIONS, ...COMMENT_ACTIONS, POST_SUMMARY_ACTION, COMMENT_REACTION_ACTION]
+  const LABELS = Object.fromEntries([
+    ...BODY_ACTIONS,
+    ...COMMENT_ACTIONS,
+    POST_SUMMARY_ACTION,
+    COMMENT_REACTION_ACTION,
+    TERM_GLOSSARY_ACTION
+  ]
     .map(action => [action.id, action.label]));
   const MEDIA_LEAF_SELECTOR = 'img, video, audio, iframe, canvas, object, embed';
   const MEDIA_WRAPPER_SELECTOR = 'figure, picture, a, [data-type="image"], [data-node-type="image"], [data-node-view-wrapper], [data-youtube-video], .image-resizer';
@@ -96,6 +103,7 @@
     sparkle: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 1.5 4.5L18 9l-4.5 1.5L12 15l-1.5-4.5L6 9l4.5-1.5Z"/><path d="m19 15 .8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8Z"/></svg>',
     palette: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a9 9 0 0 0 0 18h1.5a1.5 1.5 0 0 0 0-3H12a2 2 0 0 1 0-4h2.5A6.5 6.5 0 0 0 21 7.5C19.3 4.8 16 3 12 3Z"/><circle cx="7.5" cy="10" r="1"/><circle cx="10" cy="6.5" r="1"/><circle cx="15" cy="6.5" r="1"/></svg>',
     title: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h10M9 5v14M6 19h6"/><path d="m18 10 .8 2.2L21 13l-2.2.8L18 16l-.8-2.2L15 13l2.2-.8Z"/></svg>',
+    book: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H11a2 2 0 0 1 2 2v16a3 3 0 0 0-3-3H4Z"/><path d="M20 5.5A2.5 2.5 0 0 0 17.5 3H15a2 2 0 0 0-2 2v16a3 3 0 0 1 3-3h4Z"/></svg>',
     settings: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1-2.8 2.8-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.6v.2h-4V21a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1L4.2 17l.1-.1a1.7 1.7 0 0 0 .3-1.9A1.7 1.7 0 0 0 3 14H2.8v-4H3a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9L4.2 7 7 4.2l.1.1a1.7 1.7 0 0 0 1.9.3A1.7 1.7 0 0 0 10 3V2.8h4V3a1.7 1.7 0 0 0 1 1.6 1.7 1.7 0 0 0 1.9-.3l.1-.1L19.8 7l-.1.1a1.7 1.7 0 0 0-.3 1.9 1.7 1.7 0 0 0 1.6 1h.2v4H21a1.7 1.7 0 0 0-1.6 1Z"/></svg>'
   };
 
@@ -262,7 +270,16 @@
       toastToolbarAnchor = slot;
       runCommentReactionSummary(articleBody, reactionButton);
     });
-    slot.append(postButton, reactionButton);
+
+    const glossaryButton = document.createElement('button');
+    glossaryButton.type = 'button';
+    glossaryButton.className = 'aiang-summary-button';
+    glossaryButton.innerHTML = `${ICONS[TERM_GLOSSARY_ACTION.icon]}<span>${TERM_GLOSSARY_ACTION.label}</span>`;
+    glossaryButton.addEventListener('click', () => {
+      toastToolbarAnchor = slot;
+      runTermGlossary(articleBody, glossaryButton);
+    });
+    slot.append(postButton, reactionButton, glossaryButton);
     articleBody.insertAdjacentElement('beforebegin', slot);
     articleBody._aiangSummarySlot = slot;
   }
@@ -438,6 +455,30 @@
       showPostSummary(response.summary, COMMENT_REACTION_ACTION.label);
     } catch (error) {
       showRequestError(error, requestState, '댓글 반응을 요약하지 못했습니다.');
+    } finally {
+      finishButtonRequest(button, requestState);
+    }
+  }
+
+  async function runTermGlossary(articleBody, button) {
+    if (cancelButtonRequest(button)) return;
+    const text = limitPostSummarySource(extractArticleText(articleBody));
+    if (!text) {
+      showToast('용어를 찾을 게시물 본문을 찾지 못했습니다.', 'warning');
+      return;
+    }
+    closeReview();
+    const requestState = beginButtonRequest(button, TERM_GLOSSARY_ACTION.id);
+    try {
+      const response = await sendMessage({
+        type: 'BUILD_GLOSSARY',
+        requestId: createTrackedRequestId(button),
+        text
+      });
+      if (!response?.ok) throw new Error(response?.error || '용어 사전을 만들지 못했습니다.');
+      showPostSummary(response.glossary, TERM_GLOSSARY_ACTION.label);
+    } catch (error) {
+      showRequestError(error, requestState, '용어 사전을 만들지 못했습니다.');
     } finally {
       finishButtonRequest(button, requestState);
     }
@@ -1457,6 +1498,7 @@
 
     const footer = document.createElement('footer');
     footer.className = 'aiang-review-footer aiang-no-select';
+    appendAIAccuracyNotice(footer);
     const cancel = document.createElement('button');
     cancel.type = 'button';
     cancel.className = 'aiang-secondary';
@@ -1567,6 +1609,7 @@
 
     const footer = document.createElement('footer');
     footer.className = 'aiang-review-footer aiang-no-select';
+    appendAIAccuracyNotice(footer);
     const cancel = document.createElement('button');
     cancel.type = 'button';
     cancel.className = 'aiang-secondary';
@@ -1670,6 +1713,7 @@
 
     const footer = document.createElement('footer');
     footer.className = 'aiang-review-footer aiang-no-select';
+    appendAIAccuracyNotice(footer);
     const cancel = document.createElement('button');
     cancel.type = 'button';
     cancel.className = 'aiang-secondary';
@@ -1713,6 +1757,7 @@
 
     const footer = document.createElement('footer');
     footer.className = 'aiang-review-footer aiang-no-select';
+    appendAIAccuracyNotice(footer);
     const done = document.createElement('button');
     done.type = 'button';
     done.className = 'aiang-secondary';
@@ -1721,6 +1766,13 @@
     footer.append(done);
     panel.append(footer);
     showModalPanel(panel);
+  }
+
+  function appendAIAccuracyNotice(footer) {
+    const notice = document.createElement('p');
+    notice.className = 'aiang-ai-accuracy-notice';
+    notice.textContent = 'AI 답변의 품질은 모델별로 다르며, 가끔은 매우 부정확할 수 있습니다.';
+    footer.append(notice);
   }
 
   function renderSummaryMarkdown(container, markdown) {

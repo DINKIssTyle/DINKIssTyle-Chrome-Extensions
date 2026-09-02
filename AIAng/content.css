@@ -237,14 +237,36 @@
 }
 
 .aiang-loading-cancel {
+  position: relative;
   width: 16px;
   height: 16px;
   border-radius: 999px;
   display: inline-grid;
   place-items: center;
   background: color-mix(in oklch, currentColor 10%, transparent);
-  font: 700 15px/1 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-size: 0;
   transition: background 150ms ease, transform 150ms ease;
+}
+
+.aiang-loading-cancel::before,
+.aiang-loading-cancel::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 8px;
+  height: 1.5px;
+  border-radius: 999px;
+  background: currentColor;
+  transform-origin: center;
+}
+
+.aiang-loading-cancel::before {
+  transform: translate(-50%, -50%) rotate(45deg);
+}
+
+.aiang-loading-cancel::after {
+  transform: translate(-50%, -50%) rotate(-45deg);
 }
 
 .aiang-action.is-loading:hover .aiang-loading-cancel,
@@ -825,8 +847,19 @@
   border-top: 1px solid var(--aiang-border);
   background: var(--aiang-surface);
   display: flex;
+  align-items: center;
   justify-content: flex-end;
+  flex-wrap: wrap;
   gap: 8px;
+}
+
+.aiang-ai-accuracy-notice {
+  flex: 1 1 300px;
+  margin: 0 auto 0 0;
+  color: var(--aiang-text-muted);
+  opacity: 0.72;
+  font-size: 11px;
+  line-height: 1.45;
 }
 
 .aiang-review-footer button {

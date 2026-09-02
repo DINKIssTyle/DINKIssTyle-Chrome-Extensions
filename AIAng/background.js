@@ -65,6 +65,9 @@ async function handleMessage(message, sender) {
     case 'SUMMARIZE_REACTIONS':
       assertDamoangPage(sender);
       return await processCommentReactionSummaryRequest(message);
+    case 'BUILD_GLOSSARY':
+      assertDamoangPage(sender);
+      return await processTermGlossaryRequest(message);
     case 'TEST_CONNECTION':
       assertExtensionPage(sender);
       return await testConnection(sanitizeSettings(message.settings));
@@ -243,6 +246,28 @@ async function processCommentReactionSummaryRequest(message) {
   }
 }
 
+async function processTermGlossaryRequest(message) {
+  const text = String(message.text || '').trim();
+  if (!text) throw new Error('용어를 찾을 게시물 본문을 찾지 못했습니다.');
+  if (text.length > 15000) throw new Error('용어 사전에 사용할 수 있는 게시물 내용은 15,000자까지입니다.');
+
+  const settings = await getSettings();
+  if (!settings.enabled) throw new Error('AIAng가 설정에서 꺼져 있습니다.');
+
+  const requestId = String(message.requestId || crypto.randomUUID());
+  const controller = new AbortController();
+  activeRequests.set(requestId, controller);
+  try {
+    const raw = await callConfiguredModel(settings, buildTermGlossaryPrompts(text), controller.signal);
+    return { glossary: parseTermGlossary(raw) };
+  } catch (error) {
+    if (error?.name === 'AbortError') throw new Error('요청을 취소했습니다.');
+    throw error;
+  } finally {
+    activeRequests.delete(requestId);
+  }
+}
+
 function buildPrompts(action, text, personalization) {
   const actionRules = {
     spellcheck: [
@@ -373,6 +398,26 @@ function buildCommentReactionSummaryPrompts(postText, commentsText, commentCount
       `<comments total="${total}" sampled="${sampled}">`,
       String(commentsText || '').trim(),
       '</comments>'
+    ].join('\n')
+  };
+}
+
+function buildTermGlossaryPrompts(text) {
+  const content = String(text || '')
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+  return {
+    system: '당신은 웹 기사, 게시물 및 기타 콘텐츠를 처리하는 전문가입니다.',
+    user: [
+      '아래 게시물 내용을 문맥으로 사용해 질문에 답하세요.',
+      '',
+      '[게시물]',
+      content,
+      '',
+      '[질문]',
+      '게시물에 등장하는 용어들을 사전처럼 설명해주세요.',
+      '독자가 게시물을 이해하는 데 도움이 되는 용어를 골라, 용어를 굵게 표시한 읽기 쉬운 Markdown 목록으로 정리해주세요.'
     ].join('\n')
   };
 }
@@ -562,6 +607,20 @@ function parsePostSummary(raw) {
   summary = summary.trim();
   if (!summary) throw new Error('AI가 빈 요약을 반환했습니다. 다시 시도해 주세요.');
   return summary;
+}
+
+function parseTermGlossary(raw) {
+  const cleaned = stripCodeFence(String(raw || '').trim());
+  let glossary = cleaned;
+  try {
+    const parsed = JSON.parse(extractJSONObject(cleaned));
+    glossary = String(parsed?.glossary ?? parsed?.content ?? parsed?.text ?? cleaned);
+  } catch {
+    // Markdown plain text is the expected glossary format.
+  }
+  glossary = glossary.trim();
+  if (!glossary) throw new Error('AI가 빈 용어 사전을 반환했습니다. 다시 시도해 주세요.');
+  return glossary;
 }
 
 function stripCodeFence(value) {
