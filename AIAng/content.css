@@ -440,6 +440,7 @@
 }
 
 .aiang-review {
+  --aiang-modal-content-font-size: var(--content-font-size, 14px);
   color: var(--aiang-text);
   background: var(--aiang-surface);
   border: 1px solid var(--aiang-border);
@@ -559,7 +560,7 @@
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   color: var(--aiang-text);
-  font-size: 13px;
+  font-size: var(--aiang-modal-content-font-size, 13px);
   line-height: 1.58;
 }
 
@@ -733,7 +734,7 @@
 .aiang-title-text {
   padding-top: 2px;
   overflow-wrap: anywhere;
-  font-size: 13px;
+  font-size: var(--aiang-modal-content-font-size, 13px);
   line-height: 1.45;
 }
 
@@ -741,7 +742,7 @@
   padding: 18px 20px 22px;
   overflow-wrap: anywhere;
   color: var(--aiang-text);
-  font-size: 14px;
+  font-size: var(--aiang-modal-content-font-size, 14px);
   line-height: 1.75;
 }
 

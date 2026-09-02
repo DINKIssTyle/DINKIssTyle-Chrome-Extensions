@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <title>AIAng modal font-size fixture</title>
+  <link rel="stylesheet" href="../content.css">
+  <style>
+    :root { --content-font-size: 16px; --content-line-height: 1.5; }
+    body { margin: 0; padding: 48px; background: #eef0f2; font: 16px/1.6 system-ui, sans-serif; }
+    main { width: min(760px, 100%); margin: auto; padding: 28px; border-radius: 20px; background: white; }
+    [data-aiang-article-body] { font-size: var(--content-font-size); }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>모달 본문 글자 크기 테스트</h1>
+    <nav aria-label="글자 크기">
+      <button type="button" data-size="14">작게</button>
+      <button type="button" data-size="16">보통</button>
+      <button type="button" data-size="18">크게</button>
+    </nav>
+    <article data-aiang-article-body>
+      <p>다모앙 사용자 글자 크기를 AI 결과 모달에 반영하는 테스트 본문입니다.</p>
+    </article>
+  </main>
+  <script>
+    document.querySelectorAll('[data-size]').forEach(button => {
+      button.addEventListener('click', () => {
+        document.documentElement.style.setProperty('--content-font-size', `${button.dataset.size}px`);
+      });
+    });
+    window.chrome = {
+      runtime: {
+        lastError: null,
+        getURL: value => `../${value}`,
+        sendMessage(message, callback) {
+          if (message.type === 'GET_SETTINGS') {
+            callback({ ok: true, settings: { enabled: true } });
+            return;
+          }
+          if (message.type === 'SUMMARIZE_POST') {
+            callback({ ok: true, summary: '## 요약 결과\n\n본문 글자 크기 연동을 확인합니다.' });
+            return;
+          }
+          callback({ ok: true });
+        }
+      },
+      storage: { onChanged: { addListener() {} } }
+    };
+  </script>
+  <script src="../content.js"></script>
+</body>
+</html>
