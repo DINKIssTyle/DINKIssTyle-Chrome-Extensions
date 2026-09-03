@@ -1,4 +1,12 @@
 (() => {
+  const reviewPresentation = globalThis.AIAngReviewPresentation;
+  if (!reviewPresentation) throw new Error('AIAng review presentation policy was not loaded.');
+  const runtimeProfile = reviewPresentation.detectRuntimeProfile();
+  const IS_SAFARI_WEB_EXTENSION = runtimeProfile.browser === 'safari';
+  const extensionAPI = IS_SAFARI_WEB_EXTENSION
+    ? (globalThis.browser ?? globalThis.chrome)
+    : (globalThis.chrome ?? globalThis.browser);
+  const IS_IPHONE = /iPhone|iPod/i.test(navigator.userAgent);
   const SPELLCHECK_ACTION = { id: 'spellcheck', label: '맞춤법 검사', short: '맞춤법', icon: 'check' };
   const HONORIFIC_ACTION = { id: 'honorific', label: '경어체로 교정', short: '경어체', icon: 'chat' };
   const IMPROVE_ACTION = { id: 'improve', label: '문장 개선', short: '문장 개선', icon: 'sparkle' };
@@ -91,7 +99,7 @@
     '[class*="author"]', '[class*="profile"]', '[class*="avatar"]', '[class*="meta"]',
     '[class*="action"]', '[class*="control"]', '[class*="vote"]', '[class*="reaction"]'
   ].join(',');
-  const REVIEW_ICON_URL = chrome.runtime.getURL('icons/icon48.png');
+  const REVIEW_ICON_URL = extensionAPI.runtime.getURL('icons/icon48.png');
   const BLOCK_TAGS = new Set([
     'ADDRESS', 'ARTICLE', 'ASIDE', 'BLOCKQUOTE', 'DIV', 'DL', 'FIGCAPTION', 'FIGURE',
     'FOOTER', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'HEADER', 'HR', 'LI', 'MAIN',
@@ -193,7 +201,7 @@
     settingsButton.title = 'AIAng 설정';
     settingsButton.setAttribute('aria-label', 'AIAng 설정');
     settingsButton.innerHTML = ICONS.settings;
-    settingsButton.addEventListener('click', () => sendMessage({ type: 'OPEN_OPTIONS' }));
+    settingsButton.addEventListener('click', openSettings);
     toolbar.append(settingsButton);
 
     slot.append(toolbar);
@@ -763,7 +771,8 @@
         snapshot,
         createTrackedRequestId(button)
       );
-      showInlineReview([{ ...result, action }]);
+      if (usesInlineReview(action)) showInlineReview([{ ...result, action }]);
+      else showReview({ ...result, action });
     } catch (error) {
       showRequestError(error, requestState, 'AI 요청에 실패했습니다.');
     } finally {
@@ -842,12 +851,20 @@
       })));
       const failure = settled.find(result => result.status === 'rejected');
       if (failure) throw failure.reason;
-      showInlineReview(settled.map(result => ({ ...result.value, action: 'spellcheck' })));
+      if (usesInlineReview('spellcheck')) {
+        showInlineReview(settled.map(result => ({ ...result.value, action: 'spellcheck' })));
+      } else {
+        showCombinedSpellcheckReview(settled.map(result => result.value));
+      }
     } catch (error) {
       showRequestError(error, requestState, '제목과 내용을 검사하지 못했습니다.');
     } finally {
       finishButtonRequest(button, requestState);
     }
+  }
+
+  function usesInlineReview(action) {
+    return reviewPresentation.resolveReviewPresentation(action, runtimeProfile) === 'inline';
   }
 
   async function requestEditingResult(
@@ -1693,7 +1710,7 @@
       panel._aiangAnchor = anchor;
     } else {
       const overlay = document.createElement('div');
-      overlay.className = 'aiang-overlay';
+      overlay.className = IS_IPHONE ? 'aiang-overlay aiang-iphone-overlay' : 'aiang-overlay';
       overlay.addEventListener('mousedown', event => {
         if (event.target === overlay) closeReview();
       });
@@ -2140,7 +2157,7 @@
 
   function showModalPanel(panel) {
     const overlay = document.createElement('div');
-    overlay.className = 'aiang-overlay';
+    overlay.className = IS_IPHONE ? 'aiang-overlay aiang-iphone-overlay' : 'aiang-overlay';
     overlay.addEventListener('mousedown', event => {
       if (event.target === overlay) closeReview();
     });
@@ -2544,7 +2561,7 @@
       const settings = document.createElement('button');
       settings.type = 'button';
       settings.textContent = '설정';
-      settings.addEventListener('click', () => sendMessage({ type: 'OPEN_OPTIONS' }));
+      settings.addEventListener('click', openSettings);
       toast.append(settings);
     }
     document.body.append(toast);
@@ -2631,17 +2648,34 @@
   }
 
   function sendMessage(message) {
+    if (IS_SAFARI_WEB_EXTENSION) return extensionAPI.runtime.sendMessage(message);
     return new Promise((resolve, reject) => {
-      chrome.runtime.sendMessage(message, response => {
-        const error = chrome.runtime.lastError;
+      extensionAPI.runtime.sendMessage(message, response => {
+        const error = extensionAPI.runtime.lastError;
         if (error) reject(new Error(error.message));
         else resolve(response);
       });
     });
   }
 
-  chrome.runtime.onMessage?.addListener?.(message => {
+  function openSettings() {
+    if (!IS_SAFARI_WEB_EXTENSION) {
+      sendMessage({ type: 'OPEN_OPTIONS' }).catch(() => {});
+      return;
+    }
+    const link = document.createElement('a');
+    link.href = 'aiang-dkst://settings';
+    link.hidden = true;
+    document.body.append(link);
+    link.click();
+    link.remove();
+  }
+
+  extensionAPI.runtime.onMessage?.addListener?.(message => {
     if (message?.type === 'REQUEST_PROGRESS') updateRequestProgress(message);
+    if (message?.type === 'SHOW_NATIVE_SETTINGS') {
+      showToast('AI 설정은 AIAng by DKST 앱에서 변경합니다.', 'info', 8000, true);
+    }
   });
 
   document.addEventListener('pointerdown', event => {
@@ -2658,7 +2692,7 @@
 
   const observer = new MutationObserver(scheduleScan);
   observer.observe(document.documentElement, { childList: true, subtree: true });
-  chrome.storage.onChanged.addListener((changes, areaName) => {
+  extensionAPI.storage.onChanged.addListener((changes, areaName) => {
     if (areaName !== 'local' || !changes.enabled) return;
     extensionEnabled = changes.enabled.newValue !== false;
     if (!extensionEnabled) removeControls();

@@ -47,6 +47,7 @@
         "content.css"
       ],
       "js": [
+        "shared/review-presentation.js",
         "content.js"
       ],
       "run_at": "document_idle"

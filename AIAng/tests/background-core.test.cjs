@@ -5,8 +5,18 @@ const path = require('node:path');
 const test = require('node:test');
 const vm = require('node:vm');
 
+const promptCatalog = JSON.parse(
+  fs.readFileSync(path.join(__dirname, '..', 'shared', 'prompts.json'), 'utf8')
+);
+
 function loadCore(fetchImplementation = fetch, options = {}) {
-  const source = fs.readFileSync(path.join(__dirname, '..', 'background.js'), 'utf8');
+  let source = fs.readFileSync(path.join(__dirname, '..', 'background.js'), 'utf8');
+  if (typeof options.commentGenerationEnabled === 'boolean') {
+    source = source.replace(
+      /commentGeneration: (?:true|false)/,
+      `commentGeneration: ${options.commentGenerationEnabled}`
+    );
+  }
   const listeners = {};
   const chrome = {
     runtime: {
@@ -23,14 +33,25 @@ function loadCore(fetchImplementation = fetch, options = {}) {
     crypto: webcrypto,
     AbortController,
     DOMException,
-    fetch: fetchImplementation,
+    fetch: (url, fetchOptions) => {
+      if (url === 'chrome-extension://test/shared/prompts.json') {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          json: async () => promptCatalog
+        });
+      }
+      return fetchImplementation(url, fetchOptions);
+    },
     URL,
+    ...(options.injectPromptCatalog === false ? {} : { __AIANG_PROMPT_CATALOG__: promptCatalog }),
     ...(options.LanguageModel ? { LanguageModel: options.LanguageModel } : {})
   };
   vm.createContext(context);
   vm.runInContext(`${source}\n;globalThis.__core = {
     normalizeEndpoint,
     parseEditingResponse,
+    sanitizeEditingText,
     buildPrompts,
     buildTitleSuggestionPrompts,
     buildPostSummaryPrompts,
@@ -49,16 +70,31 @@ function loadCore(fetchImplementation = fetch, options = {}) {
     callOpenAICompatible,
     listModels,
     processTextRequest,
-    handleMessage
+    handleMessage,
+    ensurePromptCatalog
   };`, context);
   return context.__core;
 }
 
 const core = loadCore();
 
+test('loads the shared prompt catalog from the packaged JSON file', async () => {
+  const unloadedCore = loadCore(fetch, { injectPromptCatalog: false });
+  await unloadedCore.ensurePromptCatalog();
+  assert.match(unloadedCore.buildPostSummaryPrompts('본문').system, /게시물 요약 전문가/);
+});
+
 test('exposes the comment-generation feature flag to content scripts', async () => {
   const result = await core.handleMessage({ type: 'GET_SETTINGS' }, {});
-  assert.equal(result.settings.features.commentGeneration, true);
+  assert.equal(result.settings.features.commentGeneration, false);
+  await assert.rejects(
+    core.handleMessage({
+      type: 'GENERATE_COMMENT',
+      tone: 'positive',
+      postText: '게시물 본문'
+    }, { url: 'https://damoang.net/free/1' }),
+    /댓글 생성 기능이 비활성화/
+  );
 });
 
 test('aborts an active AI request when its request ID is cancelled', async () => {
@@ -125,12 +161,46 @@ test('recovers an incorrect model offset when the original text is unique', () =
   );
 });
 
+test('removes leaked editing delimiters and hallucinated media tokens from model output', () => {
+  const raw = [
+    '아쉽지만 어쩔 수 없이 다음 팀에게 넘깁니다. 😔⚾',
+    '<content> [[AIANG_MEDIA_...]] </content>'
+  ].join('\n');
+  const result = core.parseEditingResponse(raw, '원문', 'decorate');
+
+  assert.equal(result.correctedText, '아쉽지만 어쩔 수 없이 다음 팀에게 넘깁니다. 😔⚾');
+  assert.doesNotMatch(result.correctedText, /<\/?content>|AIANG_MEDIA/);
+});
+
+test('keeps only original protected media tokens while removing internal editing tags', () => {
+  const token = '[[AIANG_MEDIA_test_1]]';
+  const original = `본문\n${token}`;
+  const raw = JSON.stringify({
+    corrected_text: `<before_context>무시할 문맥</before_context>\n<content>\n다듬은 본문\n${token}\n[[AIANG_MEDIA_fake_2]]\n</content>`
+  });
+  const result = core.parseEditingResponse(raw, original, 'improve');
+
+  assert.equal(result.correctedText, `다듬은 본문\n${token}`);
+  assert.equal(result.correctedText.match(/\[\[AIANG_MEDIA_[^\]]+\]\]/g).length, 1);
+});
+
 test('adds personalization to the system prompt without changing the output contract', () => {
   const prompts = core.buildPrompts('improve', '본문', '다정하고 교양 있게');
   assert.match(prompts.system, /다정하고 교양 있게/);
   assert.match(prompts.user, /corrected_text/);
   assert.match(prompts.user, /<content>\n본문\n<\/content>/);
-  assert.match(prompts.user, /글자, 순서, 개수를 바꾸지 말고/);
+  assert.doesNotMatch(prompts.user, /AIANG_MEDIA/);
+  assert.match(prompts.user, /입력 영역을 구분하는 XML 태그는 결과에 포함하지 마세요/);
+});
+
+test('mentions protected media tokens only when the editing input contains one', () => {
+  const token = '[[AIANG_MEDIA_test_1]]';
+  const withoutMedia = core.buildPrompts('improve', '본문', '');
+  const withMedia = core.buildPrompts('improve', `본문\n${token}`, '');
+
+  assert.doesNotMatch(withoutMedia.user, /AIANG_MEDIA/);
+  assert.match(withMedia.user, /\[\[AIANG_MEDIA_\.\.\.\]\]/);
+  assert.match(withMedia.user, new RegExp(token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
 });
 
 test('fully omits personalization from prompts when it is empty or whitespace-only', () => {
@@ -179,7 +249,8 @@ test('generates a comment from the post body using saved personalization', async
       json: async () => ({ choices: [{ message: { content: '{"comment":"저도 이 부분에 동의합니다."}' } }] })
     };
   }, {
-    settings: { personalization: '차분하고 짧게 답합니다.' }
+    settings: { personalization: '차분하고 짧게 답합니다.' },
+    commentGenerationEnabled: true
   });
   const result = await generationCore.handleMessage({
     type: 'GENERATE_COMMENT',

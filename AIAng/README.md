@@ -16,7 +16,7 @@
 - 게시물 보기 화면의 작성자 정보와 본문 사이에서 제목·본문의 Markdown 구조만 추출해 AI 요약 결과를 Markdown 모달로 표시
 - 게시물과 댓글 내용을 함께 분석해 공통 반응·의견 차이·질문·우려·전반적인 분위기를 Markdown으로 요약
 - 게시물 본문에 등장하는 전문용어·약어·고유 개념·은어 등을 추려 Markdown 용어 사전으로 표시
-- 제목 추천을 제외한 교정 결과를 편집기 위에 인라인으로 표시하고 항목별 또는 전체 적용
+- 데스크톱 맞춤법 검사 결과를 편집기 위에 인라인으로 표시하고 항목별 또는 전체 적용(그 밖의 조합은 공통 표시 정책을 따름)
 - 맞춤법·경어체·문장 개선·글 꾸미기의 변경 위치, 교정안 팝오버와 세부 사유 표시
 - OpenAI 호환 API/LM Studio와 Chrome 내장 Gemini Nano 지원
 - Temperature 자동 설정 시 OpenAI 호환 요청에서 온도 값을 생략해 서버·모델 기본값 사용
@@ -54,6 +54,8 @@ LM Studio에서 Local Server를 먼저 실행해야 합니다.
 ## 개발 검증
 
 댓글 생성 기능은 `background.js`의 `FEATURE_FLAGS.commentGeneration` 값을 `true` 또는 `false`로 바꿔 활성화하거나 비활성화할 수 있습니다. 비활성화하면 댓글 생성 버튼과 요청 처리가 모두 꺼집니다.
+
+이 저장소에서는 `content.js`, `content.css`, `shared/prompts.json`, `shared/review-presentation.js`가 Chrome과 Safari의 공통 기준 원본입니다. 프롬프트 문구는 `shared/prompts.json`, 브라우저·기기·기능별 인라인/모달 선택은 `shared/review-presentation.js`에서 관리합니다. iOS의 `Copy Shared Web Resources` 빌드 단계가 네 파일을 Safari 확장 번들에 복사합니다. 공통 스크립트가 브라우저와 기기 유형을 판별하고 같은 표시 정책을 사용하며, 설정 화면만 Chrome 옵션 페이지와 Safari 호스트 앱으로 나뉩니다.
 
 ```bash
 node --test tests/background-core.test.cjs
