@@ -53,9 +53,9 @@ LM Studio에서 Local Server를 먼저 실행해야 합니다.
 
 ## 개발 검증
 
-댓글 생성 기능은 `background.js`의 `FEATURE_FLAGS.commentGeneration` 값을 `true` 또는 `false`로 바꿔 활성화하거나 비활성화할 수 있습니다. 비활성화하면 댓글 생성 버튼과 요청 처리가 모두 꺼집니다.
+댓글 생성 기능은 `shared/features.json`의 `commentGeneration` 값을 `true` 또는 `false`로 바꿔 Chrome과 Safari에서 함께 활성화하거나 비활성화할 수 있습니다. 비활성화하면 양쪽 확장의 댓글 생성 버튼과 요청 처리가 모두 꺼집니다.
 
-이 저장소에서는 `content.js`, `content.css`, `shared/prompts.json`, `shared/review-presentation.js`가 Chrome과 Safari의 공통 기준 원본입니다. 프롬프트 문구는 `shared/prompts.json`, 브라우저·기기·기능별 인라인/모달 선택은 `shared/review-presentation.js`에서 관리합니다. iOS의 `Copy Shared Web Resources` 빌드 단계가 네 파일을 Safari 확장 번들에 복사합니다. 공통 스크립트가 브라우저와 기기 유형을 판별하고 같은 표시 정책을 사용하며, 설정 화면만 Chrome 옵션 페이지와 Safari 호스트 앱으로 나뉩니다.
+이 저장소에서는 `content.js`, `content.css`, `shared/prompts.json`, `shared/features.json`, `shared/review-presentation.js`가 Chrome과 Safari의 공통 기준 원본입니다. 프롬프트 문구는 `shared/prompts.json`, 기능 플래그는 `shared/features.json`, 브라우저·기기·기능별 인라인/모달 선택은 `shared/review-presentation.js`에서 관리합니다. iOS의 `Copy Shared Web Resources` 빌드 단계가 다섯 파일을 Safari 확장 번들에 복사합니다. 공통 스크립트가 브라우저와 기기 유형을 판별하고 같은 표시 정책을 사용하며, 설정 화면만 Chrome 옵션 페이지와 Safari 호스트 앱으로 나뉩니다.
 
 ```bash
 node --test tests/background-core.test.cjs

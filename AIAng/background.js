@@ -9,12 +9,10 @@ const DEFAULT_SETTINGS = Object.freeze({
   personalization: ''
 });
 
-const FEATURE_FLAGS = Object.freeze({
-  commentGeneration: false
-});
-
 let promptCatalog = globalThis.__AIANG_PROMPT_CATALOG__ || null;
 let promptCatalogPromise = null;
+let featureFlags = globalThis.__AIANG_FEATURE_FLAGS__ || null;
+let featureFlagsPromise = null;
 
 async function ensurePromptCatalog() {
   if (promptCatalog) return promptCatalog;
@@ -33,6 +31,23 @@ async function ensurePromptCatalog() {
 function requirePromptCatalog() {
   if (!promptCatalog) throw new Error('프롬프트 파일이 아직 준비되지 않았습니다.');
   return promptCatalog;
+}
+
+async function ensureFeatureFlags() {
+  if (featureFlags) return featureFlags;
+  featureFlagsPromise ||= fetch(chrome.runtime.getURL('shared/features.json'))
+    .then(response => {
+      if (!response.ok) throw new Error(`기능 설정 파일을 불러오지 못했습니다. (HTTP ${response.status})`);
+      return response.json();
+    })
+    .then(flags => {
+      if (typeof flags?.commentGeneration !== 'boolean') {
+        throw new Error('기능 설정 파일의 commentGeneration 값이 올바르지 않습니다.');
+      }
+      featureFlags = Object.freeze({ commentGeneration: flags.commentGeneration });
+      return featureFlags;
+    });
+  return await featureFlagsPromise;
 }
 
 const activeRequests = new Map();
@@ -67,13 +82,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 async function handleMessage(message, sender) {
   switch (message?.type) {
     case 'GET_SETTINGS': {
-      const settings = await getSettings();
+      const [settings, features, prompts] = await Promise.all([getSettings(), ensureFeatureFlags(), ensurePromptCatalog()]);
       return {
         settings: {
           enabled: settings.enabled,
           provider: settings.provider,
           configured: settings.provider === 'gemini' || Boolean(settings.endpoint && settings.model),
-          features: FEATURE_FLAGS
+          features,
+          prompts
         }
       };
     }
@@ -109,8 +125,15 @@ async function handleMessage(message, sender) {
       return await processTermGlossaryRequest(message);
     case 'GENERATE_COMMENT':
       assertDamoangPage(sender);
-      if (!FEATURE_FLAGS.commentGeneration) throw new Error('댓글 생성 기능이 비활성화되어 있습니다.');
+      if (!(await ensureFeatureFlags()).commentGeneration) {
+        throw new Error('댓글 생성 기능이 비활성화되어 있습니다.');
+      }
       return await processCommentGenerationRequest(message);
+    case 'CHAT':
+      assertDamoangPage(sender);
+      return await processChatRequest(message, content => {
+        reportChatStream(sender, message.requestId, content);
+      });
     case 'TEST_CONNECTION':
       assertExtensionPage(sender);
       return await testConnection(sanitizeSettings(message.settings));
@@ -152,6 +175,20 @@ function reportRequestProgress(sender, requestId, progress) {
     delivery?.catch?.(() => { });
   } catch {
     // The page may have navigated or closed while the local model was running.
+  }
+}
+
+function reportChatStream(sender, requestId, content) {
+  if (!sender?.tab?.id || !chrome.tabs?.sendMessage || !requestId) return;
+  try {
+    const delivery = chrome.tabs.sendMessage(sender.tab.id, {
+      type: 'CHAT_STREAM',
+      requestId: String(requestId),
+      content
+    });
+    delivery?.catch?.(() => { });
+  } catch {
+    // The page may have navigated or closed while the model was responding.
   }
 }
 
@@ -286,6 +323,46 @@ async function processCommentGenerationRequest(message) {
   } finally {
     activeRequests.delete(requestId);
   }
+}
+
+async function processChatRequest(message, onChunk = () => { }) {
+  await ensurePromptCatalog();
+  const messages = normalizeChatMessages(message.messages);
+  const settings = await getSettings();
+  if (!settings.enabled) throw new Error('AIAng가 설정에서 꺼져 있습니다.');
+  const requestId = String(message.requestId || crypto.randomUUID());
+  const controller = new AbortController();
+  activeRequests.set(requestId, controller);
+  try {
+    const system = buildChatSystemPrompt(settings.personalization);
+    const raw = settings.provider === 'gemini'
+      ? await callGeminiNano({ system, user: formatChatTranscript(messages) }, controller.signal, {}, onChunk)
+      : await callOpenAICompatibleMessagesStreaming(
+          settings,
+          [{ role: 'system', content: system }, ...messages],
+          controller.signal,
+          onChunk
+        );
+    return { message: parseChatResponse(raw) };
+  } catch (error) {
+    if (error?.name === 'AbortError') throw new Error('요청을 취소했습니다.');
+    throw error;
+  } finally {
+    activeRequests.delete(requestId);
+  }
+}
+
+function normalizeChatMessages(input) {
+  if (!Array.isArray(input)) throw new Error('대화 내용을 확인할 수 없습니다.');
+  const messages = input.slice(-20).map(item => ({
+    role: item?.role === 'assistant' ? 'assistant' : item?.role === 'user' ? 'user' : '',
+    content: String(item?.content || '').trim().slice(0, 4000)
+  })).filter(item => item.role && item.content);
+  if (!messages.length || messages.at(-1).role !== 'user') throw new Error('질문을 먼저 입력해 주세요.');
+  if (messages.reduce((sum, item) => sum + item.content.length, 0) > 16000) {
+    throw new Error('대화가 너무 길어졌습니다. 창을 닫은 뒤 새로 질문해 주세요.');
+  }
+  return messages;
 }
 
 async function processPostSummaryRequest(message) {
@@ -701,6 +778,19 @@ function buildCommentGenerationResponseConstraint() {
   };
 }
 
+function buildChatSystemPrompt(personalization) {
+  const catalog = requirePromptCatalog();
+  return [
+    ...catalog.chat.system,
+    buildPersonalizationBlock(personalization, 'chat')
+  ].filter(Boolean).join('\n');
+}
+
+function formatChatTranscript(messages) {
+  return messages.map(item => `${item.role === 'assistant' ? 'AI' : '사용자'}: ${item.content}`).join('\n\n')
+    + '\n\nAI:';
+}
+
 function buildPostSummaryPrompts(text) {
   const section = requirePromptCatalog().postSummary;
   const content = String(text || '')
@@ -776,6 +866,13 @@ async function callConfiguredModel(settings, prompts, signal, promptOptions = {}
 }
 
 async function callOpenAICompatible(settings, prompts, signal) {
+  return await callOpenAICompatibleMessages(settings, [
+    { role: 'system', content: prompts.system },
+    { role: 'user', content: prompts.user }
+  ], signal);
+}
+
+async function callOpenAICompatibleMessages(settings, messages, signal) {
   if (!settings.endpoint || !settings.model) {
     throw new Error('설정에서 API 주소와 모델을 입력해 주세요.');
   }
@@ -787,10 +884,7 @@ async function callOpenAICompatible(settings, prompts, signal) {
     },
     body: JSON.stringify({
       model: settings.model,
-      messages: [
-        { role: 'system', content: prompts.system },
-        { role: 'user', content: prompts.user }
-      ],
+      messages,
       ...(!settings.temperatureAuto ? { temperature: settings.temperature } : {}),
       stream: false
     }),
@@ -804,6 +898,88 @@ async function callOpenAICompatible(settings, prompts, signal) {
     return content.map(part => part?.text || part?.content || '').join('');
   }
   throw new Error('AI 응답에서 교정문을 찾지 못했습니다.');
+}
+
+async function callOpenAICompatibleMessagesStreaming(settings, messages, signal, onChunk) {
+  if (!settings.endpoint || !settings.model) {
+    throw new Error('설정에서 API 주소와 모델을 입력해 주세요.');
+  }
+  const response = await fetch(`${settings.endpoint}/chat/completions`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(settings.apiKey ? { Authorization: `Bearer ${settings.apiKey}` } : {})
+    },
+    body: JSON.stringify({
+      model: settings.model,
+      messages,
+      ...(!settings.temperatureAuto ? { temperature: settings.temperature } : {}),
+      stream: true
+    }),
+    signal
+  });
+  if (!response.ok) throw await createHTTPError(response);
+  if (!response.body?.getReader || !String(response.headers?.get?.('content-type') || '').includes('text/event-stream')) {
+    const data = await response.json();
+    const content = readCompletionContent(data);
+    onChunk(content);
+    return content;
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  let result = '';
+  const consumeLine = line => {
+    const value = line.trim();
+    if (!value.startsWith('data:')) return;
+    const payload = value.slice(5).trim();
+    if (!payload || payload === '[DONE]') return;
+    try {
+      const chunk = readCompletionContent(JSON.parse(payload), true);
+      if (!chunk) return;
+      result = chunk.startsWith(result) ? chunk : result + chunk;
+      onChunk(sanitizeStreamingChatText(result));
+    } catch {
+      // Ignore keep-alive or provider-specific SSE events without text.
+    }
+  };
+  while (true) {
+    const { value, done } = await reader.read();
+    buffer += decoder.decode(value || new Uint8Array(), { stream: !done });
+    const lines = buffer.split(/\r?\n/);
+    buffer = done ? '' : lines.pop() || '';
+    lines.forEach(consumeLine);
+    if (done) {
+      if (buffer) consumeLine(buffer);
+      break;
+    }
+  }
+  return result;
+}
+
+function readCompletionContent(data, streaming = false) {
+  const choice = data?.choices?.[0];
+  const content = streaming
+    ? choice?.delta?.content ?? choice?.message?.content ?? choice?.text
+    : choice?.message?.content ?? choice?.text;
+  if (typeof content === 'string') return content;
+  if (Array.isArray(content)) return content.map(part => part?.text || part?.content || '').join('');
+  return '';
+}
+
+function sanitizeStreamingChatText(value) {
+  return String(value || '')
+    .replace(/<\/?(?:content|before_context|after_context)\b[^>]*>/gi, '')
+    .replace(/\[\[AIANG_MEDIA_[^\]\r\n]+\]\]/g, '')
+    .trimStart();
+}
+
+function parseChatResponse(raw) {
+  const answer = sanitizeEditingText(stripCodeFence(String(raw || '').trim()), '');
+  if (!answer) throw new Error('AI가 빈 답변을 반환했습니다. 다시 시도해 주세요.');
+  if (answer.length > 12000) throw new Error('AI 답변이 지나치게 깁니다. 질문을 나누어 다시 시도해 주세요.');
+  return answer;
 }
 
 async function createHTTPError(response) {
@@ -830,7 +1006,7 @@ async function getGeminiAvailability(model) {
   return typeof result === 'string' ? result : result?.available || result?.availability || 'available';
 }
 
-async function callGeminiNano(prompts, signal, promptOptions = {}) {
+async function callGeminiNano(prompts, signal, promptOptions = {}, onChunk = null) {
   const model = getLanguageModelAPI();
   if (!model) throw new Error('이 Chrome에서는 Gemini Nano Prompt API를 사용할 수 없습니다.');
   const availability = await getGeminiAvailability(model);
@@ -846,7 +1022,18 @@ async function callGeminiNano(prompts, signal, promptOptions = {}) {
     const prompt = formatGeminiPrompt(prompts, created.systemPromptEmbedded);
     let result;
     try {
-      result = await session.prompt(prompt, { signal, ...promptOptions });
+      if (onChunk && typeof session.promptStreaming === 'function') {
+        result = '';
+        const stream = session.promptStreaming(prompt, { signal, ...promptOptions });
+        for await (const value of stream) {
+          const chunk = String(value || '');
+          result = chunk.startsWith(result) ? chunk : result + chunk;
+          onChunk(sanitizeStreamingChatText(result));
+        }
+      } else {
+        result = await session.prompt(prompt, { signal, ...promptOptions });
+        if (onChunk) onChunk(sanitizeStreamingChatText(String(result || '')));
+      }
     } catch (error) {
       if (promptOptions.responseConstraint
         && ['NotSupportedError', 'TypeError'].includes(error?.name)) {

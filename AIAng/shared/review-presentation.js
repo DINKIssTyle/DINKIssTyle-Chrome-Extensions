@@ -1,5 +1,32 @@
 (() => {
   const VALID_PRESENTATIONS = new Set(['inline', 'modal']);
+
+  /*
+   * 교정 결과 표시 방식 설정
+   *
+   * 사용 가능한 값:
+   * - 'inline': 편집기 위에서 변경 항목을 바로 검토
+   * - 'modal': 현재 문장과 제안 문장을 모달에서 비교
+   *
+   * 기능 이름: spellcheck, honorific, improve, decorate, suggest_title
+   * 브라우저/기기 이름:
+   * - Chrome: desktop, tablet, mobile
+   * - Safari: mac, ipad, iphone
+   *
+   * 적용 우선순위:
+   * 1. overrides의 브라우저 + 기기 + 기능 설정
+   * 2. defaults의 desktop/tablet/mobile + 기능 설정
+   * 3. defaults의 desktop/tablet/mobile 기본값
+   * 4. defaults.default (마지막 안전 기본값)
+   *
+   * 예시:
+   * - Chrome 데스크톱의 문장 개선을 인라인으로 표시:
+   *   overrides.chrome.desktop에 improve: 'inline' 추가
+   * - 모든 태블릿의 맞춤법 검사를 인라인으로 표시:
+   *   defaults.tablet에 spellcheck: 'inline' 추가
+   *
+   * 설정하지 않은 기능은 해당 기기 유형의 default 값을 따릅니다.
+   */
   const REVIEW_PRESENTATION_POLICY = deepFreeze({
     defaults: {
       default: 'modal',

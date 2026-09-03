@@ -11,13 +11,15 @@
   const HONORIFIC_ACTION = { id: 'honorific', label: '경어체로 교정', short: '경어체', icon: 'chat' };
   const IMPROVE_ACTION = { id: 'improve', label: '문장 개선', short: '문장 개선', icon: 'sparkle' };
   const DECORATE_ACTION = { id: 'decorate', label: '글 꾸미기', short: '글 꾸미기', icon: 'palette' };
+  const CHAT_ACTION = { id: 'chat', label: '뭐였더라?', short: '뭐였더라?', icon: 'question' };
   const COMMENT_GENERATE_ACTION = { id: 'generate_comment', label: '댓글 생성', short: '댓글 생성', icon: 'commentAdd' };
   const TITLE_SUGGEST_ACTION = { id: 'suggest_title', label: '글 제목 추천', short: '제목 추천', icon: 'title' };
   const POST_SUMMARY_ACTION = { id: 'summarize_post', label: '게시물 요약', short: '요약', icon: 'sparkle' };
   const COMMENT_REACTION_ACTION = { id: 'summarize_reactions', label: '댓글 반응 요약', short: '댓글 요약', icon: 'chat' };
   const TERM_GLOSSARY_ACTION = { id: 'build_glossary', label: '용어 사전', short: '용어 사전', icon: 'book' };
-  const BODY_ACTIONS = [SPELLCHECK_ACTION, HONORIFIC_ACTION, IMPROVE_ACTION, TITLE_SUGGEST_ACTION];
-  const COMMENT_ACTIONS = [SPELLCHECK_ACTION, HONORIFIC_ACTION, IMPROVE_ACTION, DECORATE_ACTION];
+  const IMPROVEMENT_ACTIONS = [HONORIFIC_ACTION, IMPROVE_ACTION, DECORATE_ACTION];
+  const BODY_ACTIONS = [SPELLCHECK_ACTION, ...IMPROVEMENT_ACTIONS, CHAT_ACTION, TITLE_SUGGEST_ACTION];
+  const COMMENT_ACTIONS = [SPELLCHECK_ACTION, ...IMPROVEMENT_ACTIONS, CHAT_ACTION];
   const LABELS = Object.fromEntries([
     ...BODY_ACTIONS,
     ...COMMENT_ACTIONS,
@@ -109,11 +111,14 @@
   let scanFrame = 0;
   let requestSequence = 0;
   let extensionEnabled = false;
-  let commentGenerationEnabled = true;
+  let commentGenerationEnabled = false;
   let inlineReviewSession = null;
   let inlineReviewFrame = 0;
   let toastToolbarAnchor = null;
-  let openCommentGenerationMenu = null;
+  let openActionMenu = null;
+  let promptCatalog = null;
+  const chatHistories = new WeakMap();
+  const chatStreamHandlers = new Map();
   const buttonRequestStates = new WeakMap();
   const requestButtonsById = new Map();
 
@@ -125,6 +130,8 @@
     title: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h10M9 5v14M6 19h6"/><path d="m18 10 .8 2.2L21 13l-2.2.8L18 16l-.8-2.2L15 13l2.2-.8Z"/></svg>',
     book: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H11a2 2 0 0 1 2 2v16a3 3 0 0 0-3-3H4Z"/><path d="M20 5.5A2.5 2.5 0 0 0 17.5 3H15a2 2 0 0 0-2 2v16a3 3 0 0 1 3-3h4Z"/></svg>',
     commentAdd: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h7"/><path d="M19 3v6M16 6h6"/></svg>',
+    question: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M9.8 9a2.4 2.4 0 1 1 3.7 2c-1 .6-1.5 1.1-1.5 2.2"/><path d="M12 17h.01"/></svg>',
+    send: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></svg>',
     settings: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1-2.8 2.8-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.6v.2h-4V21a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1L4.2 17l.1-.1a1.7 1.7 0 0 0 .3-1.9A1.7 1.7 0 0 0 3 14H2.8v-4H3a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9L4.2 7 7 4.2l.1.1a1.7 1.7 0 0 0 1.9.3A1.7 1.7 0 0 0 10 3V2.8h4V3a1.7 1.7 0 0 0 1 1.6 1.7 1.7 0 0 0 1.9-.3l.1-.1L19.8 7l-.1.1a1.7 1.7 0 0 0-.3 1.9 1.7 1.7 0 0 0 1.6 1h.2v4H21a1.7 1.7 0 0 0-1.6 1Z"/></svg>'
   };
 
@@ -145,6 +152,7 @@
         const kind = classifyEditor(editor);
         if (kind) injectEditorToolbar(editor, kind);
       });
+    injectPageSettingsButton();
     scanArticleSummary();
   }
 
@@ -176,11 +184,15 @@
       const button = document.createElement('button');
       button.type = 'button';
       button.className = 'aiang-action';
+      if (IMPROVEMENT_ACTIONS.includes(action)) button.classList.add('aiang-enhancement-action');
       button.dataset.action = action.id;
       button.innerHTML = `${ICONS[action.icon]}<span class="aiang-long-label">${action.label}</span><span class="aiang-short-label">${action.short}</span>`;
-      button.addEventListener('click', () => {
+      button.addEventListener('click', event => {
+        event.preventDefault();
         toastToolbarAnchor = toolbar;
-        if (kind === 'body' && action.id === 'spellcheck') {
+        if (action.id === CHAT_ACTION.id) {
+          openChatModal(editor, kind);
+        } else if (kind === 'body' && action.id === 'spellcheck') {
           runPostSpellcheck(editor, button);
         } else if (kind === 'body' && action.id === 'suggest_title') {
           runTitleSuggestions(editor, button);
@@ -189,20 +201,14 @@
         }
       });
       actionGroup.append(button);
+      if (action.id === SPELLCHECK_ACTION.id) {
+        actionGroup.append(createImprovementControl(editor, toolbar, kind));
+      }
     }
     if (kind === 'comment' && commentGenerationEnabled) {
       actionGroup.append(createCommentGenerationControl(editor, toolbar));
     }
     toolbar.append(actionGroup);
-
-    const settingsButton = document.createElement('button');
-    settingsButton.type = 'button';
-    settingsButton.className = 'aiang-settings-button';
-    settingsButton.title = 'AIAng 설정';
-    settingsButton.setAttribute('aria-label', 'AIAng 설정');
-    settingsButton.innerHTML = ICONS.settings;
-    settingsButton.addEventListener('click', openSettings);
-    toolbar.append(settingsButton);
 
     slot.append(toolbar);
     const insertionBoundary = findEditorInsertionBoundary(editor);
@@ -211,9 +217,24 @@
     requestAnimationFrame(() => syncImproveActionWidth(toolbar));
   }
 
+  function createImprovementControl(editor, toolbar, kind) {
+    const label = kind === 'comment' ? '댓글 향상' : '글 향상';
+    return createActionMenuControl({
+      className: 'aiang-improvement-wrap',
+      buttonClassName: 'aiang-improvement-button',
+      action: { id: 'improvement_menu', label, short: label, icon: 'sparkle' },
+      menuLabel: `${label} 메뉴`,
+      items: IMPROVEMENT_ACTIONS.map(action => ({ id: action.id, label: action.label })),
+      onSelect: (actionId, button) => {
+        toastToolbarAnchor = toolbar;
+        runAction(editor, actionId, button);
+      }
+    });
+  }
+
   function createCommentGenerationControl(editor, toolbar) {
     const wrapper = document.createElement('div');
-    wrapper.className = 'aiang-comment-generate-wrap';
+    wrapper.className = 'aiang-action-menu-wrap aiang-comment-generate-wrap';
 
     const button = document.createElement('button');
     button.type = 'button';
@@ -224,20 +245,20 @@
     button.innerHTML = `${ICONS[COMMENT_GENERATE_ACTION.icon]}<span class="aiang-long-label">${COMMENT_GENERATE_ACTION.label}</span><span class="aiang-short-label">${COMMENT_GENERATE_ACTION.short}</span>`;
 
     const menu = document.createElement('div');
-    menu.className = 'aiang-comment-generate-menu aiang-no-select';
+    menu.className = 'aiang-action-menu aiang-comment-generate-menu aiang-no-select';
     menu.setAttribute('role', 'menu');
     menu.setAttribute('aria-label', '댓글 생성 분위기');
     menu.hidden = true;
     for (const tone of COMMENT_GENERATION_TONES) {
       const item = document.createElement('button');
       item.type = 'button';
-      item.className = 'aiang-comment-generate-option';
+      item.className = 'aiang-action-menu-option aiang-comment-generate-option';
       item.dataset.tone = tone.id;
       item.setAttribute('role', 'menuitem');
       item.textContent = tone.label;
       item.addEventListener('click', event => {
         event.stopPropagation();
-        closeCommentGenerationMenu();
+        closeActionMenu();
         toastToolbarAnchor = toolbar;
         runCommentGeneration(editor, tone.id, button);
       });
@@ -247,26 +268,92 @@
     button.addEventListener('click', event => {
       event.stopPropagation();
       if (cancelButtonRequest(button)) return;
-      if (openCommentGenerationMenu?.menu === menu) closeCommentGenerationMenu();
-      else openCommentGenerationMenuFor(button, menu);
+      if (openActionMenu?.menu === menu) closeActionMenu();
+      else openActionMenuFor(button, menu);
     });
     wrapper.append(button, menu);
     return wrapper;
   }
 
-  function openCommentGenerationMenuFor(button, menu) {
-    closeCommentGenerationMenu();
-    menu.hidden = false;
-    button.setAttribute('aria-expanded', 'true');
-    openCommentGenerationMenu = { button, menu };
-    menu.querySelector('[role="menuitem"]')?.focus({ preventScroll: true });
+  function createActionMenuControl({ className, buttonClassName, action, menuLabel, items, onSelect }) {
+    const wrapper = document.createElement('div');
+    wrapper.className = `aiang-action-menu-wrap ${className}`;
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = `aiang-action ${buttonClassName}`;
+    button.dataset.action = action.id;
+    button.setAttribute('aria-haspopup', 'menu');
+    button.setAttribute('aria-expanded', 'false');
+    button.innerHTML = `${ICONS[action.icon]}<span class="aiang-long-label">${action.label}</span><span class="aiang-short-label">${action.short}</span>`;
+    const menu = document.createElement('div');
+    menu.className = 'aiang-action-menu aiang-no-select';
+    menu.setAttribute('role', 'menu');
+    menu.setAttribute('aria-label', menuLabel);
+    menu.hidden = true;
+    for (const itemData of items) {
+      const item = document.createElement('button');
+      item.type = 'button';
+      item.className = 'aiang-action-menu-option';
+      item.setAttribute('role', 'menuitem');
+      item.textContent = itemData.label;
+      item.addEventListener('click', event => {
+        event.stopPropagation();
+        closeActionMenu();
+        onSelect(itemData.id, button);
+      });
+      menu.append(item);
+    }
+    button.addEventListener('click', event => {
+      event.stopPropagation();
+      if (openActionMenu?.menu === menu) closeActionMenu();
+      else openActionMenuFor(button, menu);
+    });
+    wrapper.append(button, menu);
+    return wrapper;
   }
 
-  function closeCommentGenerationMenu() {
-    if (!openCommentGenerationMenu) return;
-    openCommentGenerationMenu.menu.hidden = true;
-    openCommentGenerationMenu.button.setAttribute('aria-expanded', 'false');
-    openCommentGenerationMenu = null;
+  function openActionMenuFor(button, menu) {
+    closeActionMenu();
+    menu.style.left = '';
+    menu.hidden = false;
+    button.setAttribute('aria-expanded', 'true');
+    openActionMenu = { button, menu };
+    menu.querySelector('[role="menuitem"]')?.focus({ preventScroll: true });
+    requestAnimationFrame(() => {
+      const rect = menu.getBoundingClientRect();
+      const margin = 8;
+      if (rect.left < margin) {
+        menu.style.left = `calc(50% + ${margin - rect.left}px)`;
+      } else if (rect.right > window.innerWidth - margin) {
+        menu.style.left = `calc(50% - ${rect.right - (window.innerWidth - margin)}px)`;
+      }
+    });
+  }
+
+  function closeActionMenu() {
+    if (!openActionMenu) return;
+    openActionMenu.menu.style.left = '';
+    openActionMenu.menu.hidden = true;
+    openActionMenu.button.setAttribute('aria-expanded', 'false');
+    openActionMenu = null;
+  }
+
+  function injectPageSettingsButton() {
+    if (document.querySelector('[data-aiang-page-settings]')) return;
+    const controls = Array.from(document.querySelectorAll('button, a[role="button"]'));
+    const nameOf = element => (element.getAttribute('aria-label') || element.getAttribute('title') || element.textContent || '').trim();
+    const newest = controls.find(element => nameOf(element) === '전체 새글 보기');
+    const viewSettings = controls.find(element => nameOf(element) === '보기 설정');
+    if (!newest || !viewSettings || newest.parentElement !== viewSettings.parentElement) return;
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = viewSettings.className;
+    button.dataset.aiangPageSettings = 'true';
+    button.title = 'AIAng 설정';
+    button.setAttribute('aria-label', 'AIAng 설정');
+    button.innerHTML = `<img class="aiang-page-settings-icon" src="${REVIEW_ICON_URL}" alt="">`;
+    button.addEventListener('click', openSettings);
+    viewSettings.before(button);
   }
 
   function syncImproveActionWidth(toolbar) {
@@ -307,8 +394,8 @@
   }
 
   function cleanupDetachedControls() {
-    if (openCommentGenerationMenu && !openCommentGenerationMenu.button.isConnected) {
-      closeCommentGenerationMenu();
+    if (openActionMenu && !openActionMenu.button.isConnected) {
+      closeActionMenu();
     }
     document.querySelectorAll('.aiang-toolbar-slot').forEach(slot => {
       if (!slot._aiangTarget?.isConnected) slot.remove();
@@ -319,7 +406,7 @@
   }
 
   function removeControls() {
-    closeCommentGenerationMenu();
+    closeActionMenu();
     closeReview();
     document.querySelectorAll('.aiang-action.is-loading, .aiang-summary-button.is-loading')
       .forEach(cancelButtonRequest);
@@ -339,6 +426,7 @@
       if (input) row.replaceWith(input);
       else row.remove();
     });
+    document.querySelectorAll('[data-aiang-page-settings]').forEach(button => button.remove());
   }
 
   function scanArticleSummary() {
@@ -954,6 +1042,8 @@
   }
 
   function cancelButtonRequest(button) {
+    const tb = button.closest('.aiang-toolbar');
+    if (tb) toastToolbarAnchor = tb;
     const state = buttonRequestStates.get(button);
     if (!state) return false;
     if (!state.cancelRequested) {
@@ -963,7 +1053,7 @@
       if (label) label.textContent = '취소 중';
       button.setAttribute('aria-label', `${LABELS[state.action]} 요청 취소 중`);
       state.requestIds.forEach(requestId => {
-        sendMessage({ type: 'CANCEL_REQUEST', requestId }).catch(() => {});
+        sendMessage({ type: 'CANCEL_REQUEST', requestId }).catch(() => { });
       });
     }
     return true;
@@ -2126,6 +2216,411 @@
     }
   }
 
+  function getChatPostContext(kind, target) {
+    if (kind === 'body') {
+      const titleInput = document.querySelector('input#title, input#wr_subject, input[name="subject"], input[placeholder*="제목"]');
+      const title = titleInput?.value?.trim() || '';
+      const body = createTargetSnapshot(target).text.trim();
+      if (title && body) return `# ${title}\n\n${body}`;
+      return body || title || '';
+    }
+    const articleBody = findArticleBody();
+    if (articleBody) {
+      return extractArticleText(articleBody).trim();
+    }
+    return '';
+  }
+
+  function getChatReadPostConfig() {
+    return promptCatalog?.chat?.readPost || {
+      promptTemplate: '[게시물 내용]\n{{postContent}}\n\n위 게시물을 모두 읽었습니다. 아래 형식에 맞춰 친근하고 자연스럽게 한국어로 딱 한 문단으로만 답하세요:\n"게시물을 읽었습니다. [게시물의 핵심 주제나 내용을 1문장으로 짧고 친근하게 요약 (~에 관한 글이네요 / 이야기네요 등)]. 이제 게시물 내용에 관하여 물어보세요."',
+      historyUserMessage: '[게시물 내용]\n{{postContent}}\n\n이 게시물을 모두 읽었습니다.',
+      historyDisplayText: '이 게시물을 읽으세요',
+      fallbackTemplate: '게시물을 읽었습니다. {{topic}} 이제 게시물 내용에 관하여 물어보세요.',
+      fallbackDefaultTopic: '게시물의 주요 내용을 파악했습니다.',
+      fallbackTopicTemplate: "'{{title}}'에 대한 글이네요."
+    };
+  }
+
+  function openChatModal(target, kind) {
+    closeActionMenu();
+    closeReview();
+    const resolvedKind = kind || target?.dataset?.aiangKind || target?._aiangToolbarSlot?.dataset?.aiangKind || 'comment';
+    const history = chatHistories.get(target) || [];
+    chatHistories.set(target, history);
+
+    const panel = document.createElement('section');
+    panel.className = 'aiang-review aiang-review-modal aiang-chat-modal';
+    panel.setAttribute('role', 'dialog');
+    panel.setAttribute('aria-modal', 'true');
+    panel.setAttribute('aria-label', CHAT_ACTION.label);
+
+    const header = document.createElement('header');
+    header.className = 'aiang-review-header aiang-no-select';
+    header.innerHTML = `<div><img class="aiang-review-badge" src="${REVIEW_ICON_URL}" alt=""><strong>${CHAT_ACTION.label}</strong></div>`;
+    const close = document.createElement('button');
+    close.type = 'button';
+    close.className = 'aiang-close';
+    close.setAttribute('aria-label', '닫기');
+    close.textContent = '×';
+    close.addEventListener('click', closeReview);
+    header.append(close);
+
+    const messages = document.createElement('div');
+    messages.className = 'aiang-chat-messages';
+    messages.setAttribute('aria-live', 'polite');
+    const empty = document.createElement('div');
+    empty.className = 'aiang-chat-empty';
+    empty.textContent = '궁금한 내용을 물어보세요.';
+    messages.append(empty);
+
+    const actionsBar = document.createElement('div');
+    actionsBar.className = 'aiang-chat-actions aiang-no-select';
+
+    const readPostButton = document.createElement('button');
+    readPostButton.type = 'button';
+    readPostButton.className = 'aiang-chat-action-chip';
+
+    let isReadingPost = false;
+    let readRequestId = null;
+    let readUserEntry = null;
+    let readAssistantEntry = null;
+    let readAssistantBubble = null;
+
+    const hasReadPost = () => history.some(entry =>
+      entry.role === 'user' && (entry.displayText === '이 게시물을 읽으세요' || entry.content?.includes('이 게시물을 읽으세요') || entry.content?.includes('이 게시물을 모두 읽었습니다.'))
+    );
+
+    const updateReadPostButtonState = () => {
+      readPostButton.classList.remove('is-reading');
+      if (hasReadPost()) {
+        readPostButton.disabled = true;
+        readPostButton.setAttribute('aria-label', '이 게시물을 읽었어요');
+        readPostButton.innerHTML = `${ICONS.check}<span>이 게시물을 읽었어요</span>`;
+      } else if (isReadingPost) {
+        readPostButton.disabled = false;
+        readPostButton.classList.add('is-reading');
+        readPostButton.setAttribute('aria-label', '게시물을 읽는 중 (취소하려면 클릭)');
+        readPostButton.innerHTML = `<span class="aiang-spinner"></span><span>게시물을 읽는 중</span><span class="aiang-chip-cancel-icon" aria-hidden="true">✕</span>`;
+      } else {
+        readPostButton.disabled = false;
+        readPostButton.setAttribute('aria-label', '이 게시물을 읽으세요');
+        readPostButton.innerHTML = `${ICONS.book}<span>이 게시물을 읽으세요</span>`;
+      }
+    };
+
+    readPostButton.addEventListener('click', async () => {
+      if (readPostButton.disabled) return;
+      if (isReadingPost) {
+        if (readRequestId) {
+          const cancelId = readRequestId;
+          readRequestId = null;
+          chatStreamHandlers.delete(cancelId);
+          sendMessage({ type: 'CANCEL_REQUEST', requestId: cancelId }).catch(() => { });
+        }
+        isReadingPost = false;
+        if (readUserEntry) {
+          const uIdx = history.indexOf(readUserEntry);
+          if (uIdx >= 0) history.splice(uIdx, 1);
+          readUserEntry = null;
+        }
+        if (readAssistantEntry) {
+          const aIdx = history.indexOf(readAssistantEntry);
+          if (aIdx >= 0) history.splice(aIdx, 1);
+          readAssistantEntry = null;
+        }
+        renderHistory(false);
+        updateReadPostButtonState();
+        showToast('게시물 읽기를 취소했습니다.', 'info');
+        return;
+      }
+
+      const rawContext = getChatPostContext(resolvedKind, target);
+      if (!rawContext) {
+        showToast(
+          resolvedKind === 'body'
+            ? '읽을 게시물 내용을 먼저 작성해 주세요.'
+            : '게시물 본문을 찾을 수 없습니다.',
+          'warning'
+        );
+        return;
+      }
+
+      const promptConfig = getChatReadPostConfig();
+      const postContext = limitPostSummarySource(rawContext);
+      const titleMatch = postContext.match(/^#\s*(.+)$/m);
+      const titleText = titleMatch ? titleMatch[1].trim() : '';
+      const fallbackTopic = titleText
+        ? promptConfig.fallbackTopicTemplate.replace('{{title}}', titleText)
+        : promptConfig.fallbackDefaultTopic;
+      const fallbackAnswer = promptConfig.fallbackTemplate.replace('{{topic}}', fallbackTopic);
+
+      isReadingPost = true;
+      updateReadPostButtonState();
+
+      const userPrompt = promptConfig.promptTemplate.replace('{{postContent}}', postContext);
+      const historyUserContent = promptConfig.historyUserMessage.replace('{{postContent}}', postContext);
+      const historyDisplayText = promptConfig.historyDisplayText;
+
+      readUserEntry = {
+        role: 'user',
+        content: historyUserContent,
+        displayText: historyDisplayText
+      };
+      history.push(readUserEntry);
+      appendMessageBubble('user', readUserEntry.content, historyDisplayText);
+
+      readAssistantEntry = {
+        role: 'assistant',
+        content: '…'
+      };
+      history.push(readAssistantEntry);
+      readAssistantBubble = appendMessageBubble('assistant', '…');
+      scrollChatToBottom(messages, true);
+
+      readRequestId = createRequestId();
+      const currentRequestId = readRequestId;
+      chatStreamHandlers.set(currentRequestId, content => {
+        if (!isReadingPost || currentRequestId !== readRequestId) return;
+        readAssistantEntry.content = content || '…';
+        if (readAssistantBubble?.isConnected) {
+          renderSummaryMarkdown(readAssistantBubble, readAssistantEntry.content);
+          scrollChatToBottomIfNear(messages);
+        }
+      });
+
+      try {
+        const response = await sendMessage({
+          type: 'CHAT',
+          requestId: currentRequestId,
+          messages: [
+            {
+              role: 'user',
+              content: userPrompt
+            }
+          ]
+        });
+        if (currentRequestId !== readRequestId) return;
+        const answer = String(response?.message || '').trim() || fallbackAnswer;
+        readAssistantEntry.content = answer;
+        if (readAssistantBubble?.isConnected) {
+          renderSummaryMarkdown(readAssistantBubble, answer);
+          scrollChatToBottomIfNear(messages);
+        }
+      } catch (error) {
+        if (error?.message === '요청을 취소했습니다.' || currentRequestId !== readRequestId) return;
+        readAssistantEntry.content = fallbackAnswer;
+        if (readAssistantBubble?.isConnected) {
+          renderSummaryMarkdown(readAssistantBubble, fallbackAnswer);
+        }
+      } finally {
+        if (currentRequestId === readRequestId) {
+          chatStreamHandlers.delete(currentRequestId);
+          readRequestId = null;
+          isReadingPost = false;
+          readUserEntry = null;
+          readAssistantEntry = null;
+          readAssistantBubble = null;
+          updateReadPostButtonState();
+          scrollChatToBottom(messages, true);
+        }
+      }
+    });
+
+    actionsBar.append(readPostButton);
+    updateReadPostButtonState();
+
+    const composer = document.createElement('div');
+    composer.className = 'aiang-chat-composer';
+    const inputRow = document.createElement('div');
+    inputRow.className = 'aiang-chat-input-row';
+    const input = document.createElement('textarea');
+    input.className = 'aiang-chat-input';
+    input.rows = 1;
+    input.maxLength = 4000;
+    input.placeholder = '궁금한 내용을 입력하세요';
+    input.setAttribute('aria-label', '질문 입력');
+
+    const adjustInputHeight = () => {
+      input.style.height = 'auto';
+      const maxHeight = 82;
+      if (input.scrollHeight > maxHeight) {
+        input.style.height = `${maxHeight}px`;
+        input.style.overflowY = 'auto';
+      } else {
+        input.style.height = `${Math.max(38, input.scrollHeight)}px`;
+        input.style.overflowY = 'hidden';
+      }
+    };
+    input.addEventListener('input', adjustInputHeight);
+    const send = document.createElement('button');
+    send.type = 'button';
+    send.className = 'aiang-chat-send';
+    send.setAttribute('aria-label', '보내기');
+    send.innerHTML = ICONS.send;
+    const notice = document.createElement('p');
+    notice.className = 'aiang-ai-accuracy-notice aiang-chat-notice';
+    notice.textContent = 'AI 답변의 품질은 모델별로 다르며, 가끔은 매우 부정확할 수 있습니다.';
+    inputRow.append(input, send);
+    composer.append(inputRow, notice);
+    panel.append(header, messages, actionsBar, composer);
+
+    let currentAssistantBubble = null;
+    const appendMessageBubble = (role, content, displayText) => {
+      if (empty.isConnected) empty.remove();
+      const bubble = document.createElement('div');
+      bubble.className = `aiang-chat-message aiang-chat-message-${role}`;
+      const textToRender = displayText || content;
+      if (role === 'assistant') renderSummaryMarkdown(bubble, textToRender);
+      else bubble.textContent = textToRender;
+      messages.append(bubble);
+      return bubble;
+    };
+
+    const renderHistory = (smooth = false) => {
+      messages.replaceChildren();
+      currentAssistantBubble = null;
+      if (!history.length) {
+        messages.append(empty);
+        return;
+      }
+      for (const entry of history) {
+        appendMessageBubble(entry.role, entry.content, entry.displayText);
+      }
+      scrollChatToBottom(messages, smooth);
+    };
+
+    let requestId = null;
+    let isComposing = false;
+    let submitAfterComposition = false;
+    const submit = async () => {
+      if (send.disabled) return;
+      if (isComposing) {
+        submitAfterComposition = true;
+        input.blur();
+        return;
+      }
+      const question = input.value.trim();
+      if (!question) return;
+      history.push({ role: 'user', content: question });
+      input.value = '';
+      adjustInputHeight();
+      appendMessageBubble('user', question);
+      scrollChatToBottom(messages, true);
+
+      send.disabled = true;
+      send.classList.add('is-loading');
+      requestId = createRequestId();
+      const outgoingMessages = history.map(({ role, content }) => ({ role, content }));
+      const assistantEntry = { role: 'assistant', content: '…' };
+      history.push(assistantEntry);
+      currentAssistantBubble = appendMessageBubble('assistant', '…');
+      scrollChatToBottom(messages, true);
+
+      chatStreamHandlers.set(requestId, content => {
+        assistantEntry.content = content || '…';
+        if (currentAssistantBubble?.isConnected) {
+          renderSummaryMarkdown(currentAssistantBubble, assistantEntry.content);
+          scrollChatToBottomIfNear(messages);
+        } else {
+          renderHistory(false);
+        }
+      });
+      try {
+        const response = await sendMessage({ type: 'CHAT', requestId, messages: outgoingMessages });
+        if (!response?.ok) throw new Error(response?.error || '답변을 받지 못했습니다.');
+        const answer = String(response.message || '').trim();
+        if (!answer) throw new Error('AI가 빈 답변을 반환했습니다.');
+        assistantEntry.content = answer;
+        if (currentAssistantBubble?.isConnected) {
+          renderSummaryMarkdown(currentAssistantBubble, answer);
+          scrollChatToBottomIfNear(messages);
+        } else {
+          renderHistory(false);
+        }
+        if (history.length > 20) history.splice(0, history.length - 20);
+      } catch (error) {
+        const index = history.indexOf(assistantEntry);
+        if (index >= 0) history.splice(index, 1);
+        if (currentAssistantBubble?.isConnected) currentAssistantBubble.remove();
+        currentAssistantBubble = null;
+        if (!history.length && !empty.isConnected) messages.append(empty);
+        if (error?.message !== '요청을 취소했습니다.') showToast(error?.message || 'AI 요청에 실패했습니다.', 'error');
+      } finally {
+        chatStreamHandlers.delete(requestId);
+        requestId = null;
+        if (send.isConnected) {
+          send.disabled = false;
+          send.classList.remove('is-loading');
+          if (!IS_IPHONE && window.innerWidth > 680) {
+            input.focus({ preventScroll: true });
+          }
+        }
+      }
+    };
+    input.addEventListener('compositionstart', () => { isComposing = true; });
+    input.addEventListener('compositionend', () => {
+      isComposing = false;
+      if (!submitAfterComposition) return;
+      submitAfterComposition = false;
+      queueMicrotask(submit);
+    });
+    send.addEventListener('pointerdown', () => {
+      if (isComposing) input.blur();
+    });
+    send.addEventListener('click', submit);
+    input.addEventListener('keydown', event => {
+      if (event.key === 'Enter' && !event.shiftKey) {
+        if (event.isComposing || isComposing || event.keyCode === 229) return;
+        event.preventDefault();
+        submit();
+      }
+    });
+    panel._aiangCleanup = () => {
+      if (readRequestId) {
+        const cancelId = readRequestId;
+        readRequestId = null;
+        chatStreamHandlers.delete(cancelId);
+        sendMessage({ type: 'CANCEL_REQUEST', requestId: cancelId }).catch(() => { });
+      }
+      if (requestId) {
+        chatStreamHandlers.delete(requestId);
+        sendMessage({ type: 'CANCEL_REQUEST', requestId }).catch(() => { });
+      }
+    };
+    renderHistory(false);
+    showModalPanel(panel);
+    if (!IS_IPHONE && window.innerWidth > 680) {
+      requestAnimationFrame(() => input.focus({ preventScroll: true }));
+    }
+  }
+
+  function scrollChatToBottom(container, smooth = false) {
+    requestAnimationFrame(() => {
+      const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      const behavior = smooth && !prefersReducedMotion ? 'smooth' : 'auto';
+      if (behavior === 'auto') {
+        container.style.scrollBehavior = 'auto';
+        container.scrollTop = container.scrollHeight;
+        container.style.removeProperty('scroll-behavior');
+      } else if (typeof container.scrollTo === 'function') {
+        container.scrollTo({ top: container.scrollHeight, behavior: 'smooth' });
+      } else {
+        container.scrollTop = container.scrollHeight;
+      }
+    });
+  }
+
+  function scrollChatToBottomIfNear(container, threshold = 80) {
+    const isNearBottom = (container.scrollHeight - container.scrollTop - container.clientHeight) <= threshold;
+    if (!isNearBottom) return;
+    requestAnimationFrame(() => {
+      container.style.scrollBehavior = 'auto';
+      container.scrollTop = container.scrollHeight;
+      container.style.removeProperty('scroll-behavior');
+    });
+  }
+
   function createSuggestionsDetails(suggestions) {
     const details = document.createElement('details');
     details.className = 'aiang-suggestions';
@@ -2161,6 +2656,24 @@
     overlay.addEventListener('mousedown', event => {
       if (event.target === overlay) closeReview();
     });
+    const scrollY = window.scrollY || window.pageYOffset || document.documentElement.scrollTop || 0;
+    const previousOverflow = document.body.style.overflow;
+    const previousPosition = document.body.style.position;
+    const previousTop = document.body.style.top;
+    const previousWidth = document.body.style.width;
+
+    document.body.style.overflow = 'hidden';
+    document.body.style.position = 'fixed';
+    document.body.style.top = `-${scrollY}px`;
+    document.body.style.width = '100%';
+
+    panel._aiangCleanupOverflow = () => {
+      document.body.style.overflow = previousOverflow;
+      document.body.style.position = previousPosition;
+      document.body.style.top = previousTop;
+      document.body.style.width = previousWidth;
+      window.scrollTo(0, scrollY);
+    };
     overlay.append(panel);
     document.body.append(overlay);
     document.addEventListener('keydown', handleReviewKeydown, true);
@@ -2246,7 +2759,12 @@
 
   function closeReview() {
     closeInlineReview();
-    document.querySelectorAll('.aiang-overlay, .aiang-review-popover').forEach(element => element.remove());
+    document.querySelectorAll('.aiang-overlay, .aiang-review-popover').forEach(element => {
+      const panel = element.matches('.aiang-review') ? element : element.querySelector('.aiang-review');
+      panel?._aiangCleanupOverflow?.();
+      panel?._aiangCleanup?.();
+      element.remove();
+    });
     document.removeEventListener('keydown', handleReviewKeydown, true);
   }
 
@@ -2548,7 +3066,80 @@
     return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   }
 
+  function findCommentEditorHeader(editor) {
+    if (!editor) return null;
+    const prev = editor.previousElementSibling;
+    if (prev instanceof HTMLElement && (prev.matches('div[class*="border-b"], div[class*="border-border"], div[class*="items-center"]') || prev.querySelector('button'))) {
+      return prev;
+    }
+    const parent = editor.parentElement;
+    if (parent) {
+      const header = parent.querySelector(':scope > div[class*="border-b"], :scope > div[class*="border-border"], :scope > div[class*="items-center"]');
+      if (header && header !== editor) return header;
+    }
+    const container = editor.closest('form, div[class*="border"]');
+    if (container) {
+      const candidate = container.querySelector('div[class*="border-b"][class*="flex"], div[class*="items-center"][class*="flex"]');
+      if (candidate && candidate !== editor && !candidate.contains(editor)) return candidate;
+    }
+    return null;
+  }
+
+  function showCommentHeaderToast(header, message, kind, duration, withSettings) {
+    const existing = header.querySelector('.aiang-comment-header-toast');
+    existing?._aiangCleanup?.();
+    existing?.remove();
+
+    const toast = document.createElement('div');
+    toast.className = `aiang-comment-header-toast aiang-comment-header-toast-${kind} aiang-no-select`;
+    toast.setAttribute('role', 'status');
+    toast.setAttribute('aria-live', 'polite');
+
+    const text = document.createElement('span');
+    text.textContent = message;
+    text.title = message;
+    toast.append(text);
+
+    if (withSettings) {
+      const settingsBtn = document.createElement('button');
+      settingsBtn.type = 'button';
+      settingsBtn.textContent = '설정';
+      settingsBtn.addEventListener('click', openSettings);
+      toast.append(settingsBtn);
+    }
+
+    header.append(toast);
+
+    let removeTimer = 0;
+    let fadeTimer = 0;
+    const cleanup = () => {
+      clearTimeout(removeTimer);
+      clearTimeout(fadeTimer);
+    };
+    toast._aiangCleanup = cleanup;
+
+    if (duration > 0) {
+      removeTimer = window.setTimeout(() => {
+        toast.classList.add('is-fading');
+        fadeTimer = window.setTimeout(() => {
+          cleanup();
+          toast.remove();
+        }, 220);
+      }, duration);
+    }
+
+    return toast;
+  }
+
   function showToast(message, kind = 'info', duration = 3200, withSettings = false) {
+    const commentEditor = toastToolbarAnchor?.dataset?.aiangKind === 'comment'
+      ? toastToolbarAnchor._aiangTarget
+      : null;
+    const commentHeader = commentEditor ? findCommentEditorHeader(commentEditor) : null;
+    if (commentHeader) {
+      return showCommentHeaderToast(commentHeader, message, kind, duration, withSettings);
+    }
+
     const previous = document.querySelector('.aiang-toast');
     previous?._aiangCleanup?.();
     previous?.remove();
@@ -2660,7 +3251,7 @@
 
   function openSettings() {
     if (!IS_SAFARI_WEB_EXTENSION) {
-      sendMessage({ type: 'OPEN_OPTIONS' }).catch(() => {});
+      sendMessage({ type: 'OPEN_OPTIONS' }).catch(() => { });
       return;
     }
     const link = document.createElement('a');
@@ -2673,20 +3264,23 @@
 
   extensionAPI.runtime.onMessage?.addListener?.(message => {
     if (message?.type === 'REQUEST_PROGRESS') updateRequestProgress(message);
+    if (message?.type === 'CHAT_STREAM') {
+      chatStreamHandlers.get(String(message.requestId || ''))?.(String(message.content || ''));
+    }
     if (message?.type === 'SHOW_NATIVE_SETTINGS') {
       showToast('AI 설정은 AIAng by DKST 앱에서 변경합니다.', 'info', 8000, true);
     }
   });
 
   document.addEventListener('pointerdown', event => {
-    if (!openCommentGenerationMenu) return;
-    const { button, menu } = openCommentGenerationMenu;
-    if (!button.contains(event.target) && !menu.contains(event.target)) closeCommentGenerationMenu();
+    if (!openActionMenu) return;
+    const { button, menu } = openActionMenu;
+    if (!button.contains(event.target) && !menu.contains(event.target)) closeActionMenu();
   }, true);
   document.addEventListener('keydown', event => {
-    if (event.key !== 'Escape' || !openCommentGenerationMenu) return;
-    const button = openCommentGenerationMenu.button;
-    closeCommentGenerationMenu();
+    if (event.key !== 'Escape' || !openActionMenu) return;
+    const button = openActionMenu.button;
+    closeActionMenu();
     button.focus({ preventScroll: true });
   }, true);
 
@@ -2703,11 +3297,27 @@
     if (panel?._aiangAnchor) positionPopover(panel, panel._aiangAnchor);
     document.querySelectorAll('.aiang-toolbar').forEach(syncImproveActionWidth);
   });
+  function syncCommentGenerationControls() {
+    document.querySelectorAll('.aiang-toolbar[data-aiang-kind="comment"]').forEach(toolbar => {
+      const existing = toolbar.querySelector('.aiang-comment-generate-wrap');
+      if (commentGenerationEnabled && !existing) {
+        const actionGroup = toolbar.querySelector('.aiang-action-group');
+        if (actionGroup && toolbar._aiangTarget) {
+          actionGroup.append(createCommentGenerationControl(toolbar._aiangTarget, toolbar));
+        }
+      } else if (!commentGenerationEnabled && existing) {
+        existing.remove();
+      }
+    });
+  }
+
   sendMessage({ type: 'GET_SETTINGS' })
     .then(response => {
       extensionEnabled = Boolean(response?.ok && response.settings?.enabled);
-      commentGenerationEnabled = response?.settings?.features?.commentGeneration !== false;
+      commentGenerationEnabled = response?.settings?.features?.commentGeneration === true;
+      promptCatalog = response?.settings?.prompts || null;
+      syncCommentGenerationControls();
       scheduleScan();
     })
-    .catch(() => {});
+    .catch(() => { });
 })();
