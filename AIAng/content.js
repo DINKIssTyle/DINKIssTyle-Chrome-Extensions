@@ -3,6 +3,7 @@
   const HONORIFIC_ACTION = { id: 'honorific', label: '경어체로 교정', short: '경어체', icon: 'chat' };
   const IMPROVE_ACTION = { id: 'improve', label: '문장 개선', short: '문장 개선', icon: 'sparkle' };
   const DECORATE_ACTION = { id: 'decorate', label: '글 꾸미기', short: '글 꾸미기', icon: 'palette' };
+  const COMMENT_GENERATE_ACTION = { id: 'generate_comment', label: '댓글 생성', short: '댓글 생성', icon: 'commentAdd' };
   const TITLE_SUGGEST_ACTION = { id: 'suggest_title', label: '글 제목 추천', short: '제목 추천', icon: 'title' };
   const POST_SUMMARY_ACTION = { id: 'summarize_post', label: '게시물 요약', short: '요약', icon: 'sparkle' };
   const COMMENT_REACTION_ACTION = { id: 'summarize_reactions', label: '댓글 반응 요약', short: '댓글 요약', icon: 'chat' };
@@ -12,6 +13,7 @@
   const LABELS = Object.fromEntries([
     ...BODY_ACTIONS,
     ...COMMENT_ACTIONS,
+    COMMENT_GENERATE_ACTION,
     POST_SUMMARY_ACTION,
     COMMENT_REACTION_ACTION,
     TERM_GLOSSARY_ACTION
@@ -24,6 +26,13 @@
   const POST_SUMMARY_SOURCE_LIMIT = 15000;
   const COMMENT_REACTION_POST_LIMIT = 6000;
   const COMMENT_REACTION_COMMENTS_LIMIT = 9000;
+  const COMMENT_GENERATION_POST_LIMIT = 6000;
+  const COMMENT_GENERATION_TONES = [
+    { id: 'positive', label: '긍정•동의•응원' },
+    { id: 'negative', label: '부정•부동의' },
+    { id: 'angry', label: '화가나요' },
+    { id: 'joke', label: '농담' }
+  ];
   const ARTICLE_BODY_SELECTORS = [
     '[data-aiang-article-body]',
     '[itemprop="articleBody"]',
@@ -92,9 +101,11 @@
   let scanFrame = 0;
   let requestSequence = 0;
   let extensionEnabled = false;
+  let commentGenerationEnabled = true;
   let inlineReviewSession = null;
   let inlineReviewFrame = 0;
   let toastToolbarAnchor = null;
+  let openCommentGenerationMenu = null;
   const buttonRequestStates = new WeakMap();
   const requestButtonsById = new Map();
 
@@ -105,6 +116,7 @@
     palette: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a9 9 0 0 0 0 18h1.5a1.5 1.5 0 0 0 0-3H12a2 2 0 0 1 0-4h2.5A6.5 6.5 0 0 0 21 7.5C19.3 4.8 16 3 12 3Z"/><circle cx="7.5" cy="10" r="1"/><circle cx="10" cy="6.5" r="1"/><circle cx="15" cy="6.5" r="1"/></svg>',
     title: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h10M9 5v14M6 19h6"/><path d="m18 10 .8 2.2L21 13l-2.2.8L18 16l-.8-2.2L15 13l2.2-.8Z"/></svg>',
     book: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H11a2 2 0 0 1 2 2v16a3 3 0 0 0-3-3H4Z"/><path d="M20 5.5A2.5 2.5 0 0 0 17.5 3H15a2 2 0 0 0-2 2v16a3 3 0 0 1 3-3h4Z"/></svg>',
+    commentAdd: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h7"/><path d="M19 3v6M16 6h6"/></svg>',
     settings: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1-2.8 2.8-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.6v.2h-4V21a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1L4.2 17l.1-.1a1.7 1.7 0 0 0 .3-1.9A1.7 1.7 0 0 0 3 14H2.8v-4H3a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9L4.2 7 7 4.2l.1.1a1.7 1.7 0 0 0 1.9.3A1.7 1.7 0 0 0 10 3V2.8h4V3a1.7 1.7 0 0 0 1 1.6 1.7 1.7 0 0 0 1.9-.3l.1-.1L19.8 7l-.1.1a1.7 1.7 0 0 0-.3 1.9 1.7 1.7 0 0 0 1.6 1h.2v4H21a1.7 1.7 0 0 0-1.6 1Z"/></svg>'
   };
 
@@ -170,6 +182,9 @@
       });
       actionGroup.append(button);
     }
+    if (kind === 'comment' && commentGenerationEnabled) {
+      actionGroup.append(createCommentGenerationControl(editor, toolbar));
+    }
     toolbar.append(actionGroup);
 
     const settingsButton = document.createElement('button');
@@ -186,6 +201,64 @@
     insertionBoundary?.insertAdjacentElement('afterend', slot);
     editor._aiangToolbarSlot = slot;
     requestAnimationFrame(() => syncImproveActionWidth(toolbar));
+  }
+
+  function createCommentGenerationControl(editor, toolbar) {
+    const wrapper = document.createElement('div');
+    wrapper.className = 'aiang-comment-generate-wrap';
+
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'aiang-action aiang-comment-generate-button';
+    button.dataset.action = COMMENT_GENERATE_ACTION.id;
+    button.setAttribute('aria-haspopup', 'menu');
+    button.setAttribute('aria-expanded', 'false');
+    button.innerHTML = `${ICONS[COMMENT_GENERATE_ACTION.icon]}<span class="aiang-long-label">${COMMENT_GENERATE_ACTION.label}</span><span class="aiang-short-label">${COMMENT_GENERATE_ACTION.short}</span>`;
+
+    const menu = document.createElement('div');
+    menu.className = 'aiang-comment-generate-menu aiang-no-select';
+    menu.setAttribute('role', 'menu');
+    menu.setAttribute('aria-label', '댓글 생성 분위기');
+    menu.hidden = true;
+    for (const tone of COMMENT_GENERATION_TONES) {
+      const item = document.createElement('button');
+      item.type = 'button';
+      item.className = 'aiang-comment-generate-option';
+      item.dataset.tone = tone.id;
+      item.setAttribute('role', 'menuitem');
+      item.textContent = tone.label;
+      item.addEventListener('click', event => {
+        event.stopPropagation();
+        closeCommentGenerationMenu();
+        toastToolbarAnchor = toolbar;
+        runCommentGeneration(editor, tone.id, button);
+      });
+      menu.append(item);
+    }
+
+    button.addEventListener('click', event => {
+      event.stopPropagation();
+      if (cancelButtonRequest(button)) return;
+      if (openCommentGenerationMenu?.menu === menu) closeCommentGenerationMenu();
+      else openCommentGenerationMenuFor(button, menu);
+    });
+    wrapper.append(button, menu);
+    return wrapper;
+  }
+
+  function openCommentGenerationMenuFor(button, menu) {
+    closeCommentGenerationMenu();
+    menu.hidden = false;
+    button.setAttribute('aria-expanded', 'true');
+    openCommentGenerationMenu = { button, menu };
+    menu.querySelector('[role="menuitem"]')?.focus({ preventScroll: true });
+  }
+
+  function closeCommentGenerationMenu() {
+    if (!openCommentGenerationMenu) return;
+    openCommentGenerationMenu.menu.hidden = true;
+    openCommentGenerationMenu.button.setAttribute('aria-expanded', 'false');
+    openCommentGenerationMenu = null;
   }
 
   function syncImproveActionWidth(toolbar) {
@@ -226,6 +299,9 @@
   }
 
   function cleanupDetachedControls() {
+    if (openCommentGenerationMenu && !openCommentGenerationMenu.button.isConnected) {
+      closeCommentGenerationMenu();
+    }
     document.querySelectorAll('.aiang-toolbar-slot').forEach(slot => {
       if (!slot._aiangTarget?.isConnected) slot.remove();
     });
@@ -235,6 +311,7 @@
   }
 
   function removeControls() {
+    closeCommentGenerationMenu();
     closeReview();
     document.querySelectorAll('.aiang-action.is-loading, .aiang-summary-button.is-loading')
       .forEach(cancelButtonRequest);
@@ -689,6 +766,42 @@
       showInlineReview([{ ...result, action }]);
     } catch (error) {
       showRequestError(error, requestState, 'AI 요청에 실패했습니다.');
+    } finally {
+      finishButtonRequest(button, requestState);
+    }
+  }
+
+  async function runCommentGeneration(target, tone, button) {
+    if (cancelButtonRequest(button)) return;
+    const articleBody = findArticleBody();
+    const postText = articleBody
+      ? limitPostSummarySource(extractArticleText(articleBody), COMMENT_GENERATION_POST_LIMIT, 1200)
+      : '';
+    if (!postText) {
+      showToast('댓글을 작성할 게시물 본문을 찾지 못했습니다.', 'warning');
+      return;
+    }
+
+    const snapshot = createTargetSnapshot(target);
+    closeReview();
+    const requestState = beginButtonRequest(button, COMMENT_GENERATE_ACTION.id);
+    try {
+      const response = await sendMessage({
+        type: 'GENERATE_COMMENT',
+        requestId: createTrackedRequestId(button),
+        tone,
+        postText
+      });
+      if (!response?.ok) throw new Error(response?.error || '댓글을 생성하지 못했습니다.');
+      if (createTargetSignature(target) !== snapshot.signature) {
+        throw new Error('댓글 생성 중 입력 내용이 변경되어 결과를 반영하지 않았습니다. 다시 실행해 주세요.');
+      }
+      const comment = String(response.comment || '').trim();
+      if (!comment) throw new Error('AI가 빈 댓글을 반환했습니다. 다시 시도해 주세요.');
+      writeTargetText(target, comment, snapshot.media);
+      showToast('생성한 댓글을 입력창에 반영했습니다.', 'success');
+    } catch (error) {
+      showRequestError(error, requestState, '댓글을 생성하지 못했습니다.');
     } finally {
       finishButtonRequest(button, requestState);
     }
@@ -2531,6 +2644,18 @@
     if (message?.type === 'REQUEST_PROGRESS') updateRequestProgress(message);
   });
 
+  document.addEventListener('pointerdown', event => {
+    if (!openCommentGenerationMenu) return;
+    const { button, menu } = openCommentGenerationMenu;
+    if (!button.contains(event.target) && !menu.contains(event.target)) closeCommentGenerationMenu();
+  }, true);
+  document.addEventListener('keydown', event => {
+    if (event.key !== 'Escape' || !openCommentGenerationMenu) return;
+    const button = openCommentGenerationMenu.button;
+    closeCommentGenerationMenu();
+    button.focus({ preventScroll: true });
+  }, true);
+
   const observer = new MutationObserver(scheduleScan);
   observer.observe(document.documentElement, { childList: true, subtree: true });
   chrome.storage.onChanged.addListener((changes, areaName) => {
@@ -2547,6 +2672,7 @@
   sendMessage({ type: 'GET_SETTINGS' })
     .then(response => {
       extensionEnabled = Boolean(response?.ok && response.settings?.enabled);
+      commentGenerationEnabled = response?.settings?.features?.commentGeneration !== false;
       scheduleScan();
     })
     .catch(() => {});

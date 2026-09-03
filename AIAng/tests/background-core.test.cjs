@@ -36,6 +36,8 @@ function loadCore(fetchImplementation = fetch, options = {}) {
     buildPostSummaryPrompts,
     buildCommentReactionSummaryPrompts,
     buildTermGlossaryPrompts,
+    buildCommentGenerationPrompts,
+    parseGeneratedComment,
     normalizeSuggestions,
     applySuggestions,
     parseTitleSuggestions,
@@ -53,6 +55,11 @@ function loadCore(fetchImplementation = fetch, options = {}) {
 }
 
 const core = loadCore();
+
+test('exposes the comment-generation feature flag to content scripts', async () => {
+  const result = await core.handleMessage({ type: 'GET_SETTINGS' }, {});
+  assert.equal(result.settings.features.commentGeneration, true);
+});
 
 test('aborts an active AI request when its request ID is cancelled', async () => {
   let markStarted;
@@ -124,6 +131,66 @@ test('adds personalization to the system prompt without changing the output cont
   assert.match(prompts.user, /corrected_text/);
   assert.match(prompts.user, /<content>\n본문\n<\/content>/);
   assert.match(prompts.user, /글자, 순서, 개수를 바꾸지 말고/);
+});
+
+test('fully omits personalization from prompts when it is empty or whitespace-only', () => {
+  for (const personalization of ['', '   \n  ']) {
+    const editing = core.buildPrompts('improve', '본문', personalization);
+    const titles = core.buildTitleSuggestionPrompts('본문', personalization);
+    const comment = core.buildCommentGenerationPrompts('게시물 본문', 'positive', personalization);
+    for (const prompts of [editing, titles, comment]) {
+      assert.doesNotMatch(prompts.system, /개인화 지침/);
+      assert.doesNotMatch(prompts.user, /개인화 지침/);
+    }
+  }
+});
+
+test('builds grounded comment-generation prompts with the selected tone and personalization', () => {
+  const prompts = core.buildCommentGenerationPrompts(
+    '# 게시물 제목\n\n본문의 핵심 내용',
+    'negative',
+    '짧고 정중하게'
+  );
+  assert.match(prompts.system, /개인화 지침:\n짧고 정중하게/);
+  assert.match(prompts.user, /제목과 본문을 읽고/);
+  assert.match(prompts.user, /부정적이거나 동의하지 않는 의견/);
+  assert.match(prompts.user, /<post>\n# 게시물 제목\n\n본문의 핵심 내용\n<\/post>/);
+  assert.match(prompts.user, /원문에 없는 사실을 만들거나/);
+});
+
+test('asks the model to choose the best positive, agreement, or support response for the post', () => {
+  const prompts = core.buildCommentGenerationPrompts('게시물 본문', 'positive', '');
+  assert.match(prompts.user, /내용과 작성자의 상황을 먼저 분석/);
+  assert.match(prompts.user, /긍정, 동의, 응원 중 가장 자연스럽고 적절한 반응 하나를 골라/);
+  assert.match(prompts.user, /세 반응을 억지로 모두 섞지 마세요/);
+});
+
+test('parses JSON and plain-text generated comments', () => {
+  assert.equal(core.parseGeneratedComment('{"comment":"본문 취지에 공감합니다."}'), '본문 취지에 공감합니다.');
+  assert.equal(core.parseGeneratedComment('댓글: 좋은 글 감사합니다.'), '좋은 글 감사합니다.');
+});
+
+test('generates a comment from the post body using saved personalization', async () => {
+  let requestBody;
+  const generationCore = loadCore(async (url, options) => {
+    requestBody = JSON.parse(options.body);
+    return {
+      ok: true,
+      json: async () => ({ choices: [{ message: { content: '{"comment":"저도 이 부분에 동의합니다."}' } }] })
+    };
+  }, {
+    settings: { personalization: '차분하고 짧게 답합니다.' }
+  });
+  const result = await generationCore.handleMessage({
+    type: 'GENERATE_COMMENT',
+    requestId: 'comment-generation-test',
+    tone: 'positive',
+    postText: '# 제목\n\n본문 내용입니다.'
+  }, { url: 'https://damoang.net/free/1' });
+
+  assert.equal(result.comment, '저도 이 부분에 동의합니다.');
+  assert.match(requestBody.messages[0].content, /개인화 지침:\n차분하고 짧게 답합니다/);
+  assert.match(requestBody.messages[1].content, /<post>\n# 제목\n\n본문 내용입니다\.\n<\/post>/);
 });
 
 test('keeps a protected media token while applying spelling suggestions', () => {
@@ -291,7 +358,7 @@ test('builds a grounded dictionary-style glossary prompt from post content', () 
   assert.equal(prompts.system, '당신은 웹 기사 및 게시물 용어 정리 전문가입니다.');
   assert.match(prompts.user, /\[게시물\]\n# AI 가속기\nLLM은 GPU에서 실행됩니다\./);
   assert.match(prompts.user, /\[질문\]\n게시물을 이해하는 데 도움이 되는 전문용어/);
-  assert.match(prompts.user, /용어를 굵게 표시한 읽기 쉬운 Markdown 사전 목록/);
+  assert.match(prompts.user, /용어를 굵게 표시한 읽기 쉬운 Markdown(?: 형식의)? 사전 목록/);
 });
 
 test('accepts Markdown and JSON glossary responses', () => {

@@ -163,6 +163,65 @@
   min-width: 0;
 }
 
+.aiang-comment-generate-wrap {
+  position: relative;
+  display: flex;
+  align-self: stretch;
+}
+
+.aiang-comment-generate-wrap::before {
+  content: "";
+  position: absolute;
+  z-index: 1;
+  left: -1px;
+  top: 50%;
+  width: 1px;
+  height: 14px;
+  background: var(--aiang-border);
+  transform: translateY(-50%);
+}
+
+.aiang-comment-generate-wrap:has(.aiang-comment-generate-button:hover)::before {
+  opacity: 0;
+}
+
+.aiang-comment-generate-menu {
+  position: absolute;
+  z-index: 2147483646;
+  right: 0;
+  bottom: calc(100% + 8px);
+  width: max-content;
+  min-width: 174px;
+  padding: 5px;
+  border: 1px solid var(--aiang-border);
+  border-radius: var(--aiang-radius);
+  background: var(--aiang-surface);
+  box-shadow: var(--aiang-shadow-popover);
+}
+
+.aiang-comment-generate-option {
+  appearance: none;
+  width: 100%;
+  min-height: 34px;
+  padding: 7px 10px;
+  border: 0;
+  border-radius: var(--aiang-radius-md);
+  background: transparent;
+  color: var(--aiang-text);
+  display: block;
+  font: 500 12px/1.35 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  text-align: left;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.aiang-comment-generate-option:hover,
+.aiang-comment-generate-option:focus-visible {
+  outline: none;
+  background: var(--aiang-control-hover);
+  color: var(--aiang-hover-foreground);
+}
+
 .aiang-action {
   min-height: 32px;
   padding: 0 10px;
@@ -952,6 +1011,8 @@
   .aiang-toolbar { width: 100%; justify-content: space-between; gap: 2px; }
   .aiang-action-group { flex: 1 1 auto; }
   .aiang-action { flex: 1 1 auto; justify-content: center; padding: 0 5px; font-size: 11px; }
+  .aiang-comment-generate-wrap { flex: 1 1 auto; }
+  .aiang-comment-generate-button { width: 100%; }
   .aiang-action svg { display: none; }
   .aiang-long-label { display: none; }
   .aiang-short-label { display: inline; }

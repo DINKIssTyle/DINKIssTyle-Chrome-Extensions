@@ -9,7 +9,7 @@
     main { width: min(760px, 100%); margin: auto; padding: 28px; border-radius: 20px; background: white; }
   </style>
 </head>
-<body data-summary-requests="0" data-glossary-requests="0">
+<body data-summary-requests="0" data-glossary-requests="0" data-comment-generation-requests="0">
   <main>
     <h1>댓글 없는 게시물</h1>
     <article data-aiang-article-body>
@@ -50,6 +50,15 @@
             document.body.dataset.glossaryRequests = String(Number(document.body.dataset.glossaryRequests) + 1);
             document.body.dataset.glossarySource = message.text;
             callback({ ok: true, glossary: '## 용어\n\n- **LLM** — 대규모 언어 모델입니다.\n- **GPU** — 그래픽 처리 장치입니다.' });
+            return;
+          }
+          if (message.type === 'GENERATE_COMMENT') {
+            document.body.dataset.commentGenerationRequests = String(
+              Number(document.body.dataset.commentGenerationRequests) + 1
+            );
+            document.body.dataset.commentGenerationTone = message.tone;
+            document.body.dataset.commentGenerationSource = message.postText;
+            callback({ ok: true, comment: '본문을 읽고 생성한 댓글입니다.' });
             return;
           }
           callback({ ok: true, summary: '호출되면 안 되는 응답' });
