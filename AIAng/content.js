@@ -2384,8 +2384,11 @@
         if (!isReadingPost || currentRequestId !== readRequestId) return;
         readAssistantEntry.content = content || '…';
         if (readAssistantBubble?.isConnected) {
-          renderSummaryMarkdown(readAssistantBubble, readAssistantEntry.content);
-          scrollChatToBottomIfNear(messages);
+          const wasNearBottom = (messages.scrollHeight - messages.scrollTop - messages.clientHeight) <= 120;
+          renderAssistantContent(readAssistantBubble, readAssistantEntry.content);
+          if (wasNearBottom) {
+            scrollChatToBottom(messages, false);
+          }
         }
       });
 
@@ -2404,14 +2407,18 @@
         const answer = String(response?.message || '').trim() || fallbackAnswer;
         readAssistantEntry.content = answer;
         if (readAssistantBubble?.isConnected) {
-          renderSummaryMarkdown(readAssistantBubble, answer);
-          scrollChatToBottomIfNear(messages);
+          const wasNearBottom = (messages.scrollHeight - messages.scrollTop - messages.clientHeight) <= 120;
+          renderAssistantContent(readAssistantBubble, answer);
+          if (wasNearBottom) {
+            scrollChatToBottom(messages, true);
+          }
         }
       } catch (error) {
         if (error?.message === '요청을 취소했습니다.' || currentRequestId !== readRequestId) return;
         readAssistantEntry.content = fallbackAnswer;
         if (readAssistantBubble?.isConnected) {
-          renderSummaryMarkdown(readAssistantBubble, fallbackAnswer);
+          renderAssistantContent(readAssistantBubble, fallbackAnswer);
+          scrollChatToBottom(messages, true);
         }
       } finally {
         if (currentRequestId === readRequestId) {
@@ -2422,7 +2429,6 @@
           readAssistantEntry = null;
           readAssistantBubble = null;
           updateReadPostButtonState();
-          scrollChatToBottom(messages, true);
         }
       }
     });
@@ -2466,12 +2472,20 @@
     panel.append(header, messages, actionsBar, composer);
 
     let currentAssistantBubble = null;
+    const renderAssistantContent = (bubble, content) => {
+      if (content === '…') {
+        bubble.innerHTML = '<span class="aiang-chat-loading-dots" aria-label="답변 작성 중"><span></span><span></span><span></span></span>';
+      } else {
+        renderSummaryMarkdown(bubble, content);
+      }
+    };
+
     const appendMessageBubble = (role, content, displayText) => {
       if (empty.isConnected) empty.remove();
       const bubble = document.createElement('div');
       bubble.className = `aiang-chat-message aiang-chat-message-${role}`;
       const textToRender = displayText || content;
-      if (role === 'assistant') renderSummaryMarkdown(bubble, textToRender);
+      if (role === 'assistant') renderAssistantContent(bubble, textToRender);
       else bubble.textContent = textToRender;
       messages.append(bubble);
       return bubble;
@@ -2520,8 +2534,11 @@
       chatStreamHandlers.set(requestId, content => {
         assistantEntry.content = content || '…';
         if (currentAssistantBubble?.isConnected) {
-          renderSummaryMarkdown(currentAssistantBubble, assistantEntry.content);
-          scrollChatToBottomIfNear(messages);
+          const wasNearBottom = (messages.scrollHeight - messages.scrollTop - messages.clientHeight) <= 120;
+          renderAssistantContent(currentAssistantBubble, assistantEntry.content);
+          if (wasNearBottom) {
+            scrollChatToBottom(messages, false);
+          }
         } else {
           renderHistory(false);
         }
@@ -2533,8 +2550,11 @@
         if (!answer) throw new Error('AI가 빈 답변을 반환했습니다.');
         assistantEntry.content = answer;
         if (currentAssistantBubble?.isConnected) {
-          renderSummaryMarkdown(currentAssistantBubble, answer);
-          scrollChatToBottomIfNear(messages);
+          const wasNearBottom = (messages.scrollHeight - messages.scrollTop - messages.clientHeight) <= 120;
+          renderAssistantContent(currentAssistantBubble, answer);
+          if (wasNearBottom) {
+            scrollChatToBottom(messages, true);
+          }
         } else {
           renderHistory(false);
         }
@@ -2596,13 +2616,12 @@
   }
 
   function scrollChatToBottom(container, smooth = false) {
+    if (!container) return;
     requestAnimationFrame(() => {
       const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
       const behavior = smooth && !prefersReducedMotion ? 'smooth' : 'auto';
       if (behavior === 'auto') {
-        container.style.scrollBehavior = 'auto';
         container.scrollTop = container.scrollHeight;
-        container.style.removeProperty('scroll-behavior');
       } else if (typeof container.scrollTo === 'function') {
         container.scrollTo({ top: container.scrollHeight, behavior: 'smooth' });
       } else {
@@ -2612,13 +2631,10 @@
   }
 
   function scrollChatToBottomIfNear(container, threshold = 80) {
+    if (!container) return;
     const isNearBottom = (container.scrollHeight - container.scrollTop - container.clientHeight) <= threshold;
     if (!isNearBottom) return;
-    requestAnimationFrame(() => {
-      container.style.scrollBehavior = 'auto';
-      container.scrollTop = container.scrollHeight;
-      container.style.removeProperty('scroll-behavior');
-    });
+    scrollChatToBottom(container, false);
   }
 
   function createSuggestionsDetails(suggestions) {
