@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <title>AIAng empty comments fixture</title>
+  <link rel="stylesheet" href="../content.css">
+  <style>
+    body { margin: 0; padding: 48px; background: #eef0f2; font: 16px/1.6 system-ui, sans-serif; }
+    main { width: min(760px, 100%); margin: auto; padding: 28px; border-radius: 20px; background: white; }
+  </style>
+</head>
+<body data-summary-requests="0" data-glossary-requests="0" data-comment-generation-requests="0">
+  <main>
+    <h1>댓글 없는 게시물</h1>
+    <article data-aiang-article-body>
+      <p>댓글 반응 요약의 빈 상태와 LLM, GPU 용어 사전을 검증하는 본문입니다.</p>
+    </article>
+    <section id="comments" data-slot="card">
+      <h2>댓글 (0)</h2>
+      <form>
+        <div class="comment-body">댓글을 입력하세요</div>
+        <textarea placeholder="댓글을 입력하세요"></textarea>
+      </form>
+    </section>
+  </main>
+  <script>
+    if (new URLSearchParams(location.search).has('with-comments')) {
+      document.querySelector('#comments h2').textContent = '댓글 (2)';
+      const list = document.createElement('ul');
+      list.innerHTML = [
+        '<li class="comment-item"><div class="comment-body">첫 번째 실제 댓글입니다.</div></li>',
+        '<li class="comment-item"><div class="comment-body">두 번째 실제 댓글입니다.</div></li>'
+      ].join('');
+      document.querySelector('#comments').prepend(list);
+    }
+    window.chrome = {
+      runtime: {
+        lastError: null,
+        getURL: value => `../${value}`,
+        sendMessage(message, callback) {
+          if (message.type === 'GET_SETTINGS') {
+            callback({ ok: true, settings: { enabled: true } });
+            return;
+          }
+          if (message.type === 'SUMMARIZE_REACTIONS') {
+            document.body.dataset.summaryRequests = String(Number(document.body.dataset.summaryRequests) + 1);
+            document.body.dataset.commentCount = String(message.commentCount);
+          }
+          if (message.type === 'BUILD_GLOSSARY') {
+            document.body.dataset.glossaryRequests = String(Number(document.body.dataset.glossaryRequests) + 1);
+            document.body.dataset.glossarySource = message.text;
+            callback({ ok: true, glossary: '## 용어\n\n- **LLM** — 대규모 언어 모델입니다.\n- **GPU** — 그래픽 처리 장치입니다.' });
+            return;
+          }
+          if (message.type === 'GENERATE_COMMENT') {
+            document.body.dataset.commentGenerationRequests = String(
+              Number(document.body.dataset.commentGenerationRequests) + 1
+            );
+            document.body.dataset.commentGenerationTone = message.tone;
+            document.body.dataset.commentGenerationSource = message.postText;
+            callback({ ok: true, comment: '본문을 읽고 생성한 댓글입니다.' });
+            return;
+          }
+          callback({ ok: true, summary: '호출되면 안 되는 응답' });
+        }
+      },
+      storage: { onChanged: { addListener() {} } }
+    };
+  </script>
+  <script src="../shared/review-presentation.js"></script>
+  <script src="../content.js"></script>
+</body>
+</html>

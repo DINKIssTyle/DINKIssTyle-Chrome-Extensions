@@ -1116,6 +1116,19 @@
     showToast(message, 'error', 3200, true);
   }
 
+  function getActionLoadingLabel(action) {
+    if (action === POST_SUMMARY_ACTION.id) {
+      return promptCatalog?.postSummary?.readingLabel || '게시물 요약 중';
+    }
+    if (action === COMMENT_REACTION_ACTION.id) {
+      return promptCatalog?.reactionSummary?.readingLabel || '댓글 반응 분석 중';
+    }
+    if (action === TERM_GLOSSARY_ACTION.id) {
+      return promptCatalog?.glossary?.readingLabel || '용어 사전 생성 중';
+    }
+    return null;
+  }
+
   function setButtonLoading(button, loading, action) {
     if (!button) return;
     button.disabled = false;
@@ -1131,14 +1144,23 @@
           '<span class="aiang-loading-label">처리 중</span>',
           '<span class="aiang-loading-cancel" aria-hidden="true">×</span>'
         ].join('');
+        const specificLabel = getActionLoadingLabel(action);
+        if (specificLabel) {
+          const labelElement = loadingContent.querySelector('.aiang-loading-label');
+          if (labelElement) labelElement.textContent = specificLabel;
+        }
         button.append(loadingContent);
       }
     } else {
       button.querySelector('.aiang-loading-content')?.remove();
     }
+    const specificLabel = getActionLoadingLabel(action);
+    const loadingAria = specificLabel
+      ? `${specificLabel}, 다시 누르면 취소`
+      : `${LABELS[action]} 처리 중, 다시 누르면 취소`;
     button.setAttribute(
       'aria-label',
-      loading ? `${LABELS[action]} 처리 중, 다시 누르면 취소` : LABELS[action]
+      loading ? loadingAria : LABELS[action]
     );
   }
 
@@ -2820,6 +2842,16 @@
       }
     };
 
+    const prefillPromptToInput = (promptText) => {
+      if (!input || !promptText) return;
+      input.value = String(promptText).trim();
+      adjustInputHeight();
+      input.focus();
+      const len = input.value.length;
+      input.setSelectionRange(len, len);
+      showToast('질문이 입력창에 채워졌습니다. 수정 후 전송해 보세요.', 'info');
+    };
+
     const renderActionChipButton = (chip) => {
       const btn = document.createElement('button');
       btn.type = 'button';
@@ -2829,15 +2861,55 @@
       if (isActiveThisChip) {
         btn.disabled = false;
         btn.classList.add('is-reading');
-        btn.setAttribute('aria-label', `${chip.label} (취소하려면 클릭)`);
-        btn.innerHTML = `<span class="aiang-spinner"></span><span>${chip.label} 중</span><span class="aiang-chip-cancel-icon" aria-hidden="true">✕</span>`;
+        const readingLabel = chip.readingLabel || (chip.label.endsWith('요약') ? `${chip.label} 중` : `${chip.label} 처리 중`);
+        btn.setAttribute('aria-label', `${readingLabel} (취소하려면 클릭)`);
+        btn.innerHTML = `<span class="aiang-spinner"></span><span>${readingLabel}</span><span class="aiang-chip-cancel-icon" aria-hidden="true">✕</span>`;
         btn.addEventListener('click', cancelActiveAction);
       } else {
         const isBusy = isBusyAnswering || isReadingPost;
         btn.disabled = isBusy;
-        btn.setAttribute('aria-label', chip.label);
+        const tooltip = `${chip.label} (Shift+클릭 시 입력창에 작성)`;
+        btn.title = tooltip;
+        btn.setAttribute('aria-label', tooltip);
         btn.innerHTML = `${chip.icon}<span>${chip.label}</span>`;
-        btn.addEventListener('click', () => { if (!btn.disabled) chip.onClick(); });
+
+        let pressTimer = null;
+        let isLongPress = false;
+
+        const handleTrigger = (isPrefill) => {
+          if (btn.disabled) return;
+          chip.onClick(isPrefill);
+        };
+
+        btn.addEventListener('click', (e) => {
+          if (isLongPress) {
+            isLongPress = false;
+            return;
+          }
+          handleTrigger(Boolean(e.shiftKey));
+        });
+
+        btn.addEventListener('touchstart', () => {
+          if (btn.disabled) return;
+          isLongPress = false;
+          pressTimer = setTimeout(() => {
+            isLongPress = true;
+            handleTrigger(true);
+          }, 500);
+        }, { passive: true });
+
+        btn.addEventListener('touchend', () => {
+          if (pressTimer) {
+            clearTimeout(pressTimer);
+            pressTimer = null;
+          }
+        });
+        btn.addEventListener('touchcancel', () => {
+          if (pressTimer) {
+            clearTimeout(pressTimer);
+            pressTimer = null;
+          }
+        });
       }
       return btn;
     };
@@ -2849,21 +2921,69 @@
       if (hasReadPost()) {
         if (isBoardChat) {
           const chips = [
-            { id: 'boardIssues', label: followupConfig.boardIssues?.label || '주요 이슈', icon: ICONS.sparkle, onClick: () => sendPromptMessage(followupConfig.boardIssues?.prompt, followupConfig.boardIssues?.label || '주요 이슈', 'boardIssues') },
-            { id: 'boardViews', label: followupConfig.boardViews?.label || '조횟수가 높은 글', icon: ICONS.eye, onClick: () => sendPromptMessage(followupConfig.boardViews?.prompt, followupConfig.boardViews?.label || '조횟수가 높은 글', 'boardViews') },
-            { id: 'boardLikes', label: followupConfig.boardLikes?.label || '추천수가 높은 글', icon: ICONS.thumb, onClick: () => sendPromptMessage(followupConfig.boardLikes?.prompt, followupConfig.boardLikes?.label || '추천수가 높은 글', 'boardLikes') }
+            {
+              id: 'boardIssues',
+              label: followupConfig.boardIssues?.label || '주요 이슈',
+              readingLabel: followupConfig.boardIssues?.readingLabel || '주요 이슈 분석 중',
+              icon: ICONS.sparkle,
+              onClick: (isPrefill) => {
+                const prompt = followupConfig.boardIssues?.prompt;
+                if (isPrefill) return prefillPromptToInput(prompt);
+                sendPromptMessage(prompt, followupConfig.boardIssues?.label || '주요 이슈', 'boardIssues');
+              }
+            },
+            {
+              id: 'boardViews',
+              label: followupConfig.boardViews?.label || '조횟수가 높은 글',
+              readingLabel: followupConfig.boardViews?.readingLabel || '인기 글 찾는 중',
+              icon: ICONS.eye,
+              onClick: (isPrefill) => {
+                const prompt = followupConfig.boardViews?.prompt;
+                if (isPrefill) return prefillPromptToInput(prompt);
+                sendPromptMessage(prompt, followupConfig.boardViews?.label || '조횟수가 높은 글', 'boardViews');
+              }
+            },
+            {
+              id: 'boardLikes',
+              label: followupConfig.boardLikes?.label || '추천수가 높은 글',
+              readingLabel: followupConfig.boardLikes?.readingLabel || '추천 글 찾는 중',
+              icon: ICONS.thumb,
+              onClick: (isPrefill) => {
+                const prompt = followupConfig.boardLikes?.prompt;
+                if (isPrefill) return prefillPromptToInput(prompt);
+                sendPromptMessage(prompt, followupConfig.boardLikes?.label || '추천수가 높은 글', 'boardLikes');
+              }
+            }
           ];
           for (const c of chips) {
             actionsBar.append(renderActionChipButton(c));
           }
         } else {
           const chips = [
-            { id: 'postSummary', label: followupConfig.postSummary?.label || '게시물 요약', icon: ICONS.sparkle, onClick: () => sendPromptMessage(followupConfig.postSummary?.prompt, followupConfig.postSummary?.label || '게시물 요약', 'postSummary') },
-            { id: 'commentSummary', label: followupConfig.commentSummary?.label || '댓글 요약', icon: ICONS.commentAdd, onClick: () => {
+            {
+              id: 'postSummary',
+              label: followupConfig.postSummary?.label || '게시물 요약',
+              readingLabel: followupConfig.postSummary?.readingLabel || '게시물 요약 중',
+              icon: ICONS.sparkle,
+              onClick: (isPrefill) => {
+                const prompt = followupConfig.postSummary?.prompt;
+                if (isPrefill) return prefillPromptToInput(prompt);
+                sendPromptMessage(prompt, followupConfig.postSummary?.label || '게시물 요약', 'postSummary');
+              }
+            },
+            {
+              id: 'commentSummary',
+              label: followupConfig.commentSummary?.label || '댓글 요약',
+              readingLabel: followupConfig.commentSummary?.readingLabel || '댓글 요약 중',
+              icon: ICONS.commentAdd,
+              onClick: (isPrefill) => {
                 const articleBody = document.querySelector('[data-aiang-article-body]') || findArticleBody();
                 const comments = articleBody ? collectCommentTexts(articleBody) : [];
                 const label = followupConfig.commentSummary?.label || '댓글 요약';
                 if (!comments.length) {
+                  if (isPrefill) {
+                    return prefillPromptToInput(followupConfig.commentSummary?.promptWithoutComments || '현재 이 게시물에 등록된 댓글이 없습니다.');
+                  }
                   history.push({ role: 'user', content: label, displayText: label });
                   appendMessageBubble('user', label, label);
                   const emptyText = followupConfig.commentSummary?.promptWithoutComments || '현재 이 게시물에 등록된 댓글이 없습니다.';
@@ -2874,9 +2994,24 @@
                 }
                 const commentsSource = buildCommentReactionSource(comments);
                 const template = followupConfig.commentSummary?.promptWithComments || '[게시물 댓글 목록]\n{{commentsContent}}\n\n위 댓글들을 분석하여 전체적인 반응과 찬반 의견, 공통된 분위기를 Markdown으로 요약해 주세요.';
-                sendPromptMessage(template.replace('{{commentsContent}}', commentsSource.text), label, 'commentSummary');
-            }},
-            { id: 'glossary', label: followupConfig.glossary?.label || '용어 사전', icon: ICONS.book, onClick: () => sendPromptMessage(followupConfig.glossary?.prompt, followupConfig.glossary?.label || '용어 사전', 'glossary') }
+                const resolvedPrompt = template.replace('{{commentsContent}}', commentsSource.text);
+                if (isPrefill) {
+                  return prefillPromptToInput(resolvedPrompt.slice(0, 4000));
+                }
+                sendPromptMessage(resolvedPrompt, label, 'commentSummary');
+              }
+            },
+            {
+              id: 'glossary',
+              label: followupConfig.glossary?.label || '용어 사전',
+              readingLabel: followupConfig.glossary?.readingLabel || '용어 정리 중',
+              icon: ICONS.book,
+              onClick: (isPrefill) => {
+                const prompt = followupConfig.glossary?.prompt;
+                if (isPrefill) return prefillPromptToInput(prompt);
+                sendPromptMessage(prompt, followupConfig.glossary?.label || '용어 사전', 'glossary');
+              }
+            }
           ];
           for (const c of chips) {
             actionsBar.append(renderActionChipButton(c));
@@ -2957,7 +3092,8 @@
       const currentRequestId = readRequestId;
       chatStreamHandlers.set(currentRequestId, content => {
         if (!isReadingPost || currentRequestId !== readRequestId) return;
-        readAssistantEntry.content = content || '…';
+        const streamText = String(content || '').replace(/^(?:AI|답변|Assistant):\s*/i, '');
+        readAssistantEntry.content = streamText || '…';
         if (readAssistantBubble?.isConnected) {
           const wasNearBottom = (messages.scrollHeight - messages.scrollTop - messages.clientHeight) <= 120;
           renderAssistantContent(readAssistantBubble, readAssistantEntry.content);
@@ -2979,11 +3115,15 @@
           ]
         });
         if (currentRequestId !== readRequestId) return;
-        const answer = String(response?.message || '').trim() || fallbackAnswer;
-        readAssistantEntry.content = answer;
+        const rawAnswer = String(response?.message || '').trim() || fallbackAnswer;
+        let answer = rawAnswer.replace(/^(?:AI|답변|Assistant):\s*/i, '').trim();
+        if ((answer.startsWith('"') && answer.endsWith('"')) || (answer.startsWith('“') && answer.endsWith('”'))) {
+          answer = answer.slice(1, -1).trim();
+        }
+        readAssistantEntry.content = answer || fallbackAnswer;
         if (readAssistantBubble?.isConnected) {
           const wasNearBottom = (messages.scrollHeight - messages.scrollTop - messages.clientHeight) <= 120;
-          renderAssistantContent(readAssistantBubble, answer);
+          renderAssistantContent(readAssistantBubble, readAssistantEntry.content);
           if (wasNearBottom) {
             scrollChatToBottom(messages, true);
           }
@@ -3727,6 +3867,67 @@
       }, duration);
     }
     return toast;
+  }
+
+  let activeDownloadToast = null;
+
+  function showDownloadProgressToast(progress, modelName) {
+    const name = modelName || '온디바이스 AI';
+    const percent = Math.min(100, Math.max(0, Number(progress?.percent) || 0));
+    const loaded = Number(progress?.loaded) || 0;
+    const total = Number(progress?.total) || 0;
+
+    if (percent >= 100 && (!activeDownloadToast || !activeDownloadToast.isConnected)) {
+      return null;
+    }
+
+    let sizeText = '';
+    if (total > 0) {
+      sizeText = ` (${(loaded / (1024 * 1024)).toFixed(0)} / ${(total / (1024 * 1024)).toFixed(0)} MB)`;
+    }
+
+    const message = percent >= 100
+      ? `${name} 모델 다운로드 완료! 작업을 시작합니다.`
+      : `${name} 모델 다운로드 중... ${percent}%${sizeText}`;
+
+    if (activeDownloadToast && activeDownloadToast.isConnected) {
+      const textSpan = activeDownloadToast.querySelector('span');
+      if (textSpan) textSpan.textContent = message;
+      const barFill = activeDownloadToast.querySelector('.toast-progress-fill');
+      if (barFill) barFill.style.width = `${percent}%`;
+      if (percent >= 100) {
+        setTimeout(() => {
+          activeDownloadToast?._aiangCleanup?.();
+          activeDownloadToast?.remove();
+          activeDownloadToast = null;
+        }, 2200);
+      }
+      return activeDownloadToast;
+    }
+
+    if (percent >= 100) return null;
+
+    const toast = showToast(message, 'info', 0);
+    activeDownloadToast = toast;
+
+    const progressTrack = document.createElement('div');
+    progressTrack.className = 'toast-progress-track';
+    progressTrack.style.cssText = 'width: 100%; height: 4px; border-radius: 2px; background: rgba(128,128,128,0.25); margin-top: 6px; overflow: hidden;';
+    const progressFill = document.createElement('div');
+    progressFill.className = 'toast-progress-fill';
+    progressFill.style.cssText = `width: ${percent}%; height: 100%; background: #3b82f6; transition: width 150ms ease-out;`;
+    progressTrack.appendChild(progressFill);
+    toast.appendChild(progressTrack);
+
+    return toast;
+  }
+
+  if (typeof chrome !== 'undefined' && chrome.runtime?.onMessage) {
+    chrome.runtime.onMessage.addListener((message) => {
+      if (message?.type === 'BUILTIN_AI_DOWNLOAD_PROGRESS' && message.progress) {
+        showDownloadProgressToast(message.progress, message.modelName);
+      }
+    });
   }
 
   function updateRequestProgress(message) {

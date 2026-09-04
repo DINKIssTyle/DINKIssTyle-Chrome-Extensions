@@ -4,6 +4,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
   <title>AIAng 설정</title>
   <link rel="icon" type="image/png" sizes="16x16" href="icons/icon16.png">
   <link rel="stylesheet" href="options.css">
@@ -25,7 +26,7 @@
         <div class="section-heading">
           <div>
             <h2>AI 연결</h2>
-            <p>LM Studio 같은 OpenAI 호환 서버 또는 Chrome 내장 Gemini Nano를 선택하세요.</p>
+            <p id="ai-connect-description">LM Studio 같은 OpenAI 호환 서버 또는 Chrome 내장 Gemini Nano를 선택하세요.</p>
           </div>
           <label class="switch-row">
             <input id="enabled" type="checkbox">
@@ -39,7 +40,7 @@
             <span>AI 제공자</span>
             <select id="provider">
               <option value="openai">OpenAI 호환 API · LM Studio</option>
-              <option value="gemini">Google Gemini Nano · Chrome 내장</option>
+              <option value="gemini" id="provider-gemini-option">Google Gemini Nano · Chrome 내장</option>
             </select>
           </label>
 
@@ -86,9 +87,55 @@
             </div>
           </div>
 
-          <div id="gemini-note" class="notice full" hidden>
-            Gemini Nano는 지원되는 데스크톱 Chrome과 기기에서만 작동합니다. 한국어 사용에는 Chrome의 다국어 Prompt API 지원이 필요하며, 첫 사용 시 모델을 내려받을 수
-            있습니다. <b>*모델의 문맥 처리 한계로 인해 게시물 작성 시 본문의 맞춤법, 경어체로 교정, 문장 개선 기능이 올바르지 않을 수 있습니다.</b>
+          <div id="gemini-fields" class="subgrid full" hidden>
+            <div class="field full">
+              <div class="card-toggle-row">
+                <div class="card-toggle-info">
+                  <label for="gemini-keep-alive" class="field-title" id="gemini-keep-alive-title">Gemini Nano 메모리 상주 (빠른 응답)</label>
+                  <p class="field-help">
+                    모델을 시스템 메모리(RAM/VRAM)에 계속 올려두어 첫 요청 시의 긴 로딩 지연(Cold Start)을 방지합니다.
+                  </p>
+                  <p class="field-warning">
+                    ⚠️ 약 1.5~2GB의 시스템 메모리를 상시 점유하며, 브라우저가 모델을 언로드하지 못하도록 백그라운드에서 주기적으로 소량의 핑을 보냅니다. 랩탑(노트북)의 경우 배터리 소모가 증가할 수 있습니다.
+                  </p>
+                </div>
+                <label class="switch-row">
+                  <input id="gemini-keep-alive" type="checkbox">
+                  <span class="switch" aria-hidden="true"></span>
+                </label>
+              </div>
+            </div>
+
+            <div class="field full">
+              <div class="card-toggle-row model-download-card">
+                <div class="model-status-info">
+                  <div class="model-status-header">
+                    <span class="field-title" id="builtin-model-title">내장 AI 모델 상태</span>
+                    <span id="builtin-model-badge" class="status-badge">확인 중...</span>
+                  </div>
+                  <p id="builtin-model-desc" class="field-help">
+                    브라우저 내장 언어 모델의 다운로드 상태입니다.
+                  </p>
+                  <div id="builtin-download-progress-wrap" class="progress-wrap" hidden>
+                    <div class="progress-bar-track">
+                      <div id="builtin-download-bar" class="progress-bar-fill" style="width: 0%"></div>
+                    </div>
+                    <div class="progress-labels">
+                      <span id="builtin-download-percent">0%</span>
+                      <span id="builtin-download-bytes">0 MB / 0 MB</span>
+                    </div>
+                  </div>
+                </div>
+                <div class="model-status-action">
+                  <button id="start-builtin-download" class="outline-button" type="button">모델 다운로드</button>
+                </div>
+              </div>
+            </div>
+
+            <div id="gemini-note" class="notice full">
+              Gemini Nano는 지원되는 데스크톱 Chrome과 기기에서만 작동합니다. 한국어 사용에는 Chrome의 다국어 Prompt API 지원이 필요하며, 첫 사용 시 모델을 내려받을 수
+              있습니다. <b>*모델의 문맥 처리 한계로 인해 게시물 작성 시 본문의 맞춤법, 경어체로 교정, 문장 개선 기능이 올바르지 않을 수 있습니다.</b>
+            </div>
           </div>
         </div>
       </section>

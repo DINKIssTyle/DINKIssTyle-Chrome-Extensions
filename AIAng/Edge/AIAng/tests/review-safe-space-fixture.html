@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <title>AIAng review safe space fixture</title>
+  <link rel="stylesheet" href="../content.css">
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; min-height: 1200px; background: #eef0f2; font: 16px/1.6 system-ui, sans-serif; }
+    .layout { display: grid; grid-template-columns: 760px 300px; gap: 44px; margin: 28px 0 0 48px; }
+    main, aside { border-radius: 20px; background: white; padding: 28px; }
+    textarea { display: block; width: 100%; height: 400px; padding: 20px; border: 1px solid #ccd4df; border-radius: 12px; font: inherit; }
+    aside { height: 650px; }
+  </style>
+</head>
+<body>
+  <div class="layout">
+    <main>
+      <h1>글 영역</h1>
+      <textarea placeholder="댓글을 입력하세요">첫 문장입니다.\n둘째 문장입니다.\n셋째 문장입니다.\n넷째 문장입니다.\n마지막 기슬을 고칩니다.</textarea>
+    </main>
+    <aside><h2>오른쪽 사이드바</h2></aside>
+  </div>
+  <script>
+    window.chrome = {
+      runtime: {
+        lastError: null,
+        getURL: value => value,
+        sendMessage(message, callback) {
+          if (message.type === 'GET_SETTINGS') return callback({ ok: true, settings: { enabled: true } });
+          if (message.type === 'PROCESS_TEXT') return callback({
+            ok: true,
+            correctedText: message.text.replace('기슬', '기술'),
+            suggestions: [{ original: '기슬', replacement: '기술', start: 47, end: 49, reason: '맞춤법 교정' }]
+          });
+          callback({ ok: true });
+        }
+      },
+      storage: { onChanged: { addListener() {} } }
+    };
+  </script>
+  <script src="../shared/review-presentation.js"></script>
+  <script src="../content.js"></script>
+</body>
+</html>

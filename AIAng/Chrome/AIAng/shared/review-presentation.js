@@ -39,6 +39,10 @@
         desktop: { spellcheck: 'inline' },
         tablet: { spellcheck: 'modal' }
       },
+      edge: {
+        desktop: { spellcheck: 'inline' },
+        tablet: { spellcheck: 'modal' }
+      },
       safari: {
         mac: { spellcheck: 'inline' },
         ipad: {},
@@ -57,9 +61,14 @@
   function detectRuntimeProfile(environment = globalThis) {
     const runtime = environment.chrome?.runtime ?? environment.browser?.runtime;
     const extensionBaseURL = runtime?.getURL?.('') || '';
-    const browser = extensionBaseURL.startsWith('safari-web-extension:') ? 'safari' : 'chrome';
     const navigatorValue = environment.navigator ?? {};
     const userAgent = String(navigatorValue.userAgent || '');
+    let browser = 'chrome';
+    if (extensionBaseURL.startsWith('safari-web-extension:')) {
+      browser = 'safari';
+    } else if (extensionBaseURL.startsWith('ms-browser-extension:') || userAgent.includes('Edg/')) {
+      browser = 'edge';
+    }
     const platform = String(navigatorValue.platform || '');
     const maxTouchPoints = Number(navigatorValue.maxTouchPoints || 0);
     const isIPadOS = /iPad/i.test(userAgent) || (platform === 'MacIntel' && maxTouchPoints > 1);

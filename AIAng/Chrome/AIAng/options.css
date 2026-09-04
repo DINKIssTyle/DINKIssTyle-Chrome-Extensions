@@ -1,5 +1,5 @@
 :root {
-  color-scheme: light;
+  color-scheme: light dark;
   --background: oklch(100% 0 0);
   --foreground: oklch(12.9% .042 264.695);
   --card: oklch(100% 0 0);
@@ -42,6 +42,44 @@
     --success: oklch(72.3% .219 149.579);
     --control-background: color-mix(in oklch, var(--input) 30%, transparent);
     --control-hover: color-mix(in oklch, var(--input) 50%, transparent);
+  }
+
+  select,
+  input,
+  textarea {
+    color-scheme: dark;
+  }
+
+  select option {
+    background-color: #1e2227;
+    color: #f0f6fc;
+  }
+
+  select option:checked {
+    background-color: #313843;
+    color: #ffffff;
+  }
+
+  select option:hover {
+    background-color: #38424d;
+    color: #ffffff;
+  }
+
+  .model-menu {
+    background-color: #1e2227;
+    border-color: #3a414b;
+    box-shadow: 0 12px 24px -4px rgba(0, 0, 0, 0.5), 0 4px 8px -2px rgba(0, 0, 0, 0.3);
+  }
+
+  .model-option:hover,
+  .model-option:focus-visible {
+    background-color: #313843;
+    color: #ffffff;
+  }
+
+  .model-option[aria-selected="true"] {
+    background-color: #38424d;
+    color: #ffffff;
   }
 }
 
@@ -151,9 +189,20 @@ textarea {
   border-radius: var(--radius-md);
   background: var(--control-background);
   color: var(--foreground);
+  color-scheme: light dark;
   outline: 0;
   box-shadow: var(--shadow-xs);
   transition: border-color 150ms cubic-bezier(.4, 0, .2, 1), box-shadow 150ms cubic-bezier(.4, 0, .2, 1);
+}
+
+select {
+  cursor: pointer;
+}
+
+select option {
+  background-color: var(--card, #ffffff);
+  color: var(--foreground, #111827);
+  padding: 8px 12px;
 }
 
 input, select { height: 36px; padding: 0 12px; }
@@ -209,6 +258,12 @@ input:disabled { cursor: not-allowed; opacity: .58; background: var(--muted); }
   outline: none;
   background: var(--control-hover);
   color: var(--accent-foreground);
+}
+
+.model-option[aria-selected="true"] {
+  background: var(--accent);
+  color: var(--accent-foreground);
+  font-weight: 600;
 }
 
 .text-button {
@@ -392,11 +447,199 @@ button:disabled { cursor: wait; opacity: .62; }
   line-height: 1.55;
 }
 
+.notice a {
+  color: var(--foreground);
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+.notice a:hover {
+  color: var(--primary);
+}
+
 .counter { justify-self: end; margin-top: -2px; }
 .footer-actions { padding: 4px 2px 0; display: flex; align-items: center; justify-content: flex-end; gap: 9px; }
 #status { flex: 1 1 auto; margin: 0; color: var(--muted-foreground); font-size: 11px; }
 #status.success { color: var(--success); }
 #status.error { color: var(--destructive); }
+.card-toggle-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--control-background);
+}
+
+.card-toggle-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.field-title {
+  color: var(--foreground);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.field-help {
+  margin: 0;
+  color: var(--muted-foreground);
+  font-size: 11.5px;
+  line-height: 1.5;
+}
+
+.field-warning {
+  margin: 4px 0 0;
+  color: #d97706;
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.model-download-card {
+  align-items: center;
+}
+
+.model-status-info {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.model-status-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.status-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 9999px;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.4;
+  background: var(--muted);
+  color: var(--muted-foreground);
+  border: 1px solid var(--border);
+}
+
+.status-badge.ready {
+  background: color-mix(in oklch, #10b981 15%, transparent);
+  color: #10b981;
+  border-color: color-mix(in oklch, #10b981 30%, transparent);
+}
+
+.status-badge.needed {
+  background: color-mix(in oklch, #f59e0b 15%, transparent);
+  color: #f59e0b;
+  border-color: color-mix(in oklch, #f59e0b 30%, transparent);
+}
+
+.status-badge.downloading {
+  background: color-mix(in oklch, #3b82f6 15%, transparent);
+  color: #3b82f6;
+  border-color: color-mix(in oklch, #3b82f6 30%, transparent);
+  animation: pulse-glow 2s infinite ease-in-out;
+}
+
+.status-badge.unavailable {
+  background: color-mix(in oklch, #ef4444 15%, transparent);
+  color: #ef4444;
+  border-color: color-mix(in oklch, #ef4444 30%, transparent);
+}
+
+@keyframes pulse-glow {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+
+.progress-wrap {
+  margin-top: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 100%;
+  max-width: 480px;
+}
+
+.progress-bar-track {
+  width: 100%;
+  height: 8px;
+  border-radius: 9999px;
+  background: var(--muted);
+  border: 1px solid var(--border);
+  overflow: hidden;
+  position: relative;
+}
+
+.progress-bar-fill {
+  height: 100%;
+  border-radius: 9999px;
+  background: linear-gradient(90deg, #3b82f6, #6366f1, #8b5cf6);
+  background-size: 200% 100%;
+  animation: progress-shimmer 2s infinite linear;
+  transition: width 200ms ease-out;
+}
+
+@keyframes progress-shimmer {
+  0% { background-position: 100% 0; }
+  100% { background-position: -100% 0; }
+}
+
+.progress-labels {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted-foreground);
+}
+
+.model-status-action {
+  flex: 0 0 auto;
+}
+
+.notice {
+  padding: 14px 16px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  background: var(--muted);
+  color: var(--foreground);
+  font-size: 11.5px;
+  line-height: 1.65;
+}
+
+.notice code {
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: var(--control-background);
+  color: var(--foreground);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 11px;
+}
+
+.notice a {
+  color: var(--primary);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.notice a:hover {
+  opacity: 0.85;
+}
+
 .sr-only { position: absolute !important; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
 
 .settings-footer {

@@ -1,0 +1,212 @@
+<!doctype html>
+<html lang="ko">
+
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>AIAng 설정</title>
+  <link rel="icon" type="image/png" sizes="16x16" href="icons/icon16.png">
+  <link rel="stylesheet" href="options.css">
+</head>
+
+<body>
+  <main class="shell">
+    <header class="hero">
+      <img class="logo" src="icons/icon128.png" alt="" width="52" height="52">
+      <div>
+        <p class="eyebrow">Damoang writing assistant</p>
+        <h1>AIAng</h1>
+        <p>다모앙 글과 댓글을 내 AI로 교정합니다.</p>
+      </div>
+    </header>
+
+    <form id="settings-form">
+      <section class="card">
+        <div class="section-heading">
+          <div>
+            <h2>AI 연결</h2>
+            <p id="ai-connect-description">LM Studio 같은 OpenAI 호환 서버 또는 Chrome 내장 Gemini Nano를 선택하세요.</p>
+          </div>
+          <label class="switch-row">
+            <input id="enabled" type="checkbox">
+            <span class="switch" aria-hidden="true"></span>
+            <span>사용</span>
+          </label>
+        </div>
+
+        <div class="field-grid">
+          <label class="field full">
+            <span>AI 제공자</span>
+            <select id="provider">
+              <option value="openai">OpenAI 호환 API · LM Studio</option>
+              <option value="gemini" id="provider-gemini-option">Google Gemini Nano · Chrome 내장</option>
+            </select>
+          </label>
+
+          <div id="openai-fields" class="subgrid full">
+            <label class="field full">
+              <span>API 기본 주소</span>
+              <input id="endpoint" type="url" placeholder="localhost:1234" autocomplete="off" spellcheck="false">
+              <small>주소:포트 만 입력하세요.</small>
+            </label>
+
+            <label class="field full">
+              <span>API 키 <em>선택</em></span>
+              <div class="password-row">
+                <input id="api-key" type="password" placeholder="로컬 서버는 비워 둘 수 있습니다" autocomplete="off"
+                  spellcheck="false">
+                <button id="toggle-key" class="text-button" type="button">보기</button>
+              </div>
+              <small>API Key가 PC에 저장됩니다. 공용 PC 및 보안이 확실하지 않은곳에서 입력하지 마세요.</small>
+            </label>
+
+            <label class="field full">
+              <span>모델</span>
+              <div class="model-control">
+                <div class="model-row">
+                  <input id="model" type="text" list="model-list" placeholder="local-model" autocomplete="off"
+                    spellcheck="false" role="combobox" aria-autocomplete="list" aria-controls="model-menu"
+                    aria-expanded="false">
+                  <datalist id="model-list"></datalist>
+                  <button id="load-models" class="outline-button" type="button">모델 불러오기</button>
+                </div>
+                <div id="model-menu" class="model-menu" role="listbox" aria-label="사용 가능한 모델" hidden></div>
+              </div>
+            </label>
+
+            <div class="field full">
+              <div class="field-label-row">
+                <label for="temperature">Temperature</label>
+                <label class="checkbox-row" for="temperature-auto">
+                  <input id="temperature-auto" type="checkbox">
+                  <span>자동</span>
+                </label>
+              </div>
+              <input id="temperature" type="number" min="0" max="2" step="0.1">
+            </div>
+          </div>
+
+          <div id="gemini-fields" class="subgrid full" hidden>
+            <div class="field full">
+              <div class="card-toggle-row">
+                <div class="card-toggle-info">
+                  <label for="gemini-keep-alive" class="field-title" id="gemini-keep-alive-title">Gemini Nano 메모리 상주 (빠른 응답)</label>
+                  <p class="field-help">
+                    모델을 시스템 메모리(RAM/VRAM)에 계속 올려두어 첫 요청 시의 긴 로딩 지연(Cold Start)을 방지합니다.
+                  </p>
+                  <p class="field-warning">
+                    ⚠️ 약 1.5~2GB의 시스템 메모리를 상시 점유하며, 브라우저가 모델을 언로드하지 못하도록 백그라운드에서 주기적으로 소량의 핑을 보냅니다. 랩탑(노트북)의 경우 배터리 소모가 증가할 수 있습니다.
+                  </p>
+                </div>
+                <label class="switch-row">
+                  <input id="gemini-keep-alive" type="checkbox">
+                  <span class="switch" aria-hidden="true"></span>
+                </label>
+              </div>
+            </div>
+
+            <div class="field full">
+              <div class="card-toggle-row model-download-card">
+                <div class="model-status-info">
+                  <div class="model-status-header">
+                    <span class="field-title" id="builtin-model-title">내장 AI 모델 상태</span>
+                    <span id="builtin-model-badge" class="status-badge">확인 중...</span>
+                  </div>
+                  <p id="builtin-model-desc" class="field-help">
+                    브라우저 내장 언어 모델의 다운로드 상태입니다.
+                  </p>
+                  <div id="builtin-download-progress-wrap" class="progress-wrap" hidden>
+                    <div class="progress-bar-track">
+                      <div id="builtin-download-bar" class="progress-bar-fill" style="width: 0%"></div>
+                    </div>
+                    <div class="progress-labels">
+                      <span id="builtin-download-percent">0%</span>
+                      <span id="builtin-download-bytes">0 MB / 0 MB</span>
+                    </div>
+                  </div>
+                </div>
+                <div class="model-status-action">
+                  <button id="start-builtin-download" class="outline-button" type="button">모델 다운로드</button>
+                </div>
+              </div>
+            </div>
+
+            <div id="gemini-note" class="notice full">
+              Gemini Nano는 지원되는 데스크톱 Chrome과 기기에서만 작동합니다. 한국어 사용에는 Chrome의 다국어 Prompt API 지원이 필요하며, 첫 사용 시 모델을 내려받을 수
+              있습니다. <b>*모델의 문맥 처리 한계로 인해 게시물 작성 시 본문의 맞춤법, 경어체로 교정, 문장 개선 기능이 올바르지 않을 수 있습니다.</b>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="card">
+        <div class="section-heading compact">
+          <div>
+            <h2>개인화</h2>
+            <p>모든 교정 작업에 덧붙일 나만의 글쓰기 지침입니다.</p>
+          </div>
+        </div>
+        <label class="field">
+          <span class="sr-only">개인화 사용자 지침</span>
+          <textarea id="personalization" rows="6" maxlength="4000"
+            placeholder="예: 나는 언제나 친절한 사람입니다. 다정한 말투와 교양 있는 문장을 사용해 주세요."></textarea>
+          <small class="counter"><span id="personalization-count">0</span>/4000</small>
+        </label>
+      </section>
+
+      <section class="card">
+        <div class="section-heading compact">
+          <div>
+            <h2>서체 크기</h2>
+            <p>모달창의 결과 및 채팅창에 적용할 서체 크기를 설정합니다.</p>
+          </div>
+        </div>
+        <div class="field-grid">
+          <div class="field full radio-group">
+            <label class="radio-row">
+              <input type="radio" name="font-size-mode" id="font-size-mode-damoang" value="damoang" checked>
+              <span>다모앙에 설정한 서체 크기를 따릅니다.</span>
+            </label>
+            <label class="radio-row">
+              <input type="radio" name="font-size-mode" id="font-size-mode-custom" value="custom">
+              <span>직접 서체 크기를 설정합니다.</span>
+            </label>
+          </div>
+
+          <div id="custom-font-size-wrap" class="field full">
+            <div class="segmented-control" role="radiogroup" aria-label="직접 설정할 서체 크기">
+              <label class="segmented-item">
+                <input type="radio" name="font-size-custom" id="font-size-custom-small" value="small">
+                <span>작음</span>
+              </label>
+              <label class="segmented-item">
+                <input type="radio" name="font-size-custom" id="font-size-custom-medium" value="medium" checked>
+                <span>보통</span>
+              </label>
+              <label class="segmented-item">
+                <input type="radio" name="font-size-custom" id="font-size-custom-large" value="large">
+                <span>큼</span>
+              </label>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <div class="footer-actions">
+        <p id="status" role="status" aria-live="polite"></p>
+        <button id="test" class="outline-button" type="button">연결 테스트</button>
+        <button class="primary-button" type="submit">저장</button>
+      </div>
+    </form>
+
+    <footer class="settings-footer">
+      <p>더 많은 DKST Apps: <a href="https://dinkisstyle.net/apps" target="_blank"
+          rel="noopener noreferrer">https://dinkisstyle.net/apps</a></p>
+      <p>© 2026 DINKI'ssTyle</p>
+    </footer>
+  </main>
+  <script src="options.js"></script>
+</body>
+
+</html>

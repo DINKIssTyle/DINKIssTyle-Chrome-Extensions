@@ -1,65 +1,74 @@
-# AIAng
+# AIAng by DKST
 
-`damoang.net`의 제목, 본문, 댓글 입력기에 AI 교정 도구를 추가하는 Chrome 확장 프로그램입니다.
+다모앙(damoang.net)에서만 동작하는 Chrome / Microsoft Edge 확장 프로그램과 Apple(iOS/iPadOS & macOS Safari Web Extension, Mac Catalyst 호스트 설정 앱)을 함께 관리합니다.
 
-<div align="center"><img src="docs/aiang.gif"></div>
+- 앱 이름: AIAng by DKST
+- App Store Connect SKU / 앱 Bundle ID: com.dinkisstyle.aiang
+- 확장 Bundle ID: com.dinkisstyle.aiang.Extension
+- 현재 버전: 0.2.0 (1)
+- 최소 OS: iOS 17 / macOS 14 (Mac Catalyst 17)
+- Apple Intelligence 직접 연동: iOS 26 / macOS 26 이상에서 사용 가능
+- 온디바이스 AI 지원: Chrome Gemini Nano, Microsoft Edge On-Device AI (Aion-1.0-Instruct / Phi-4-mini / Summarizer)
 
-## 기능
+## 프로젝트 열기
 
-- 글 작성·수정 툴바의 맞춤법 검사로 제목과 본문을 함께 검토하고 한 번에 반영
-- 본문 아래의 `맞춤법 검사`, `경어체로 교정`, `문장 개선`, `글 제목 추천`
-- 댓글 아래의 `맞춤법 검사`, `경어체로 교정`, `문장 개선`, `글 꾸미기`, `댓글 생성`
-- 게시물 제목·본문을 읽고 `긍정•동의•응원`, `부정•부동의`, `화가나요`, `농담` 분위기의 댓글 초안을 생성하며 개인화 지침이 있으면 함께 반영
-- 처리 중인 작업 버튼의 `×`를 누르거나 같은 버튼을 다시 눌러 진행 중인 AI 요청 취소
-- Gemini Nano의 맞춤법·경어체·문장 개선은 컨텍스트 용량에 맞춰 문단·문장 단위로 나누고 작업 버튼에 `1/3 처리 중` 형태로 진행률 표시
-- 본문을 바탕으로 200자 이하의 제목 5개를 추천하고 선택한 제목을 제목란에 입력
-- 게시물 보기 화면의 작성자 정보와 본문 사이에서 제목·본문의 Markdown 구조만 추출해 AI 요약 결과를 Markdown 모달로 표시
-- 게시물과 댓글 내용을 함께 분석해 공통 반응·의견 차이·질문·우려·전반적인 분위기를 Markdown으로 요약
-- 게시물 본문에 등장하는 전문용어·약어·고유 개념·은어 등을 추려 Markdown 용어 사전으로 표시
-- 데스크톱 맞춤법 검사 결과를 편집기 위에 인라인으로 표시하고 항목별 또는 전체 적용(그 밖의 조합은 공통 표시 정책을 따름)
-- 맞춤법·경어체·문장 개선·글 꾸미기의 변경 위치, 교정안 팝오버와 세부 사유 표시
-- OpenAI 호환 API/LM Studio와 Chrome 내장 Gemini Nano 지원
-- Temperature 자동 설정 시 OpenAI 호환 요청에서 온도 값을 생략해 서버·모델 기본값 사용
-- 모든 교정 프롬프트에 적용되는 개인화 사용자 지침
-- 다모앙의 글 작성(`/write`)·수정(`/edit`) 화면, SPA 화면 갱신과 `textarea`/Tiptap 댓글 입력기 지원
-- 다모앙의 라이트·다크·AMOLED 색상, 호버 하이라이트, 포커스 링, 라운드 값 자동 반영
-- 본문 속 이미지·미디어를 보호 토큰으로 유지하고 교정문 삽입 시 원래 DOM과 상대 위치 복원
+Chrome에서는 `Chrome/AIAng` 폴더를 `chrome://extensions`의 **압축해제된 확장 프로그램을 로드합니다**에서 선택합니다.
 
-## 설치
+Microsoft Edge에서는 `Edge/AIAng` 폴더를 `edge://extensions`의 **압축해제된 확장 프로그램을 로드합니다**에서 선택합니다. 개발은 항상 Chrome에서 먼저 진행하며, 수정 후 아래 복사 스크립트를 통해 Edge로 덮어씌웁니다.
 
-1. Chrome에서 `chrome://extensions`를 엽니다.
-2. 오른쪽 위의 **개발자 모드**를 켭니다.
-3. **압축해제된 확장 프로그램을 로드합니다**를 누르고 이 `AIAng` 폴더를 선택합니다.
-4. 확장 프로그램 아이콘을 눌러 AI 연결을 설정합니다.
+- **Windows**: `Edge\copy-from-chrome.bat`
+- **macOS / Linux**: `./Edge/copy-from-chrome.sh`
 
-## LM Studio 예시
+iOS/AIAng/AIAng.xcodeproj를 Xcode에서 엽니다. 앱과 확장 타깃의 Signing & Capabilities에서 같은 개발 팀을 선택하고 아래 App Group 및 Keychain Sharing 항목이 개발자 계정에 등록되어 있는지 확인합니다.
 
-- API 기본 주소: `http://localhost:1234/v1`
-- API 키: 비워 둠
-- 모델: **모델 불러오기**를 눌러 현재 로드한 모델을 선택
+- App Group: group.com.dinkisstyle.aiang
+- Keychain Group: $(AppIdentifierPrefix)com.dinkisstyle.aiang.shared
 
-LM Studio에서 Local Server를 먼저 실행해야 합니다.
+실기기에서 앱을 한 번 실행해 AI 설정을 저장한 다음, 설정 앱의 Safari 확장 프로그램 화면에서 **AIAng by DKST**를 켜고 damoang.net 접근을 항상 허용합니다.
 
-## 참고
+AI 제공자, API 주소, 모델, 개인화 설정은 모두 UIKit 호스트 앱에서 관리합니다. Safari 확장에는 웹 옵션 페이지를 포함하지 않으며, 다모앙의 톱니 버튼은 `aiang-dkst://settings` 딥링크로 호스트 앱을 엽니다.
 
-- API 키는 동기화하지 않고 `chrome.storage.local`에 저장합니다.
-- 공개 OpenAI API 같은 장기 비밀 키는 브라우저 확장에 직접 저장하지 말고 개인 프록시나 단기 토큰을 사용하는 편이 안전합니다.
-- 원격 OpenAI 호환 서버를 쓰면 해당 서버 도메인 권한을 저장/테스트 시 요청합니다.
-- OpenAI 호환 요청에는 최대 출력 토큰 값을 보내지 않으며, 출력 길이는 LLM 서버의 기본 설정에 맡깁니다.
-- Temperature의 **자동**을 선택하면 요청에 `temperature` 항목을 보내지 않고 서버·모델의 기본 설정에 맡깁니다.
-- 이미지·미디어 보호 토큰이 AI 응답에서 누락되거나 변형되면 결과 적용을 자동으로 차단합니다.
-- 확장 설정 화면은 운영체제의 라이트·다크 모드에 맞춰 같은 다모앙 디자인 토큰을 사용합니다.
-- Gemini Nano의 사용 가능 여부와 모델 다운로드는 Chrome 및 기기 환경에 따라 다릅니다. 한국어 교정에는 Chrome의 다국어 Prompt API 지원이 필요합니다.
+게시물 보기 화면에서는 게시물 요약, 댓글 반응 요약과 용어 사전을 실행할 수 있습니다. 댓글 입력기에서는 게시물 제목·본문을 바탕으로 `긍정•동의•응원`, `부정•부동의`, `화가나요`, `농담` 분위기의 댓글 초안을 생성할 수 있습니다. 결과의 제목, 목록, 인용문, 표, 코드 및 안전한 링크는 Markdown 형식으로 표시되며, iPhone 화면의 모든 결과 모달은 Safari의 웹 콘텐츠 영역을 가득 채웁니다.
 
-## 개발 검증
+## 공통 웹 확장 코드
 
-댓글 생성 기능은 `shared/features.json`의 `commentGeneration` 값을 `true` 또는 `false`로 바꿔 Chrome과 Safari에서 함께 활성화하거나 비활성화할 수 있습니다. 비활성화하면 양쪽 확장의 댓글 생성 버튼과 요청 처리가 모두 꺼집니다.
+`Chrome/AIAng/content.js`, `content.css`, `shared/prompts.json`, `shared/features.json`, `shared/review-presentation.js`가 웹 UI·AI 프롬프트·기능 플래그·교정 표시 정책의 기준 원본입니다. iOS의 `Copy Shared Web Resources` 빌드 단계가 이 파일들을 Safari 확장 번들에 직접 복사하므로 Resources 디렉터리에 중복 사본이나 심볼릭 링크를 두지 않습니다. 공통 프롬프트 문구는 `shared/prompts.json`, 댓글 생성 활성화 여부는 `shared/features.json`, 브라우저·기기·기능별 인라인/모달 선택은 `shared/review-presentation.js` 한 곳에서 수정합니다.
 
-이 저장소에서는 `content.js`, `content.css`, `shared/prompts.json`, `shared/features.json`, `shared/review-presentation.js`가 Chrome과 Safari의 공통 기준 원본입니다. 프롬프트 문구는 `shared/prompts.json`, 기능 플래그는 `shared/features.json`, 브라우저·기기·기능별 인라인/모달 선택은 `shared/review-presentation.js`에서 관리합니다. iOS의 `Copy Shared Web Resources` 빌드 단계가 다섯 파일을 Safari 확장 번들에 복사합니다. 공통 스크립트가 브라우저와 기기 유형을 판별하고 같은 표시 정책을 사용하며, 설정 화면만 Chrome 옵션 페이지와 Safari 호스트 앱으로 나뉩니다.
+공통 스크립트는 브라우저와 물리적 기기 유형을 런타임에 판별합니다. 현재 데스크톱 Chrome과 Mac Safari의 맞춤법 검사만 인라인으로 표시하고, 태블릿·모바일 및 그 밖의 기능은 모달을 사용합니다. 정의되지 않은 조합은 데스크톱·태블릿·모바일 기본값을 따릅니다. 설정 화면은 Chrome 옵션 페이지와 Safari의 `aiang-dkst://settings` 호스트 앱으로 나뉘며, JSON 응답 형식과 Apple Intelligence guided generation 같은 호출 규약, manifest, 백그라운드 처리만 플랫폼별로 유지합니다.
 
-```bash
-node --test tests/background-core.test.cjs
-node --check background.js
-node --check content.js
-node --check options.js
-```
+## 세션과 개인정보
+
+웹페이지를 앱 안에 다시 띄우지 않습니다. 확장은 실제 Safari의 다모앙 탭에 삽입되므로 로그인 쿠키, 자동 로그인, 로그아웃 상태는 Safari가 관리하고 기존 Safari 세션이 그대로 유지됩니다. 개인 정보 보호 브라우징에서는 별도 세션을 사용하며, 사용자가 확장의 개인 정보 보호 브라우징 접근도 허용해야 합니다.
+
+콘텐츠 스크립트는 damoang.net과 www.damoang.net에서만 실행됩니다. API 키는 공유 Keychain에 저장하고 다모앙 콘텐츠 스크립트에는 반환하지 않습니다. 교정 대상 텍스트는 사용자가 선택한 경우에만 Apple 온디바이스 모델 또는 사용자가 설정한 LLM API로 전달됩니다.
+
+## AI 제공자
+
+- **자동**: 지원 기기에서는 Apple Intelligence를 우선 사용하고, 사용할 수 없거나 입력이 온디바이스 처리 한도를 넘으면 설정된 LLM API를 사용합니다.
+- **Apple Intelligence**: 지원되는 iOS, 기기, 언어 모델이 준비된 경우에만 온디바이스로 처리합니다.
+- **LLM API**: OpenAI 호환 /v1/chat/completions, /v1/models API를 사용합니다. HTTP는 localhost, .local, 사설 IPv4 및 Tailscale 주소에 허용하며, 사용자가 위험 경고를 확인하고 명시적으로 켠 경우 원격 HTTP 주소도 사용할 수 있습니다.
+
+## 명령행 검증
+
+댓글 생성 기능은 `Chrome/AIAng/shared/features.json`의 `commentGeneration` 값 하나로 모든 브라우저를 함께 제어합니다. `false`이면 모든 확장의 댓글 생성 버튼과 요청 처리가 비활성화됩니다.
+
+    node --test Tests/EdgeResourceTests.cjs
+    node --test Tests/SafariResourceTests.cjs
+    node --test Chrome/AIAng/tests/background-core.test.cjs
+    node --check Chrome/AIAng/background.js
+    node --check Chrome/AIAng/content.js
+    node --check Chrome/AIAng/options.js
+    node --check Edge/AIAng/background.js
+    node --check Edge/AIAng/content.js
+    node --check Edge/AIAng/options.js
+    # iOS 빌드 검증
+    xcodebuild -project iOS/AIAng/AIAng.xcodeproj -scheme AIAng \
+      -configuration Debug -sdk iphoneos -destination 'generic/platform=iOS' \
+      -derivedDataPath /private/tmp/aiang-derived CODE_SIGNING_ALLOWED=NO build
+
+    # macOS (Mac Catalyst) 빌드 검증
+    xcodebuild -project iOS/AIAng/AIAng.xcodeproj -scheme AIAng \
+      -configuration Debug -destination 'platform=macOS,variant=Mac Catalyst' \
+      -derivedDataPath /private/tmp/aiang-derived CODE_SIGNING_ALLOWED=NO build
+
+상세 구현 및 출시 계획은 [docs/IMPLEMENTATION_PLAN.md](docs/IMPLEMENTATION_PLAN.md)를 참고하세요.

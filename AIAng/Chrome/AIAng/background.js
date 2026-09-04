@@ -8,7 +8,8 @@ const DEFAULT_SETTINGS = Object.freeze({
   temperatureAuto: false,
   personalization: '',
   fontSizeMode: 'damoang',
-  fontSizeCustom: 'medium'
+  fontSizeCustom: 'medium',
+  geminiKeepAlive: false
 });
 
 let promptCatalog = globalThis.__AIANG_PROMPT_CATALOG__ || null;
@@ -63,10 +64,28 @@ const GEMINI_MIN_CHUNK_CHARS = 240;
 const GEMINI_INPUT_BUDGET_RATIO = 0.3;
 const GEMINI_NEIGHBOR_CONTEXT_CHARS = 180;
 const COMMENT_GENERATION_TONES = new Set(['positive', 'negative', 'angry', 'joke']);
+const GEMINI_KEEP_ALIVE_ALARM = 'aiang-gemini-keep-alive';
+const GEMINI_KEEP_ALIVE_INTERVAL_MINUTES = 1.5;
+
+let cachedGeminiSession = null;
+let cachedSystemPrompt = '';
+
+if (typeof chrome !== 'undefined' && chrome.alarms?.onAlarm) {
+  chrome.alarms.onAlarm.addListener(alarm => {
+    if (alarm.name === GEMINI_KEEP_ALIVE_ALARM) {
+      performGeminiKeepAlivePing().catch(() => {});
+    }
+  });
+}
+
+if (typeof chrome !== 'undefined' && chrome.alarms) {
+  getSettings().then(syncGeminiKeepAliveState).catch(() => {});
+}
 
 chrome.runtime.onInstalled.addListener(async () => {
   const current = await chrome.storage.local.get(DEFAULT_SETTINGS);
   await chrome.storage.local.set(current);
+  syncGeminiKeepAliveState(sanitizeSettings(current)).catch(() => {});
 });
 
 chrome.action.onClicked.addListener(() => chrome.runtime.openOptionsPage());
@@ -93,17 +112,21 @@ async function handleMessage(message, sender) {
           features,
           prompts,
           fontSizeMode: settings.fontSizeMode,
-          fontSizeCustom: settings.fontSizeCustom
+          fontSizeCustom: settings.fontSizeCustom,
+          geminiKeepAlive: settings.geminiKeepAlive
         }
       };
     }
     case 'GET_SETTINGS_FULL':
       assertExtensionPage(sender);
       return { settings: await getSettings() };
-    case 'SAVE_SETTINGS':
+    case 'SAVE_SETTINGS': {
       assertExtensionPage(sender);
       await chrome.storage.local.set(sanitizeSettings(message.settings));
-      return { settings: await getSettings() };
+      const saved = await getSettings();
+      syncGeminiKeepAliveState(saved).catch(() => {});
+      return { settings: saved };
+    }
     case 'OPEN_OPTIONS':
       await chrome.runtime.openOptionsPage();
       return {};
@@ -144,6 +167,12 @@ async function handleMessage(message, sender) {
     case 'LIST_MODELS':
       assertExtensionPage(sender);
       return { models: await listModels(sanitizeSettings(message.settings)) };
+    case 'GET_BUILTIN_AI_STATUS':
+      assertExtensionPage(sender);
+      return await getBuiltInAIStatus();
+    case 'START_BUILTIN_AI_DOWNLOAD':
+      assertExtensionPage(sender);
+      return await startBuiltInAIDownload();
     default:
       throw new Error('지원하지 않는 요청입니다.');
   }
@@ -214,7 +243,8 @@ function sanitizeSettings(input = {}) {
     temperatureAuto: input.temperatureAuto === true,
     personalization: String(input.personalization || '').trim().slice(0, 4000),
     fontSizeMode,
-    fontSizeCustom
+    fontSizeCustom,
+    geminiKeepAlive: input.geminiKeepAlive === true
   };
 }
 
@@ -515,15 +545,16 @@ async function measureGeminiEditingChunkLimit(action, text, personalization, sig
   if (text.length <= hardLimit) return text.length;
   const prompts = buildPrompts(action, text, personalization);
   const model = getLanguageModelAPI();
-  if (!model) throw new Error('이 Chrome에서는 Gemini Nano Prompt API를 사용할 수 없습니다.');
+  if (!model) throw new Error(`이 ${isEdgeBrowser() ? 'Edge' : 'Chrome'}에서는 ${getBuiltInModelDisplayName()} Prompt API를 사용할 수 없습니다.`);
   const availability = await getGeminiAvailability(model);
   if (['no', 'unavailable'].includes(availability)) {
-    throw new Error('이 기기에서는 Gemini Nano를 사용할 수 없습니다.');
+    throw new Error(getBuiltInModelUnavailableMessage());
   }
 
   let session;
   try {
-    const created = await createGeminiSession(model, prompts.system, signal);
+    const isDownloadable = ['after-download', 'downloadable', 'downloading'].includes(availability);
+    const created = await createGeminiSession(model, prompts.system, signal, null, isDownloadable || isBuiltInModelDownloading);
     session = created.session;
     const measureUsage = session.measureContextUsage || session.measureInputUsage;
     if (typeof measureUsage !== 'function') {
@@ -980,11 +1011,16 @@ function sanitizeStreamingChatText(value) {
   return String(value || '')
     .replace(/<\/?(?:content|before_context|after_context)\b[^>]*>/gi, '')
     .replace(/\[\[AIANG_MEDIA_[^\]\r\n]+\]\]/g, '')
+    .replace(/^(?:AI|답변|Assistant):\s*/i, '')
     .trimStart();
 }
 
 function parseChatResponse(raw) {
-  const answer = sanitizeEditingText(stripCodeFence(String(raw || '').trim()), '');
+  let answer = sanitizeEditingText(stripCodeFence(String(raw || '').trim()), '');
+  answer = answer.replace(/^(?:AI|답변|Assistant):\s*/i, '').trim();
+  if ((answer.startsWith('"') && answer.endsWith('"')) || (answer.startsWith('“') && answer.endsWith('”'))) {
+    answer = answer.slice(1, -1).trim();
+  }
   if (!answer) throw new Error('AI가 빈 답변을 반환했습니다. 다시 시도해 주세요.');
   if (answer.length > 12000) throw new Error('AI 답변이 지나치게 깁니다. 질문을 나누어 다시 시도해 주세요.');
   return answer;
@@ -1001,6 +1037,126 @@ async function createHTTPError(response) {
   return new Error(`AI 서버 오류 (${response.status})${detail ? `: ${detail}` : ''}`);
 }
 
+function isEdgeBrowser() {
+  return typeof navigator !== 'undefined' && (navigator.userAgent || '').includes('Edg/');
+}
+
+function getBuiltInModelDisplayName() {
+  return isEdgeBrowser() ? 'Edge 온디바이스 AI' : 'Gemini Nano';
+}
+
+function getBuiltInModelUnavailableMessage() {
+  if (isEdgeBrowser()) {
+    return '이 기기에서는 Edge 온디바이스 AI를 바로 실행할 수 없습니다. (모델 다운로드 후 브라우저 재시작 필요, 또는 GPU VRAM 5.5GB 미달 시 edge://flags 설정 필요. 설정 페이지 참조)';
+  }
+  return '이 기기에서는 Gemini Nano를 사용할 수 없습니다.';
+}
+
+let isBuiltInModelDownloading = false;
+let lastBuiltInDownloadProgress = null;
+
+function broadcastDownloadProgress(progress) {
+  const payload = {
+    type: 'BUILTIN_AI_DOWNLOAD_PROGRESS',
+    progress,
+    isEdge: isEdgeBrowser(),
+    modelName: getBuiltInModelDisplayName()
+  };
+
+  try {
+    if (typeof chrome !== 'undefined' && chrome.runtime?.sendMessage) {
+      chrome.runtime.sendMessage(payload).catch(() => {});
+    }
+  } catch (_) {}
+
+  try {
+    if (typeof chrome !== 'undefined' && chrome.tabs?.query) {
+      chrome.tabs.query({}, tabs => {
+        if (!Array.isArray(tabs)) return;
+        for (const tab of tabs) {
+          if (tab?.id) {
+            chrome.tabs.sendMessage(tab.id, payload).catch(() => {});
+          }
+        }
+      });
+    }
+  } catch (_) {}
+}
+
+async function getBuiltInAIStatus() {
+  const isEdge = isEdgeBrowser();
+  const modelName = getBuiltInModelDisplayName();
+  const model = getLanguageModelAPI();
+  if (!model) {
+    return {
+      available: false,
+      status: 'unsupported',
+      isEdge,
+      modelName,
+      message: `${modelName} Prompt API를 사용할 수 없습니다. (플래그 활성화 필요)`
+    };
+  }
+  const availability = await getGeminiAvailability(model);
+  const isReady = ['readily', 'available'].includes(availability);
+  const isDownloadable = ['after-download', 'downloadable', 'downloading'].includes(availability);
+
+  return {
+    available: isReady || isDownloadable,
+    status: isBuiltInModelDownloading ? 'downloading' : (isReady ? 'ready' : (isDownloadable ? 'downloadable' : 'unavailable')),
+    availability,
+    isEdge,
+    modelName,
+    isDownloading: isBuiltInModelDownloading,
+    lastProgress: lastBuiltInDownloadProgress,
+    message: isReady
+      ? `${modelName}가 준비되어 바로 사용할 수 있습니다.`
+      : (isDownloadable
+        ? (isBuiltInModelDownloading ? `${modelName} 모델을 다운로드하고 있습니다...` : `${modelName} 모델 다운로드가 필요합니다.`)
+        : getBuiltInModelUnavailableMessage())
+  };
+}
+
+async function startBuiltInAIDownload() {
+  const model = getLanguageModelAPI();
+  if (!model) throw new Error(`이 ${isEdgeBrowser() ? 'Edge' : 'Chrome'}에서는 ${getBuiltInModelDisplayName()} Prompt API를 사용할 수 없습니다.`);
+  const availability = await getGeminiAvailability(model);
+  if (['no', 'unavailable'].includes(availability)) {
+    throw new Error(getBuiltInModelUnavailableMessage());
+  }
+  if (['readily', 'available'].includes(availability) && !isBuiltInModelDownloading) {
+    return { status: 'ready', message: `${getBuiltInModelDisplayName()}가 이미 다운로드되어 준비되어 있습니다.` };
+  }
+  if (isBuiltInModelDownloading) {
+    return { status: 'downloading', message: '이미 모델 다운로드가 진행 중입니다.', lastProgress: lastBuiltInDownloadProgress };
+  }
+
+  isBuiltInModelDownloading = true;
+  lastBuiltInDownloadProgress = { loaded: 0, total: 0, percent: 0 };
+  broadcastDownloadProgress(lastBuiltInDownloadProgress);
+
+  try {
+    const created = await createGeminiSession(model, 'You are a helpful assistant.', undefined, progress => {
+      lastBuiltInDownloadProgress = progress;
+      broadcastDownloadProgress(progress);
+    }, true);
+    created.session?.destroy?.();
+    isBuiltInModelDownloading = false;
+    const finalProgress = {
+      loaded: lastBuiltInDownloadProgress?.total || 1,
+      total: lastBuiltInDownloadProgress?.total || 1,
+      percent: 100
+    };
+    broadcastDownloadProgress(finalProgress);
+    return {
+      status: 'ready',
+      message: `${getBuiltInModelDisplayName()} 다운로드가 완료되었습니다!${isEdgeBrowser() ? ' (원활한 인식을 위해 edge://restart 재시작 권장)' : ''}`
+    };
+  } catch (error) {
+    isBuiltInModelDownloading = false;
+    throw error;
+  }
+}
+
 function getLanguageModelAPI() {
   if (globalThis.LanguageModel) return globalThis.LanguageModel;
   if (globalThis.chrome?.aiOriginTrial?.languageModel) return globalThis.chrome.aiOriginTrial.languageModel;
@@ -1014,18 +1170,26 @@ async function getGeminiAvailability(model) {
   return typeof result === 'string' ? result : result?.available || result?.availability || 'available';
 }
 
-async function callGeminiNano(prompts, signal, promptOptions = {}, onChunk = null) {
+async function callGeminiNano(prompts, signal, promptOptions = {}, onChunk = null, onDownloadProgress = null) {
   const model = getLanguageModelAPI();
-  if (!model) throw new Error('이 Chrome에서는 Gemini Nano Prompt API를 사용할 수 없습니다.');
+  if (!model) throw new Error(`이 ${isEdgeBrowser() ? 'Edge' : 'Chrome'}에서는 ${getBuiltInModelDisplayName()} Prompt API를 사용할 수 없습니다.`);
   const availability = await getGeminiAvailability(model);
   if (['no', 'unavailable'].includes(availability)) {
-    throw new Error('이 기기에서는 Gemini Nano를 사용할 수 없습니다.');
+    throw new Error(getBuiltInModelUnavailableMessage());
   }
 
+  const isDownloadable = ['after-download', 'downloadable', 'downloading'].includes(availability);
+  const shouldMonitor = isDownloadable || isBuiltInModelDownloading || typeof onDownloadProgress === 'function';
+
+  const settings = await getSettings();
+  const keepAlive = settings.provider === 'gemini' && settings.geminiKeepAlive === true;
+
   let session;
+  let isCloned = false;
   try {
-    const created = await createGeminiSession(model, prompts.system, signal);
+    const created = await getOrCreateGeminiSession(model, prompts.system, signal, keepAlive, onDownloadProgress, shouldMonitor);
     session = created.session;
+    isCloned = created.isCloned;
     if (signal.aborted) throw new DOMException('Aborted', 'AbortError');
     const prompt = formatGeminiPrompt(prompts, created.systemPromptEmbedded);
     let result;
@@ -1047,37 +1211,118 @@ async function callGeminiNano(prompts, signal, promptOptions = {}, onChunk = nul
         && ['NotSupportedError', 'TypeError'].includes(error?.name)) {
         result = await session.prompt(prompt, { signal });
       } else if (error?.name === 'NotAllowedError') {
-        throw new Error('Gemini Nano 모델 다운로드를 시작하려면 버튼을 다시 눌러 주세요.');
+        throw new Error(`${getBuiltInModelDisplayName()} 모델 다운로드를 시작하려면 버튼을 다시 눌러 주세요.`);
       } else {
         throw error;
       }
     }
     if (signal.aborted) throw new DOMException('Aborted', 'AbortError');
     return String(result || '');
+  } catch (error) {
+    if (session === cachedGeminiSession) {
+      cachedGeminiSession?.destroy?.();
+      cachedGeminiSession = null;
+      cachedSystemPrompt = '';
+    }
+    throw error;
   } finally {
-    session?.destroy?.();
+    if (!keepAlive || isCloned) {
+      session?.destroy?.();
+    }
   }
 }
 
-async function createGeminiSession(model, systemPrompt, signal) {
+async function getOrCreateGeminiSession(model, systemPrompt, signal, keepAlive = false, onDownloadProgress = null, shouldMonitor = false) {
+  if (keepAlive && cachedGeminiSession && cachedSystemPrompt === systemPrompt) {
+    if (typeof cachedGeminiSession.clone === 'function') {
+      try {
+        const cloned = await cachedGeminiSession.clone(signal ? { signal } : undefined);
+        return { session: cloned, systemPromptEmbedded: true, isCloned: true };
+      } catch (_) {
+        cachedGeminiSession?.destroy?.();
+        cachedGeminiSession = null;
+        cachedSystemPrompt = '';
+      }
+    } else {
+      return { session: cachedGeminiSession, systemPromptEmbedded: true, isCloned: false };
+    }
+  }
+
+  const created = await createGeminiSession(model, systemPrompt, signal, onDownloadProgress, shouldMonitor);
+  if (keepAlive) {
+    if (typeof created.session.clone === 'function') {
+      cachedGeminiSession = created.session;
+      cachedSystemPrompt = systemPrompt;
+      try {
+        const cloned = await cachedGeminiSession.clone(signal ? { signal } : undefined);
+        return { session: cloned, systemPromptEmbedded: created.systemPromptEmbedded, isCloned: true };
+      } catch (_) {
+        return { session: created.session, systemPromptEmbedded: created.systemPromptEmbedded, isCloned: false };
+      }
+    } else {
+      cachedGeminiSession = created.session;
+      cachedSystemPrompt = systemPrompt;
+      return { session: created.session, systemPromptEmbedded: created.systemPromptEmbedded, isCloned: false };
+    }
+  }
+
+  return { session: created.session, systemPromptEmbedded: created.systemPromptEmbedded, isCloned: false };
+}
+
+async function createGeminiSession(model, systemPrompt, signal, onDownloadProgress = null, shouldMonitor = false) {
   let session;
   let systemPromptEmbedded = false;
+
+  let monitorCallback;
+  if (shouldMonitor) {
+    let hasSeenRealProgress = false;
+    monitorCallback = (m) => {
+      if (!m || typeof m.addEventListener !== 'function') return;
+      m.addEventListener('downloadprogress', (e) => {
+        const loaded = Number(e.loaded) || 0;
+        const total = Number(e.total) || 0;
+        const percent = total > 0 ? Math.min(100, Math.round((loaded / total) * 100)) : 0;
+        if (percent < 100) {
+          hasSeenRealProgress = true;
+        } else if (!hasSeenRealProgress && !isBuiltInModelDownloading) {
+          return;
+        }
+        const progress = { loaded, total, percent };
+        lastBuiltInDownloadProgress = progress;
+        if (typeof onDownloadProgress === 'function') {
+          onDownloadProgress(progress);
+        }
+        broadcastDownloadProgress(progress);
+      });
+    };
+  }
+
   if (typeof model.create === 'function') {
     try {
-      session = await model.create({
+      const createOptions = {
         initialPrompts: [{ role: 'system', content: systemPrompt }],
         signal
-      });
+      };
+      if (monitorCallback) createOptions.monitor = monitorCallback;
+      session = await model.create(createOptions);
       systemPromptEmbedded = true;
     } catch (error) {
       if (error?.name === 'AbortError') throw error;
-      session = await model.create({ systemPrompt, signal });
-      systemPromptEmbedded = true;
+      try {
+        const fallbackOptions = { systemPrompt, signal };
+        if (monitorCallback) fallbackOptions.monitor = monitorCallback;
+        session = await model.create(fallbackOptions);
+        systemPromptEmbedded = true;
+      } catch (err2) {
+        if (err2?.name === 'AbortError') throw err2;
+        session = await model.create({ systemPrompt, signal });
+        systemPromptEmbedded = true;
+      }
     }
   } else if (typeof model.createTextSession === 'function') {
     session = await model.createTextSession();
   }
-  if (!session?.prompt) throw new Error('Gemini Nano 세션을 만들 수 없습니다.');
+  if (!session?.prompt) throw new Error(`${getBuiltInModelDisplayName()} 세션을 만들 수 없습니다.`);
   return { session, systemPromptEmbedded };
 }
 
@@ -1085,6 +1330,70 @@ function formatGeminiPrompt(prompts, systemPromptEmbedded) {
   return systemPromptEmbedded
     ? prompts.user
     : `System:\n${prompts.system}\n\nUser:\n${prompts.user}`;
+}
+
+async function syncGeminiKeepAliveState(settings) {
+  if (typeof chrome === 'undefined' || !chrome?.alarms) return;
+  const isKeepAliveActive = settings?.provider === 'gemini' && settings?.geminiKeepAlive === true;
+  if (isKeepAliveActive) {
+    try {
+      const alarm = await chrome.alarms.get(GEMINI_KEEP_ALIVE_ALARM);
+      if (!alarm) {
+        chrome.alarms.create(GEMINI_KEEP_ALIVE_ALARM, {
+          periodInMinutes: GEMINI_KEEP_ALIVE_INTERVAL_MINUTES
+        });
+      }
+    } catch (_) {
+      chrome.alarms.create(GEMINI_KEEP_ALIVE_ALARM, {
+        periodInMinutes: GEMINI_KEEP_ALIVE_INTERVAL_MINUTES
+      });
+    }
+    performGeminiKeepAlivePing().catch(() => {});
+  } else {
+    try {
+      await chrome.alarms.clear(GEMINI_KEEP_ALIVE_ALARM);
+    } catch (_) {}
+    if (cachedGeminiSession) {
+      try {
+        cachedGeminiSession.destroy?.();
+      } catch (_) {}
+      cachedGeminiSession = null;
+      cachedSystemPrompt = '';
+    }
+  }
+}
+
+async function performGeminiKeepAlivePing() {
+  try {
+    const settings = await getSettings();
+    if (settings.provider !== 'gemini' || !settings.geminiKeepAlive) {
+      await syncGeminiKeepAliveState(settings);
+      return;
+    }
+    const model = getLanguageModelAPI();
+    if (!model) return;
+    const availability = await getGeminiAvailability(model);
+    if (['no', 'unavailable', 'downloadable', 'downloading'].includes(availability)) return;
+
+    const pingPrompt = 'ping';
+    const sessionInfo = await getOrCreateGeminiSession(model, 'You are a warm-up assistant.', null, true);
+    const session = sessionInfo.session;
+    try {
+      if (typeof session.countPromptTokens === 'function') {
+        await session.countPromptTokens(pingPrompt);
+      } else if (typeof session.prompt === 'function') {
+        await session.prompt(pingPrompt, { maxTokens: 1 });
+      }
+    } finally {
+      if (sessionInfo.isCloned) {
+        session?.destroy?.();
+      }
+    }
+  } catch (_) {
+    cachedGeminiSession?.destroy?.();
+    cachedGeminiSession = null;
+    cachedSystemPrompt = '';
+  }
 }
 
 function parseEditingResponse(raw, originalText, action) {
@@ -1281,14 +1590,16 @@ function applySuggestions(content, suggestions) {
 
 async function testConnection(settings) {
   if (settings.provider === 'gemini') {
+    const isEdge = isEdgeBrowser();
+    const modelName = isEdge ? 'Edge 온디바이스 AI(Aion/Phi-4)' : 'Gemini Nano';
     const model = getLanguageModelAPI();
-    if (!model) throw new Error('Gemini Nano Prompt API를 찾지 못했습니다.');
+    if (!model) throw new Error(`${modelName} Prompt API를 찾지 못했습니다.${isEdge ? ' (Edge Canary/Dev의 edge://flags/#edge-llm-prompt-api-for-phi-mini 확인)' : ''}`);
     const availability = await getGeminiAvailability(model);
-    if (['no', 'unavailable'].includes(availability)) throw new Error('이 기기에서는 Gemini Nano를 사용할 수 없습니다.');
+    if (['no', 'unavailable'].includes(availability)) throw new Error(getBuiltInModelUnavailableMessage());
     return {
       message: ['after-download', 'downloadable', 'downloading'].includes(availability)
-        ? 'Gemini Nano를 사용할 수 있으며, 첫 실행 때 모델을 내려받습니다.'
-        : 'Gemini Nano를 사용할 수 있습니다.'
+        ? `${modelName}를 사용할 수 있으며, 첫 실행 때 모델을 내려받습니다.`
+        : `${modelName}를 사용할 수 있습니다.`
     };
   }
   const models = await listModels(settings);
