@@ -18,12 +18,18 @@ const status = $('#status');
 const testButton = $('#test');
 const loadModelsButton = $('#load-models');
 const toggleKeyButton = $('#toggle-key');
+const fontSizeModeDamoang = $('#font-size-mode-damoang');
+const fontSizeModeCustom = $('#font-size-mode-custom');
+const customFontSizeWrap = $('#custom-font-size-wrap');
+const getFontSizeCustomInputs = () => document.querySelectorAll('input[name="font-size-custom"]');
 let loadedModels = [];
 
 document.addEventListener('DOMContentLoaded', loadSettings);
 provider.addEventListener('change', updateProviderUI);
 temperatureAuto.addEventListener('change', updateTemperatureUI);
 personalization.addEventListener('input', updatePersonalizationCount);
+fontSizeModeDamoang.addEventListener('change', updateFontSizeUI);
+fontSizeModeCustom.addEventListener('change', updateFontSizeUI);
 model.addEventListener('focus', () => renderModelMenu(model.value));
 model.addEventListener('input', () => renderModelMenu(model.value));
 model.addEventListener('keydown', event => {
@@ -108,9 +114,18 @@ async function loadSettings() {
     temperature.value = settings.temperature;
     temperatureAuto.checked = settings.temperatureAuto;
     personalization.value = settings.personalization;
+    if (settings.fontSizeMode === 'custom') {
+      fontSizeModeCustom.checked = true;
+    } else {
+      fontSizeModeDamoang.checked = true;
+    }
+    const customSize = settings.fontSizeCustom || 'medium';
+    const targetCustomInput = document.querySelector(`input[name="font-size-custom"][value="${customSize}"]`);
+    if (targetCustomInput) targetCustomInput.checked = true;
     updateProviderUI();
     updateTemperatureUI();
     updatePersonalizationCount();
+    updateFontSizeUI();
   } catch (error) {
     showStatus(error.message, 'error');
   }
@@ -125,7 +140,9 @@ function collectSettings() {
     model: model.value,
     temperature: temperature.value,
     temperatureAuto: temperatureAuto.checked,
-    personalization: personalization.value
+    personalization: personalization.value,
+    fontSizeMode: fontSizeModeCustom.checked ? 'custom' : 'damoang',
+    fontSizeCustom: document.querySelector('input[name="font-size-custom"]:checked')?.value || 'medium'
   };
 }
 
@@ -137,6 +154,15 @@ function updateProviderUI() {
 
 function updateTemperatureUI() {
   temperature.disabled = temperatureAuto.checked;
+}
+
+function updateFontSizeUI() {
+  const isCustom = fontSizeModeCustom.checked;
+  const control = customFontSizeWrap?.querySelector('.segmented-control');
+  if (control) control.classList.toggle('is-disabled', !isCustom);
+  getFontSizeCustomInputs().forEach(input => {
+    input.disabled = !isCustom;
+  });
 }
 
 function updatePersonalizationCount() {

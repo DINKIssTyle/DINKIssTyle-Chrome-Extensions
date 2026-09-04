@@ -121,6 +121,29 @@
   let toastToolbarAnchor = null;
   let openActionMenu = null;
   let promptCatalog = null;
+  let fontSizeMode = 'damoang';
+  let fontSizeCustom = 'medium';
+
+  const CUSTOM_FONT_SIZE_MAP = {
+    small: '14px',
+    medium: '16px',
+    large: '18px'
+  };
+
+  function applyCustomFontSize(element) {
+    if (!element) return;
+    if (fontSizeMode === 'custom') {
+      const size = CUSTOM_FONT_SIZE_MAP[fontSizeCustom] || '16px';
+      element.style.setProperty('--aiang-modal-content-font-size', size);
+    } else {
+      element.style.removeProperty('--aiang-modal-content-font-size');
+    }
+  }
+
+  function syncAllOpenModalsFontSize() {
+    document.querySelectorAll('.aiang-review, .aiang-chat-modal').forEach(applyCustomFontSize);
+  }
+
   const chatHistories = new WeakMap();
   const chatStreamHandlers = new Map();
   const buttonRequestStates = new WeakMap();
@@ -1724,6 +1747,7 @@
     const unchanged = originalText === correctedText;
     const panel = document.createElement('section');
     panel.className = anchor ? 'aiang-review aiang-review-popover' : 'aiang-review aiang-review-modal';
+    applyCustomFontSize(panel);
     panel.setAttribute('role', 'dialog');
     panel.setAttribute('aria-modal', anchor ? 'false' : 'true');
     panel.setAttribute('aria-label', `${LABELS[action]} 결과`);
@@ -3112,6 +3136,7 @@
   }
 
   function showModalPanel(panel) {
+    applyCustomFontSize(panel);
     const overlay = document.createElement('div');
     overlay.className = IS_IPHONE ? 'aiang-overlay aiang-iphone-overlay' : 'aiang-overlay';
     const handleOverlayDismiss = event => {
@@ -3758,10 +3783,23 @@
   const observer = new MutationObserver(scheduleScan);
   observer.observe(document.documentElement, { childList: true, subtree: true });
   extensionAPI.storage.onChanged.addListener((changes, areaName) => {
-    if (areaName !== 'local' || !changes.enabled) return;
-    extensionEnabled = changes.enabled.newValue !== false;
-    if (!extensionEnabled) removeControls();
-    else scheduleScan();
+    if (areaName !== 'local') return;
+    if (changes.enabled) {
+      extensionEnabled = changes.enabled.newValue !== false;
+      if (!extensionEnabled) removeControls();
+      else scheduleScan();
+    }
+    if (changes.fontSizeMode || changes.fontSizeCustom) {
+      if (changes.fontSizeMode) {
+        fontSizeMode = changes.fontSizeMode.newValue === 'custom' ? 'custom' : 'damoang';
+      }
+      if (changes.fontSizeCustom) {
+        fontSizeCustom = ['small', 'medium', 'large'].includes(changes.fontSizeCustom.newValue)
+          ? changes.fontSizeCustom.newValue
+          : 'medium';
+      }
+      syncAllOpenModalsFontSize();
+    }
   });
   window.addEventListener('resize', () => {
     const panel = document.querySelector('.aiang-review-popover');
@@ -3787,6 +3825,11 @@
       extensionEnabled = Boolean(response?.ok && response.settings?.enabled);
       commentGenerationEnabled = response?.settings?.features?.commentGeneration === true;
       promptCatalog = response?.settings?.prompts || null;
+      fontSizeMode = response?.settings?.fontSizeMode === 'custom' ? 'custom' : 'damoang';
+      fontSizeCustom = ['small', 'medium', 'large'].includes(response?.settings?.fontSizeCustom)
+        ? response.settings.fontSizeCustom
+        : 'medium';
+      syncAllOpenModalsFontSize();
       syncCommentGenerationControls();
       scheduleScan();
     })

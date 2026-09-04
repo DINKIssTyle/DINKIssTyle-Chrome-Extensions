@@ -108,6 +108,44 @@
         </label>
       </section>
 
+      <section class="card">
+        <div class="section-heading compact">
+          <div>
+            <h2>서체 크기</h2>
+            <p>모달창의 결과 및 채팅창에 적용할 서체 크기를 설정합니다.</p>
+          </div>
+        </div>
+        <div class="field-grid">
+          <div class="field full radio-group">
+            <label class="radio-row">
+              <input type="radio" name="font-size-mode" id="font-size-mode-damoang" value="damoang" checked>
+              <span>다모앙에 설정한 서체 크기를 따릅니다.</span>
+            </label>
+            <label class="radio-row">
+              <input type="radio" name="font-size-mode" id="font-size-mode-custom" value="custom">
+              <span>직접 서체 크기를 설정합니다.</span>
+            </label>
+          </div>
+
+          <div id="custom-font-size-wrap" class="field full">
+            <div class="segmented-control" role="radiogroup" aria-label="직접 설정할 서체 크기">
+              <label class="segmented-item">
+                <input type="radio" name="font-size-custom" id="font-size-custom-small" value="small">
+                <span>작음</span>
+              </label>
+              <label class="segmented-item">
+                <input type="radio" name="font-size-custom" id="font-size-custom-medium" value="medium" checked>
+                <span>보통</span>
+              </label>
+              <label class="segmented-item">
+                <input type="radio" name="font-size-custom" id="font-size-custom-large" value="large">
+                <span>큼</span>
+              </label>
+            </div>
+          </div>
+        </div>
+      </section>
+
       <div class="footer-actions">
         <p id="status" role="status" aria-live="polite"></p>
         <button id="test" class="outline-button" type="button">연결 테스트</button>

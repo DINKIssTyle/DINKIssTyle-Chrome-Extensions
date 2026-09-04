@@ -6,7 +6,9 @@ const DEFAULT_SETTINGS = Object.freeze({
   model: 'local-model',
   temperature: 0.2,
   temperatureAuto: false,
-  personalization: ''
+  personalization: '',
+  fontSizeMode: 'damoang',
+  fontSizeCustom: 'medium'
 });
 
 let promptCatalog = globalThis.__AIANG_PROMPT_CATALOG__ || null;
@@ -89,7 +91,9 @@ async function handleMessage(message, sender) {
           provider: settings.provider,
           configured: settings.provider === 'gemini' || Boolean(settings.endpoint && settings.model),
           features,
-          prompts
+          prompts,
+          fontSizeMode: settings.fontSizeMode,
+          fontSizeCustom: settings.fontSizeCustom
         }
       };
     }
@@ -198,6 +202,8 @@ async function getSettings() {
 
 function sanitizeSettings(input = {}) {
   const provider = input.provider === 'gemini' ? 'gemini' : 'openai';
+  const fontSizeMode = input.fontSizeMode === 'custom' ? 'custom' : 'damoang';
+  const fontSizeCustom = ['small', 'medium', 'large'].includes(input.fontSizeCustom) ? input.fontSizeCustom : 'medium';
   return {
     enabled: input.enabled !== false,
     provider,
@@ -206,7 +212,9 @@ function sanitizeSettings(input = {}) {
     model: String(input.model || '').trim() || 'local-model',
     temperature: clampNumber(input.temperature, 0, 2, DEFAULT_SETTINGS.temperature),
     temperatureAuto: input.temperatureAuto === true,
-    personalization: String(input.personalization || '').trim().slice(0, 4000)
+    personalization: String(input.personalization || '').trim().slice(0, 4000),
+    fontSizeMode,
+    fontSizeCustom
   };
 }
 

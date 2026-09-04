@@ -297,6 +297,91 @@ button:disabled { cursor: wait; opacity: .62; }
 .switch-row input:checked + .switch::after { transform: translateX(14px); background: var(--primary-foreground); }
 .switch-row input:focus-visible + .switch { outline: 3px solid color-mix(in oklch, var(--ring) 50%, transparent); outline-offset: 2px; }
 
+.radio-group {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.radio-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--foreground);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.radio-row input[type="radio"] {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  padding: 0;
+  flex: 0 0 16px;
+  accent-color: var(--primary);
+  box-shadow: none;
+  cursor: pointer;
+}
+
+.segmented-control {
+  display: inline-flex;
+  padding: 3px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--muted);
+  gap: 2px;
+  width: fit-content;
+  transition: opacity 150ms ease;
+}
+
+.segmented-control.is-disabled {
+  opacity: 0.45;
+  pointer-events: none;
+}
+
+.segmented-item {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.segmented-item input {
+  position: absolute;
+  opacity: 0;
+  width: 1px;
+  height: 1px;
+  pointer-events: none;
+}
+
+.segmented-item span {
+  display: inline-block;
+  padding: 5px 16px;
+  border-radius: calc(var(--radius-md) - 2px);
+  color: var(--muted-foreground);
+  font-size: 12px;
+  font-weight: 600;
+  text-align: center;
+  transition: all 150ms cubic-bezier(.4, 0, .2, 1);
+  user-select: none;
+}
+
+.segmented-item input:checked + span {
+  background: var(--card);
+  color: var(--foreground);
+  box-shadow: var(--shadow-xs);
+}
+
+.segmented-item:hover span {
+  color: var(--foreground);
+}
+
+.segmented-item input:focus-visible + span {
+  outline: 2px solid var(--ring);
+  outline-offset: 1px;
+}
+
 .notice {
   padding: 11px 12px;
   border: 1px solid var(--border);

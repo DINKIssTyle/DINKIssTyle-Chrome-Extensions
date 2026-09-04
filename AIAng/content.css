@@ -564,7 +564,7 @@
 }
 
 .aiang-review-header strong {
-  font-size: 14px;
+  font-size: 16px;
 }
 
 .aiang-media-note {
@@ -971,10 +971,11 @@
 
 .aiang-ai-accuracy-notice {
   flex: 1 1 300px;
+  margin-top: 3px;
   margin: 0 auto 0 0;
   color: var(--aiang-text-muted);
   opacity: 0.72;
-  font-size: 11px;
+  font-size: 12px;
   line-height: 1.45;
 }
 
@@ -1038,10 +1039,14 @@
 }
 
 @keyframes aiang-dot-blink {
-  0%, 80%, 100% {
+
+  0%,
+  80%,
+  100% {
     opacity: 0.3;
     transform: scale(0.8);
   }
+
   40% {
     opacity: 1;
     transform: scale(1.15);
@@ -1052,7 +1057,7 @@
   margin: auto;
   max-width: 300px;
   color: var(--aiang-text-muted);
-  font-size: 12px;
+  font-size: 16px;
   line-height: 1.6;
   text-align: center;
 }
@@ -1474,79 +1479,225 @@
 }
 
 @media (max-width: 680px) {
-  .aiang-toolbar { width: 100%; justify-content: space-between; gap: 2px; }
-  .aiang-action-group { flex: 1 1 auto; }
-  .aiang-action { flex: 1 1 auto; justify-content: center; padding: 0 5px; font-size: 11px; }
-  .aiang-enhancement-action { display: none; }
-  .aiang-improvement-wrap { display: flex; flex: 1 1 auto; }
-  .aiang-action-menu-wrap { flex: 1 1 auto; }
-  .aiang-action-menu-wrap > .aiang-action { width: 100%; }
-  .aiang-action svg { display: none; }
-  .aiang-long-label { display: none; }
-  .aiang-short-label { display: inline; }
-  .aiang-comparison { grid-template-columns: 1fr; }
-  .aiang-card-content { max-height: 190px; }
-  .aiang-overlay { padding: 10px; }
-  .aiang-review-modal { width: calc(100vw - 20px); max-height: calc(100vh - 20px); }
-  .aiang-chat-modal { height: calc(100vh - 20px); }
-  .aiang-review-modal .aiang-review-footer { justify-content: center; }
+  .aiang-toolbar {
+    width: 100%;
+    justify-content: space-between;
+    gap: 2px;
+  }
+
+  .aiang-action-group {
+    flex: 1 1 auto;
+  }
+
+  .aiang-action {
+    flex: 1 1 auto;
+    justify-content: center;
+    padding: 0 5px;
+    font-size: 11px;
+  }
+
+  .aiang-enhancement-action {
+    display: none;
+  }
+
+  .aiang-improvement-wrap {
+    display: flex;
+    flex: 1 1 auto;
+  }
+
+  .aiang-action-menu-wrap {
+    flex: 1 1 auto;
+  }
+
+  .aiang-action-menu-wrap>.aiang-action {
+    width: 100%;
+  }
+
+  .aiang-action svg {
+    display: none;
+  }
+
+  .aiang-long-label {
+    display: none;
+  }
+
+  .aiang-short-label {
+    display: inline;
+  }
+
+  .aiang-comparison {
+    grid-template-columns: 1fr;
+  }
+
+  .aiang-card-content {
+    max-height: 190px;
+  }
+
+  .aiang-overlay {
+    padding: 10px;
+  }
+
+  .aiang-review-modal {
+    width: calc(100vw - 20px);
+    max-height: calc(100vh - 20px);
+  }
+
+  .aiang-chat-modal {
+    height: calc(100vh - 20px);
+  }
+
+  .aiang-review-modal .aiang-review-footer {
+    justify-content: center;
+  }
+
   .aiang-review-modal .aiang-ai-accuracy-notice {
     flex: 1 0 100%;
     margin: 0 0 4px;
     text-align: center;
   }
-  .aiang-iphone-overlay { padding: 0; place-items: stretch; }
-  .aiang-iphone-overlay .aiang-review-modal {
-    width: 100%;
-    height: 100%;
-    height: 100dvh;
-    max-height: none;
-    border: 0;
-    border-radius: 0;
-    display: flex;
-    flex-direction: column;
+
+  .aiang-inline-navigator {
+    bottom: 12px;
+    max-width: calc(100vw - 20px);
   }
-  .aiang-iphone-overlay .aiang-review-body {
-    flex: 1 1 auto;
-    min-height: 0;
+
+  .aiang-inline-navigator button {
+    padding: 0 7px;
   }
-  .aiang-iphone-overlay .aiang-review-footer {
-    margin-top: auto;
-    flex: 0 0 auto;
-    padding-bottom: max(14px, env(safe-area-inset-bottom));
+}
+
+/* iPhone fullscreen modal presentation (portrait & landscape) */
+.aiang-iphone-overlay {
+  padding: 0;
+  place-items: stretch;
+}
+
+.aiang-iphone-overlay .aiang-review-modal {
+  width: 100%;
+  height: 100%;
+  height: 100dvh;
+  max-height: none;
+  border: 0;
+  border-radius: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.aiang-iphone-overlay .aiang-review-header {
+  padding-left: max(16px, env(safe-area-inset-left));
+  padding-right: max(14px, env(safe-area-inset-right));
+}
+
+.aiang-iphone-overlay .aiang-review-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  padding-left: max(16px, env(safe-area-inset-left));
+  padding-right: max(16px, env(safe-area-inset-right));
+}
+
+.aiang-iphone-overlay .aiang-review-footer {
+  margin-top: auto;
+  flex: 0 0 auto;
+  padding-left: max(14px, env(safe-area-inset-left));
+  padding-right: max(14px, env(safe-area-inset-right));
+  padding-bottom: max(14px, env(safe-area-inset-bottom));
+}
+
+.aiang-iphone-overlay .aiang-chat-modal {
+  width: 100%;
+  height: 100%;
+  height: 100dvh;
+  max-height: 100dvh;
+  border: 0;
+  border-radius: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.aiang-iphone-overlay .aiang-chat-header {
+  padding-left: max(16px, env(safe-area-inset-left));
+  padding-right: max(14px, env(safe-area-inset-right));
+}
+
+.aiang-iphone-overlay .aiang-chat-messages {
+  flex: 1 1 auto;
+  min-height: 0;
+  height: 0;
+  padding-left: max(18px, env(safe-area-inset-left));
+  padding-right: max(18px, env(safe-area-inset-right));
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  scroll-behavior: auto;
+  touch-action: pan-y;
+}
+
+.aiang-iphone-overlay .aiang-chat-actions {
+  flex: 0 0 auto;
+  padding-left: max(12px, env(safe-area-inset-left));
+  padding-right: max(12px, env(safe-area-inset-right));
+}
+
+.aiang-iphone-overlay .aiang-chat-composer {
+  flex: 0 0 auto;
+  padding-left: max(12px, env(safe-area-inset-left));
+  padding-right: max(12px, env(safe-area-inset-right));
+  padding-bottom: max(14px, env(safe-area-inset-bottom));
+}
+
+@media (max-height: 520px) and (orientation: landscape) {
+  .aiang-overlay {
+    padding: 0;
+    place-items: stretch;
   }
-  .aiang-iphone-overlay .aiang-chat-modal {
+
+  .aiang-review-modal,
+  .aiang-chat-modal {
     width: 100%;
     height: 100%;
     height: 100dvh;
     max-height: 100dvh;
     border: 0;
     border-radius: 0;
-    display: flex;
-    flex-direction: column;
-    overflow: hidden;
   }
-  .aiang-iphone-overlay .aiang-chat-messages {
-    flex: 1 1 auto;
-    min-height: 0;
-    height: 0;
-    overflow-y: auto;
-    -webkit-overflow-scrolling: touch;
-    scroll-behavior: auto;
-    touch-action: pan-y;
+
+  .aiang-review-header {
+    padding-left: max(16px, env(safe-area-inset-left));
+    padding-right: max(14px, env(safe-area-inset-right));
   }
-  .aiang-iphone-overlay .aiang-chat-actions {
-    flex: 0 0 auto;
+
+  .aiang-review-body {
+    padding-left: max(16px, env(safe-area-inset-left));
+    padding-right: max(16px, env(safe-area-inset-right));
   }
-  .aiang-iphone-overlay .aiang-chat-composer {
-    flex: 0 0 auto;
+
+  .aiang-review-footer {
+    padding-left: max(14px, env(safe-area-inset-left));
+    padding-right: max(14px, env(safe-area-inset-right));
     padding-bottom: max(14px, env(safe-area-inset-bottom));
   }
-  .aiang-inline-navigator { bottom: 12px; max-width: calc(100vw - 20px); }
-  .aiang-inline-navigator button { padding: 0 7px; }
+
+  .aiang-chat-messages {
+    padding-left: max(18px, env(safe-area-inset-left));
+    padding-right: max(18px, env(safe-area-inset-right));
+  }
+
+  .aiang-chat-actions {
+    padding-left: max(12px, env(safe-area-inset-left));
+    padding-right: max(12px, env(safe-area-inset-right));
+  }
+
+  .aiang-chat-composer {
+    padding-left: max(12px, env(safe-area-inset-left));
+    padding-right: max(12px, env(safe-area-inset-right));
+    padding-bottom: max(14px, env(safe-area-inset-bottom));
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
+
   .aiang-spinner,
-  .aiang-toast { animation: none; }
+  .aiang-toast {
+    animation: none;
+  }
 }
