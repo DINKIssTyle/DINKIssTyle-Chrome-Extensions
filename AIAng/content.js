@@ -145,6 +145,7 @@
   }
 
   const chatHistories = new WeakMap();
+  const boardChatHistories = new Map();
   const chatStreamHandlers = new Map();
   const buttonRequestStates = new WeakMap();
   const requestButtonsById = new Map();
@@ -172,7 +173,21 @@
     });
   }
 
+  let lastKnownPathname = location.pathname;
+  let lastKnownSearch = location.search;
+
+  function handleLocationChange() {
+    if (location.pathname !== lastKnownPathname || location.search !== lastKnownSearch) {
+      lastKnownPathname = location.pathname;
+      lastKnownSearch = location.search;
+      if (document.querySelector('.aiang-chat-modal')) {
+        closeReview();
+      }
+    }
+  }
+
   function scanPage() {
+    handleLocationChange();
     cleanupDetachedControls();
     if (!extensionEnabled) return;
 
@@ -2264,11 +2279,13 @@
     return '';
   }
 
-  function getChatBoardContext() {
+  function getChatBoardSlug() {
     const pathSegments = location.pathname.split('/').filter(Boolean);
-    const boardSlug = (pathSegments[0] || new URLSearchParams(location.search).get('bo_table') || '').toLowerCase();
-    const baseUrl = `${location.origin}/${boardSlug ? boardSlug + '/' : ''}`;
+    const slug = (pathSegments[0] || new URLSearchParams(location.search).get('bo_table') || '').toLowerCase();
+    return slug || 'main';
+  }
 
+  function getChatBoardName(boardSlug = getChatBoardSlug()) {
     const KNOWN_BOARDS = {
       free: '자유게시판',
       explore: '모아보기',
@@ -2355,10 +2372,13 @@
       }
     }
 
-    // 최종 fallback
-    if (!boardName) {
-      boardName = KNOWN_BOARDS[boardSlug] || '게시판';
-    }
+    return boardName || KNOWN_BOARDS[boardSlug] || '게시판';
+  }
+
+  function getChatBoardContext() {
+    const boardSlug = getChatBoardSlug();
+    const baseUrl = `${location.origin}/${boardSlug && boardSlug !== 'main' ? boardSlug + '/' : ''}`;
+    const boardName = getChatBoardName(boardSlug);
 
     let candidateElements = Array.from(document.querySelectorAll(
       '.post-row, a.post-row, [class*="post-row"], #bo_list .list-group-item:not(.hd-wrap), #bo_list_wrap .list-group-item:not(.hd-wrap), #fboardlist .list-group-item:not(.hd-wrap), .list-group .list-group-item'
@@ -2564,9 +2584,24 @@
     closeReview();
     const resolvedKind = kind || target?.dataset?.aiangKind || target?._aiangToolbarSlot?.dataset?.aiangKind || 'comment';
     const isBoardChat = resolvedKind === 'board';
+    const currentBoardSlug = isBoardChat ? getChatBoardSlug() : null;
+    const currentBoardName = isBoardChat ? getChatBoardName(currentBoardSlug) : '';
     const chatTarget = (target && typeof target === 'object') ? target : document.body;
-    const history = chatHistories.get(chatTarget) || [];
-    chatHistories.set(chatTarget, history);
+
+    let history;
+    if (isBoardChat) {
+      history = boardChatHistories.get(currentBoardSlug);
+      if (!history) {
+        history = [];
+        boardChatHistories.set(currentBoardSlug, history);
+      }
+    } else {
+      history = chatHistories.get(chatTarget);
+      if (!history) {
+        history = [];
+        chatHistories.set(chatTarget, history);
+      }
+    }
 
     const panel = document.createElement('section');
     panel.className = 'aiang-review aiang-review-modal aiang-chat-modal';
@@ -2576,7 +2611,10 @@
 
     const header = document.createElement('header');
     header.className = 'aiang-review-header aiang-no-select';
-    header.innerHTML = `<div><img class="aiang-review-badge" src="${REVIEW_ICON_URL}" alt=""><strong>${CHAT_ACTION.label}</strong></div>`;
+    const headerTitle = isBoardChat && currentBoardName
+      ? `${CHAT_ACTION.label} · ${currentBoardName}`
+      : CHAT_ACTION.label;
+    header.innerHTML = `<div><img class="aiang-review-badge" src="${REVIEW_ICON_URL}" alt=""><strong>${headerTitle}</strong></div>`;
     const close = document.createElement('button');
     close.type = 'button';
     close.className = 'aiang-close';
@@ -2641,9 +2679,16 @@
     const updateReadPostButtonState = () => {
       readPostButton.classList.remove('is-reading');
       if (hasReadPost()) {
-        readPostButton.disabled = true;
-        readPostButton.setAttribute('aria-label', buttonCompleted);
-        readPostButton.innerHTML = `${ICONS.check}<span>${buttonCompleted}</span>`;
+        if (isBoardChat) {
+          readPostButton.disabled = false;
+          readPostButton.setAttribute('aria-label', `${buttonCompleted} (클릭하면 최신 목록으로 다시 읽습니다)`);
+          readPostButton.title = '클릭하면 최신 목록으로 다시 읽습니다';
+          readPostButton.innerHTML = `${ICONS.check}<span>${buttonCompleted}</span>`;
+        } else {
+          readPostButton.disabled = true;
+          readPostButton.setAttribute('aria-label', buttonCompleted);
+          readPostButton.innerHTML = `${ICONS.check}<span>${buttonCompleted}</span>`;
+        }
       } else if (isReadingPost) {
         readPostButton.disabled = false;
         readPostButton.classList.add('is-reading');
@@ -2857,6 +2902,10 @@
         updateActionChips();
         showToast(isBoardChat ? '게시판 목록 읽기를 취소했습니다.' : '게시물 읽기를 취소했습니다.', 'info');
         return;
+      }
+
+      if (hasCompletedReading && isBoardChat) {
+        hasCompletedReading = false;
       }
 
       const rawContext = isBoardChat ? getChatBoardContext() : getChatPostContext(resolvedKind, target);
@@ -3806,6 +3855,7 @@
     if (panel?._aiangAnchor) positionPopover(panel, panel._aiangAnchor);
     document.querySelectorAll('.aiang-toolbar').forEach(syncImproveActionWidth);
   });
+  window.addEventListener('popstate', handleLocationChange);
   function syncCommentGenerationControls() {
     document.querySelectorAll('.aiang-toolbar[data-aiang-kind="comment"]').forEach(toolbar => {
       const existing = toolbar.querySelector('.aiang-comment-generate-wrap');
