@@ -2590,6 +2590,12 @@
     let readAssistantEntry = null;
     let readAssistantBubble = null;
     let actionRequestId = null;
+    let activeActionChipId = null;
+    let activeUserEntry = null;
+    let activeAssistantEntry = null;
+    let activeBubble = null;
+    let activeUserBubble = null;
+
     let hasCompletedReading = history.some(entry =>
       entry.role === 'user' && (
         entry.displayText === buttonLabel ||
@@ -2626,12 +2632,48 @@
       }
     };
 
-    const sendPromptMessage = async (prompt, label) => {
-      if (isBusyAnswering || isReadingPost || send.disabled) return;
+    const cancelActiveAction = () => {
+      if (actionRequestId) {
+        const cancelId = actionRequestId;
+        actionRequestId = null;
+        chatStreamHandlers.delete(cancelId);
+        sendMessage({ type: 'CANCEL_REQUEST', requestId: cancelId }).catch(() => { });
+      }
+      isBusyAnswering = false;
+      activeActionChipId = null;
+      if (activeUserEntry) {
+        const uIdx = history.indexOf(activeUserEntry);
+        if (uIdx >= 0) history.splice(uIdx, 1);
+        activeUserEntry = null;
+      }
+      if (activeAssistantEntry) {
+        const aIdx = history.indexOf(activeAssistantEntry);
+        if (aIdx >= 0) history.splice(aIdx, 1);
+        activeAssistantEntry = null;
+      }
+      if (activeUserBubble?.isConnected) activeUserBubble.remove();
+      if (activeBubble?.isConnected) activeBubble.remove();
+      activeUserBubble = null;
+      activeBubble = null;
+      if (!history.length && !empty.isConnected) messages.append(empty);
+      renderHistory(false);
+      updateActionChips();
+      showToast('요청을 취소했습니다.', 'info');
+    };
+
+    const sendPromptMessage = async (prompt, label, chipId = null) => {
+      if (isReadingPost || send.disabled) return;
+      if (isBusyAnswering) {
+        if (activeActionChipId && activeActionChipId === chipId) {
+          cancelActiveAction();
+        }
+        return;
+      }
       const cleanPrompt = String(prompt || '').trim();
       if (!cleanPrompt) return;
 
       isBusyAnswering = true;
+      activeActionChipId = chipId || null;
       send.disabled = true;
       send.classList.add('is-loading');
       updateActionChips();
@@ -2639,6 +2681,8 @@
       const userEntry = { role: 'user', content: cleanPrompt, displayText: label };
       history.push(userEntry);
       const userBubble = appendMessageBubble('user', cleanPrompt, label);
+      activeUserEntry = userEntry;
+      activeUserBubble = userBubble;
       scrollChatToBottom(messages, true);
 
       const currentActionId = createRequestId();
@@ -2648,6 +2692,8 @@
       const assistantEntry = { role: 'assistant', content: '…' };
       history.push(assistantEntry);
       const bubble = appendMessageBubble('assistant', '…');
+      activeAssistantEntry = assistantEntry;
+      activeBubble = bubble;
       scrollChatToBottom(messages, true);
 
       chatStreamHandlers.set(currentActionId, content => {
@@ -2689,6 +2735,11 @@
           actionRequestId = null;
         }
         isBusyAnswering = false;
+        activeActionChipId = null;
+        activeUserEntry = null;
+        activeAssistantEntry = null;
+        activeUserBubble = null;
+        activeBubble = null;
         if (send.isConnected) {
           send.disabled = false;
           send.classList.remove('is-loading');
@@ -2700,35 +2751,50 @@
       }
     };
 
+    const renderActionChipButton = (chip) => {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'aiang-chat-action-chip';
+
+      const isActiveThisChip = isBusyAnswering && activeActionChipId === chip.id;
+      if (isActiveThisChip) {
+        btn.disabled = false;
+        btn.classList.add('is-reading');
+        btn.setAttribute('aria-label', `${chip.label} (취소하려면 클릭)`);
+        btn.innerHTML = `<span class="aiang-spinner"></span><span>${chip.label} 중</span><span class="aiang-chip-cancel-icon" aria-hidden="true">✕</span>`;
+        btn.addEventListener('click', cancelActiveAction);
+      } else {
+        const isBusy = isBusyAnswering || isReadingPost;
+        btn.disabled = isBusy;
+        btn.setAttribute('aria-label', chip.label);
+        btn.innerHTML = `${chip.icon}<span>${chip.label}</span>`;
+        btn.addEventListener('click', () => { if (!btn.disabled) chip.onClick(); });
+      }
+      return btn;
+    };
+
     const updateActionChips = () => {
       actionsBar.replaceChildren();
       updateReadPostButtonState();
       actionsBar.append(readPostButton);
       if (hasReadPost()) {
-        const isBusy = isBusyAnswering || isReadingPost;
         if (isBoardChat) {
           const chips = [
-            { id: 'boardIssues', label: followupConfig.boardIssues?.label || '주요 이슈', icon: ICONS.sparkle, prompt: followupConfig.boardIssues?.prompt },
-            { id: 'boardViews', label: followupConfig.boardViews?.label || '조횟수가 높은 글', icon: ICONS.eye, prompt: followupConfig.boardViews?.prompt },
-            { id: 'boardLikes', label: followupConfig.boardLikes?.label || '추천수가 높은 글', icon: ICONS.thumb, prompt: followupConfig.boardLikes?.prompt }
+            { id: 'boardIssues', label: followupConfig.boardIssues?.label || '주요 이슈', icon: ICONS.sparkle, onClick: () => sendPromptMessage(followupConfig.boardIssues?.prompt, followupConfig.boardIssues?.label || '주요 이슈', 'boardIssues') },
+            { id: 'boardViews', label: followupConfig.boardViews?.label || '조횟수가 높은 글', icon: ICONS.eye, onClick: () => sendPromptMessage(followupConfig.boardViews?.prompt, followupConfig.boardViews?.label || '조횟수가 높은 글', 'boardViews') },
+            { id: 'boardLikes', label: followupConfig.boardLikes?.label || '추천수가 높은 글', icon: ICONS.thumb, onClick: () => sendPromptMessage(followupConfig.boardLikes?.prompt, followupConfig.boardLikes?.label || '추천수가 높은 글', 'boardLikes') }
           ];
           for (const c of chips) {
-            const btn = document.createElement('button');
-            btn.type = 'button';
-            btn.className = 'aiang-chat-action-chip';
-            btn.disabled = isBusy;
-            btn.innerHTML = `${c.icon}<span>${c.label}</span>`;
-            btn.addEventListener('click', () => { if (!btn.disabled) sendPromptMessage(c.prompt, c.label); });
-            actionsBar.append(btn);
+            actionsBar.append(renderActionChipButton(c));
           }
         } else {
           const chips = [
-            { id: 'postSummary', label: followupConfig.postSummary?.label || '게시물 요약', icon: ICONS.sparkle, onClick: () => sendPromptMessage(followupConfig.postSummary?.prompt, followupConfig.postSummary?.label || '게시물 요약') },
+            { id: 'postSummary', label: followupConfig.postSummary?.label || '게시물 요약', icon: ICONS.sparkle, onClick: () => sendPromptMessage(followupConfig.postSummary?.prompt, followupConfig.postSummary?.label || '게시물 요약', 'postSummary') },
             { id: 'commentSummary', label: followupConfig.commentSummary?.label || '댓글 요약', icon: ICONS.commentAdd, onClick: () => {
                 const articleBody = document.querySelector('[data-aiang-article-body]') || findArticleBody();
-                const comments = articleBody ? extractCommentsText(articleBody) : '';
+                const comments = articleBody ? collectCommentTexts(articleBody) : [];
                 const label = followupConfig.commentSummary?.label || '댓글 요약';
-                if (!comments || !comments.trim()) {
+                if (!comments.length) {
                   history.push({ role: 'user', content: label, displayText: label });
                   appendMessageBubble('user', label, label);
                   const emptyText = followupConfig.commentSummary?.promptWithoutComments || '현재 이 게시물에 등록된 댓글이 없습니다.';
@@ -2737,18 +2803,14 @@
                   scrollChatToBottom(messages, true);
                   return;
                 }
-                sendPromptMessage(followupConfig.commentSummary?.promptWithComments?.replace('{{commentsContent}}', comments), label);
+                const commentsSource = buildCommentReactionSource(comments);
+                const template = followupConfig.commentSummary?.promptWithComments || '[게시물 댓글 목록]\n{{commentsContent}}\n\n위 댓글들을 분석하여 전체적인 반응과 찬반 의견, 공통된 분위기를 Markdown으로 요약해 주세요.';
+                sendPromptMessage(template.replace('{{commentsContent}}', commentsSource.text), label, 'commentSummary');
             }},
-            { id: 'glossary', label: followupConfig.glossary?.label || '용어 사전', icon: ICONS.book, onClick: () => sendPromptMessage(followupConfig.glossary?.prompt, followupConfig.glossary?.label || '용어 사전') }
+            { id: 'glossary', label: followupConfig.glossary?.label || '용어 사전', icon: ICONS.book, onClick: () => sendPromptMessage(followupConfig.glossary?.prompt, followupConfig.glossary?.label || '용어 사전', 'glossary') }
           ];
           for (const c of chips) {
-            const btn = document.createElement('button');
-            btn.type = 'button';
-            btn.className = 'aiang-chat-action-chip';
-            btn.disabled = isBusy;
-            btn.innerHTML = `${c.icon}<span>${c.label}</span>`;
-            btn.addEventListener('click', () => { if (!btn.disabled) c.onClick(); });
-            actionsBar.append(btn);
+            actionsBar.append(renderActionChipButton(c));
           }
         }
       }
