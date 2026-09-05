@@ -1300,6 +1300,20 @@
   text-align: left;
 }
 
+.aiang-chat-mobile-close-wrap {
+  display: none;
+}
+
+.aiang-chat-mobile-close {
+  min-width: 70px;
+  height: 34px;
+  padding: 0 15px;
+  border-radius: var(--aiang-radius-md);
+  font: 500 12px/1 system-ui, sans-serif;
+  cursor: pointer;
+  transition: all 150ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
 .aiang-secondary {
   border: 1px solid var(--aiang-control-border);
   background: var(--aiang-control-background);
@@ -1556,6 +1570,12 @@
     text-align: center;
   }
 
+  .aiang-chat-modal .aiang-chat-mobile-close-wrap {
+    display: flex;
+    justify-content: center;
+    margin-top: 8px;
+  }
+
   .aiang-inline-navigator {
     bottom: 12px;
     max-width: calc(100vw - 20px);
@@ -1645,6 +1665,12 @@
   padding-bottom: max(14px, env(safe-area-inset-bottom));
 }
 
+.aiang-iphone-overlay .aiang-chat-mobile-close-wrap {
+  display: flex;
+  justify-content: center;
+  margin-top: 8px;
+}
+
 @media (max-height: 520px) and (orientation: landscape) {
   .aiang-overlay {
     padding: 0;
@@ -1691,6 +1717,51 @@
     padding-left: max(12px, env(safe-area-inset-left));
     padding-right: max(12px, env(safe-area-inset-right));
     padding-bottom: max(14px, env(safe-area-inset-bottom));
+  }
+
+  .aiang-chat-modal .aiang-chat-mobile-close-wrap {
+    display: flex;
+    justify-content: center;
+    margin-top: 8px;
+  }
+}
+
+/* Touch device sticky hover prevention */
+@media (hover: none) {
+  .aiang-action:hover:not(:active),
+  .aiang-settings-button:hover:not(:active),
+  .aiang-summary-button:hover:not(:active),
+  .aiang-action-menu-option:hover:not(:active),
+  .aiang-chat-action-chip:not(:disabled):hover:not(:active),
+  .aiang-secondary:hover:not(:active),
+  .aiang-title-option:hover:not(:active) {
+    background: var(--aiang-control-background);
+    color: var(--aiang-text);
+  }
+
+  .aiang-close:hover:not(:active) {
+    background: transparent;
+    color: var(--aiang-text-muted);
+  }
+
+  .aiang-chat-action-chip:not(:disabled):hover:not(:active) {
+    border-color: var(--aiang-border);
+  }
+
+  .aiang-action:active,
+  .aiang-settings-button:active,
+  .aiang-summary-button:active,
+  .aiang-action-menu-option:active,
+  .aiang-chat-action-chip:not(:disabled):active,
+  .aiang-secondary:active,
+  .aiang-title-option:active {
+    background: var(--aiang-control-hover);
+    color: var(--aiang-hover-foreground);
+  }
+
+  .aiang-close:active {
+    background: var(--aiang-control-hover);
+    color: var(--aiang-hover-foreground);
   }
 }
 

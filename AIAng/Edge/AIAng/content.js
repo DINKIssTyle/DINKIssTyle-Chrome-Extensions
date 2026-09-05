@@ -12,13 +12,14 @@
   const IMPROVE_ACTION = { id: 'improve', label: '문장 개선', short: '문장 개선', icon: 'sparkle' };
   const DECORATE_ACTION = { id: 'decorate', label: '글 꾸미기', short: '글 꾸미기', icon: 'palette' };
   const CHAT_ACTION = { id: 'chat', label: '뭐였더라?', short: '뭐였더라?', icon: 'question' };
+  const TAG_SUGGEST_ACTION = { id: 'suggest_tags', label: '태그 생성', short: '태그 생성', icon: 'tag' };
   const COMMENT_GENERATE_ACTION = { id: 'generate_comment', label: '댓글 생성', short: '댓글 생성', icon: 'commentAdd' };
   const TITLE_SUGGEST_ACTION = { id: 'suggest_title', label: '글 제목 추천', short: '제목 추천', icon: 'title' };
   const POST_SUMMARY_ACTION = { id: 'summarize_post', label: '게시물 요약', short: '요약', icon: 'sparkle' };
   const COMMENT_REACTION_ACTION = { id: 'summarize_reactions', label: '댓글 반응 요약', short: '댓글 요약', icon: 'chat' };
   const TERM_GLOSSARY_ACTION = { id: 'build_glossary', label: '용어 사전', short: '용어 사전', icon: 'book' };
   const IMPROVEMENT_ACTIONS = [HONORIFIC_ACTION, IMPROVE_ACTION, DECORATE_ACTION];
-  const BODY_ACTIONS = [SPELLCHECK_ACTION, ...IMPROVEMENT_ACTIONS, CHAT_ACTION, TITLE_SUGGEST_ACTION];
+  const BODY_ACTIONS = [SPELLCHECK_ACTION, ...IMPROVEMENT_ACTIONS, CHAT_ACTION, TAG_SUGGEST_ACTION, TITLE_SUGGEST_ACTION];
   const COMMENT_ACTIONS = [SPELLCHECK_ACTION, ...IMPROVEMENT_ACTIONS, CHAT_ACTION];
   const LABELS = Object.fromEntries([
     ...BODY_ACTIONS,
@@ -156,6 +157,7 @@
     sparkle: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 1.5 4.5L18 9l-4.5 1.5L12 15l-1.5-4.5L6 9l4.5-1.5Z"/><path d="m19 15 .8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8Z"/></svg>',
     palette: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a9 9 0 0 0 0 18h1.5a1.5 1.5 0 0 0 0-3H12a2 2 0 0 1 0-4h2.5A6.5 6.5 0 0 0 21 7.5C19.3 4.8 16 3 12 3Z"/><circle cx="7.5" cy="10" r="1"/><circle cx="10" cy="6.5" r="1"/><circle cx="15" cy="6.5" r="1"/></svg>',
     title: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h10M9 5v14M6 19h6"/><path d="m18 10 .8 2.2L21 13l-2.2.8L18 16l-.8-2.2L15 13l2.2-.8Z"/></svg>',
+    tag: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2H2v10l10 10 10-10L12 2Z"/><circle cx="7" cy="7" r="1.5"/></svg>',
     book: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H11a2 2 0 0 1 2 2v16a3 3 0 0 0-3-3H4Z"/><path d="M20 5.5A2.5 2.5 0 0 0 17.5 3H15a2 2 0 0 0-2 2v16a3 3 0 0 1 3-3h4Z"/></svg>',
     commentAdd: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h7"/><path d="M19 3v6M16 6h6"/></svg>',
     question: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M9.8 9a2.4 2.4 0 1 1 3.7 2c-1 .6-1.5 1.1-1.5 2.2"/><path d="M12 17h.01"/></svg>',
@@ -238,6 +240,8 @@
           openChatModal(editor, kind);
         } else if (kind === 'body' && action.id === 'spellcheck') {
           runPostSpellcheck(editor, button);
+        } else if (kind === 'body' && action.id === 'suggest_tags') {
+          runTagGeneration(editor, button);
         } else if (kind === 'body' && action.id === 'suggest_title') {
           runTitleSuggestions(editor, button);
         } else {
@@ -1055,6 +1059,79 @@
       showTitleSuggestions(title, editor, snapshot, response.titles || []);
     } catch (error) {
       showRequestError(error, requestState, '제목을 추천하지 못했습니다.');
+    } finally {
+      finishButtonRequest(button, requestState);
+    }
+  }
+
+  function findTagInput() {
+    return document.querySelector(
+      'input[placeholder*="태그 입력"], input[aria-label*="태그 입력"], input[name="tags"], input#tags, input[name="as_tag"], input#as_tag, input[name="wr_tags"], input[data-aiang-tag-input]'
+    );
+  }
+
+  function insertTagsIntoInput(input, tags) {
+    if (!input || !Array.isArray(tags) || !tags.length) return 0;
+    const nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set;
+    let addedCount = 0;
+    for (const tag of tags) {
+      const cleanTag = String(tag || '').trim();
+      if (!cleanTag) continue;
+      input.focus();
+      if (nativeSetter) {
+        nativeSetter.call(input, cleanTag);
+      } else {
+        input.value = cleanTag;
+      }
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true }));
+      input.dispatchEvent(new KeyboardEvent('keyup', { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true }));
+      input.dispatchEvent(new Event('change', { bubbles: true }));
+      addedCount++;
+    }
+
+    // 모든 태그를 칩으로 등록한 후 입력란에 남아있는 텍스트를 깨끗하게 비웁니다.
+    if (nativeSetter) {
+      nativeSetter.call(input, '');
+    } else {
+      input.value = '';
+    }
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+
+    return addedCount;
+  }
+
+  async function runTagGeneration(editor, button) {
+    const postContext = getChatPostContext('body', editor);
+    if (!postContext.trim()) {
+      showToast('태그를 생성할 내용을 먼저 입력해 주세요.', 'warning');
+      editor.focus();
+      return;
+    }
+
+    closeReview();
+    const requestState = beginButtonRequest(button, 'suggest_tags');
+    try {
+      const response = await sendMessage({
+        type: 'SUGGEST_TAGS',
+        requestId: createTrackedRequestId(button),
+        text: postContext
+      });
+      if (!response?.ok) throw new Error(response?.error || '태그를 생성하지 못했습니다.');
+      const tags = Array.isArray(response.tags) ? response.tags : [];
+      if (!tags.length) throw new Error('생성된 태그가 없습니다.');
+
+      const tagInput = findTagInput();
+      if (tagInput) {
+        insertTagsIntoInput(tagInput, tags);
+        showToast(`태그 ${tags.length}개를 입력했습니다: ${tags.join(', ')}`, 'success');
+      } else {
+        showToast(`생성된 태그: ${tags.join(', ')} (태그 입력란을 찾지 못했습니다)`, 'info');
+      }
+    } catch (error) {
+      if (requestState.cancelRequested || error?.message === '요청을 취소했습니다.') return;
+      showToast(error?.message || '태그를 생성하지 못했습니다.', 'error');
     } finally {
       finishButtonRequest(button, requestState);
     }
@@ -3182,8 +3259,16 @@
     const notice = document.createElement('p');
     notice.className = 'aiang-ai-accuracy-notice aiang-chat-notice';
     notice.textContent = 'AI 답변의 품질은 모델별로 다르며, 가끔은 매우 부정확할 수 있습니다.';
+    const mobileCloseWrap = document.createElement('div');
+    mobileCloseWrap.className = 'aiang-chat-mobile-close-wrap';
+    const mobileClose = document.createElement('button');
+    mobileClose.type = 'button';
+    mobileClose.className = 'aiang-secondary aiang-chat-mobile-close';
+    mobileClose.textContent = '닫기';
+    mobileClose.addEventListener('click', closeReview);
+    mobileCloseWrap.append(mobileClose);
     inputRow.append(input, send);
-    composer.append(inputRow, notice);
+    composer.append(inputRow, notice, mobileCloseWrap);
     panel.append(header, messages, actionsBar, composer);
 
     let currentAssistantBubble = null;

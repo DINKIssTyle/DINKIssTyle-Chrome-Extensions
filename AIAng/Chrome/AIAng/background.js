@@ -141,6 +141,9 @@ async function handleMessage(message, sender) {
     case 'SUGGEST_TITLES':
       assertDamoangPage(sender);
       return await processTitleSuggestionsRequest(message);
+    case 'SUGGEST_TAGS':
+      assertDamoangPage(sender);
+      return await processTagSuggestionsRequest(message);
     case 'SUMMARIZE_POST':
       assertDamoangPage(sender);
       return await processPostSummaryRequest(message);
@@ -326,6 +329,30 @@ async function processTitleSuggestionsRequest(message) {
     const prompts = buildTitleSuggestionPrompts(text, settings.personalization);
     const raw = await callConfiguredModel(settings, prompts, controller.signal);
     return { titles: parseTitleSuggestions(raw) };
+  } catch (error) {
+    if (error?.name === 'AbortError') throw new Error('요청을 취소했습니다.');
+    throw error;
+  } finally {
+    activeRequests.delete(requestId);
+  }
+}
+
+async function processTagSuggestionsRequest(message) {
+  await ensurePromptCatalog();
+  const text = String(message.text || '').trim();
+  if (!text) throw new Error('태그를 생성할 내용을 먼저 입력해 주세요.');
+  if (text.length > 30000) throw new Error('태그 생성에 사용할 수 있는 글은 30,000자까지입니다.');
+
+  const settings = await getSettings();
+  if (!settings.enabled) throw new Error('AIAng가 설정에서 꺼져 있습니다.');
+
+  const requestId = String(message.requestId || crypto.randomUUID());
+  const controller = new AbortController();
+  activeRequests.set(requestId, controller);
+  try {
+    const prompts = buildTagSuggestionPrompts(text, settings.personalization);
+    const raw = await callConfiguredModel(settings, prompts, controller.signal);
+    return { tags: parseTagSuggestions(raw) };
   } catch (error) {
     if (error?.name === 'AbortError') throw new Error('요청을 취소했습니다.');
     throw error;
@@ -768,6 +795,29 @@ function buildTitleSuggestionPrompts(text, personalization) {
       section.intro,
       ...section.rules.map(rule => `- ${rule}`),
       '- JSON 형태: {"titles":["제목 1","제목 2","제목 3","제목 4","제목 5"]}',
+      '',
+      '<content>',
+      content,
+      '</content>'
+    ].join('\n')
+  };
+}
+
+function buildTagSuggestionPrompts(text, personalization) {
+  const catalog = requirePromptCatalog();
+  const section = catalog.tags || catalog.titles;
+  const content = trimTextForTitleSuggestion(text);
+  const personalizationBlock = buildPersonalizationBlock(personalization, 'tags');
+  return {
+    system: [
+      ...section.system,
+      '설명, 인사말, 코드 펜스 없이 유효한 JSON 하나만 반환하세요.',
+      personalizationBlock
+    ].filter(Boolean).join('\n'),
+    user: [
+      section.intro,
+      ...section.rules.map(rule => `- ${rule}`),
+      '- JSON 형태: {"tags":["태그1","태그2","태그3"]}',
       '',
       '<content>',
       content,
@@ -1478,6 +1528,53 @@ function parseTitleSuggestions(raw) {
     throw new Error('AI가 제목 5개를 생성하지 못했습니다. 다시 시도해 주세요.');
   }
   return titles;
+}
+
+function parseTagSuggestions(raw) {
+  const cleaned = stripCodeFence(String(raw || '').trim());
+  let parsed;
+  try {
+    parsed = JSON.parse(cleaned);
+  } catch {
+    try {
+      parsed = JSON.parse(extractJSONObject(cleaned));
+    } catch {
+      parsed = null;
+    }
+  }
+
+  const candidates = Array.isArray(parsed)
+    ? parsed
+    : Array.isArray(parsed?.tags)
+      ? parsed.tags
+      : Array.isArray(parsed?.keywords)
+        ? parsed.keywords
+        : Array.isArray(parsed?.suggestions)
+          ? parsed.suggestions
+          : cleaned.split(/[\r\n,]+/);
+  const seen = new Set();
+  const tags = [];
+  for (const candidate of candidates) {
+    const value = typeof candidate === 'string'
+      ? candidate
+      : candidate?.tag || candidate?.keyword || candidate?.text || candidate?.name || '';
+    const tag = String(value)
+      .replace(/^[#\s]+|[#\s]+$/g, '')
+      .replace(/^\s*(?:(?:[-*•])|(?:\d+[.)]))\s*/i, '')
+      .replace(/^["'“”‘’]+|["'“”‘’]+$/g, '')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .slice(0, 30);
+    const key = tag.toLocaleLowerCase();
+    if (!tag || seen.has(key)) continue;
+    seen.add(key);
+    tags.push(tag);
+    if (tags.length === 5) break;
+  }
+  if (!tags.length) {
+    throw new Error('AI가 태그를 생성하지 못했습니다. 다시 시도해 주세요.');
+  }
+  return tags;
 }
 
 function parsePostSummary(raw) {
