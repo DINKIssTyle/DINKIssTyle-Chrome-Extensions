@@ -10,7 +10,9 @@
   },
   "permissions": [
     "storage",
-    "alarms"
+    "alarms",
+    "activeTab",
+    "offscreen"
   ],
   "host_permissions": [
     "https://damoang.net/*",
@@ -20,7 +22,8 @@
   ],
   "optional_host_permissions": [
     "http://*/*",
-    "https://*/*"
+    "https://*/*",
+    "<all_urls>"
   ],
   "background": {
     "service_worker": "background.js",
@@ -64,5 +67,8 @@
         "https://www.damoang.net/*"
       ]
     }
-  ]
+  ],
+  "content_security_policy": {
+    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'"
+  }
 }

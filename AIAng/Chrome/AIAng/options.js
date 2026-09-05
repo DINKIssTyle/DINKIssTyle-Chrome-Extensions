@@ -23,6 +23,7 @@ const toggleKeyButton = $('#toggle-key');
 const fontSizeModeDamoang = $('#font-size-mode-damoang');
 const fontSizeModeCustom = $('#font-size-mode-custom');
 const customFontSizeWrap = $('#custom-font-size-wrap');
+const usePostImageCapture = $('#use-post-image-capture');
 const getFontSizeCustomInputs = () => document.querySelectorAll('input[name="font-size-custom"]');
 const builtinModelTitle = $('#builtin-model-title');
 const builtinModelBadge = $('#builtin-model-badge');
@@ -57,7 +58,24 @@ if (startBuiltinDownloadButton) {
     showStatus('모델 다운로드를 요청하고 있습니다...', 'info');
 
     try {
-      const response = await sendMessage({ type: 'START_BUILTIN_AI_DOWNLOAD' });
+      // Start downloads in this visible document while the button's user activation is live.
+      const api = globalThis.LanguageModel || globalThis.chrome?.aiOriginTrial?.languageModel || globalThis.ai?.languageModel || globalThis.ai?.assistant;
+      let response;
+      if (typeof api?.create === 'function') {
+        const session = await api.create({
+          monitor(monitor) {
+            monitor.addEventListener('downloadprogress', event => {
+              const loaded = Number(event.loaded) || 0;
+              const total = Number(event.total) || 1;
+              renderBuiltInDownloadProgress({ loaded, total, percent: Math.min(100, Math.round(loaded / total * 100)) });
+            });
+          }
+        });
+        session.destroy?.();
+        response = { ok: true, message: '모델 다운로드가 완료되었습니다.' };
+      } else {
+        response = await sendMessage({ type: 'START_BUILTIN_AI_DOWNLOAD' });
+      }
       if (!response?.ok) throw new Error(response?.error || '다운로드를 시작하지 못했습니다.');
       showStatus(response.message || '다운로드가 완료되었습니다!', 'success');
       await refreshBuiltInModelStatus();
@@ -132,6 +150,10 @@ form.addEventListener('submit', async event => {
   setBusy(true, '저장하는 중…');
   try {
     const settings = collectSettings();
+    if (settings.usePostImageCapture) {
+      const granted = await chrome.permissions.request({ origins: ['<all_urls>'] });
+      if (!granted) throw new Error('본문 미디어 캡쳐를 사용하려면 브라우저의 화면 캡쳐 접근 권한이 필요합니다.');
+    }
     await ensureEndpointPermission(settings);
     const response = await sendMessage({ type: 'SAVE_SETTINGS', settings });
     if (!response?.ok) throw new Error(response?.error || '설정을 저장하지 못했습니다.');
@@ -237,6 +259,7 @@ async function loadSettings() {
     const targetCustomInput = document.querySelector(`input[name="font-size-custom"][value="${customSize}"]`);
     if (targetCustomInput) targetCustomInput.checked = true;
     if (geminiKeepAlive) geminiKeepAlive.checked = settings.geminiKeepAlive === true;
+    if (usePostImageCapture) usePostImageCapture.checked = settings.usePostImageCapture === true;
     updateProviderUI();
     updateTemperatureUI();
     updatePersonalizationCount();
@@ -258,7 +281,8 @@ function collectSettings() {
     personalization: personalization.value,
     fontSizeMode: fontSizeModeCustom.checked ? 'custom' : 'damoang',
     fontSizeCustom: document.querySelector('input[name="font-size-custom"]:checked')?.value || 'medium',
-    geminiKeepAlive: Boolean(geminiKeepAlive?.checked)
+    geminiKeepAlive: Boolean(geminiKeepAlive?.checked),
+    usePostImageCapture: Boolean(usePostImageCapture?.checked)
   };
 }
 

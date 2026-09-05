@@ -124,6 +124,7 @@
   let promptCatalog = null;
   let fontSizeMode = 'damoang';
   let fontSizeCustom = 'medium';
+  let usePostImageCapture = false;
 
   const CUSTOM_FONT_SIZE_MAP = {
     small: '14px',
@@ -642,9 +643,130 @@
     return `${text.slice(0, headLength).trimEnd()}\n\n[중간 본문 일부 생략: 입력 길이 제한]\n\n${text.slice(-tailLength).trimStart()}`;
   }
 
+  function findArticleMediaElements(articleBody) {
+    if (!articleBody) return [];
+    const candidates = [...new Set(articleBody.querySelectorAll(
+      'img, iframe, lite-youtube, [data-youtube-id], .youtube-container, .twitter-tweet, blockquote.instagram-media'
+    ))].filter(el => {
+      if (el.closest(ARTICLE_CONTENT_EXCLUDE_SELECTOR)
+        || el.closest('[class*="comment"], [id*="comment"], [class*="profile"], [class*="avatar"], aside, footer, nav')) return false;
+      const rect = el.getBoundingClientRect();
+      const style = getComputedStyle(el);
+      if (rect.width < 80 || rect.height < 40 || style.visibility !== 'visible' || style.display === 'none') return false;
+      if (el.tagName === 'IFRAME') {
+        try {
+          const url = new URL(el.getAttribute('src') || el.getAttribute('data-src') || '', location.href);
+          return ['https:', 'http:'].includes(url.protocol) && url.origin !== location.origin;
+        } catch { return false; }
+      }
+      return el.tagName !== 'IMG' || rect.height >= 80;
+    });
+    // Keep the outer embed only, in document order. A tweet can match several selectors.
+    return candidates.filter(el => !candidates.some(other => other !== el && other.contains(el)));
+  }
+
+  function cropImageFromDataUrl(viewportDataUrl, rect) {
+    return new Promise(resolve => {
+      const img = new Image();
+      img.onload = () => {
+        try {
+          const viewportWidth = window.visualViewport?.width || window.innerWidth || document.documentElement.clientWidth || 1;
+          const viewportHeight = window.visualViewport?.height || window.innerHeight || document.documentElement.clientHeight || 1;
+          const left = rect.left - (window.visualViewport?.offsetLeft || 0);
+          const top = rect.top - (window.visualViewport?.offsetTop || 0);
+          const scaleX = img.width / viewportWidth;
+          const scaleY = img.height / viewportHeight;
+
+          const sx = Math.max(0, Math.floor(left * scaleX));
+          const sy = Math.max(0, Math.floor(top * scaleY));
+          const sw = Math.min(img.width, Math.ceil((left + rect.width) * scaleX)) - sx;
+          const sh = Math.min(img.height, Math.ceil((top + rect.height) * scaleY)) - sy;
+
+          if (sw <= 10 || sh <= 10) return resolve(null);
+
+          const maxDim = 1280;
+          let dw = sw / scaleX;
+          let dh = sh / scaleY;
+          if (dw > maxDim || dh > maxDim) {
+            const ratio = Math.min(maxDim / dw, maxDim / dh);
+            dw = Math.round(dw * ratio);
+            dh = Math.round(dh * ratio);
+          }
+
+          const canvas = document.createElement('canvas');
+          canvas.width = Math.max(1, Math.round(dw));
+          canvas.height = Math.max(1, Math.round(dh));
+          const ctx = canvas.getContext('2d');
+          ctx.drawImage(img, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height);
+          resolve(canvas.toDataURL('image/jpeg', 0.8));
+        } catch (err) {
+          console.warn('[AIAng] 이미지 크롭 실패:', err);
+          resolve(null);
+        }
+      };
+      img.onerror = () => resolve(null);
+      img.src = viewportDataUrl;
+    });
+  }
+
+  let mediaCaptureInProgress = false;
+
+  async function captureArticleMediaSnippets(articleBody, isCancelled = () => false) {
+    const elements = findArticleMediaElements(articleBody);
+    if (!elements.length) return [];
+    if (mediaCaptureInProgress) throw new Error('다른 미디어 캡쳐가 진행 중입니다. 잠시 후 다시 시도해 주세요.');
+    mediaCaptureInProgress = true;
+    const resumeScrollLocks = Array.from(document.querySelectorAll('.aiang-review'))
+      .map(panel => panel._aiangSuspendScrollLock?.()).filter(Boolean);
+    const savedScrollX = window.scrollX;
+    const savedScrollY = window.scrollY;
+    const results = [];
+    const overlays = Array.from(document.querySelectorAll('.aiang-overlay, .aiang-review, .aiang-toast'));
+    const prevVisibilities = overlays.map(o => o.style.visibility);
+    const checkCancelled = () => {
+      if (isCancelled()) throw new Error('요청을 취소했습니다.');
+      if (document.visibilityState === 'hidden') throw new Error('캡쳐가 끝날 때까지 게시물 탭을 열어 두세요.');
+    };
+    try {
+      overlays.forEach(o => { o.style.visibility = 'hidden'; });
+      for (const el of elements) {
+        if (results.length >= 8) break;
+        checkCancelled();
+        // Tile tall media instead of silently dropping the top and bottom of screenshots.
+        let offset = 0;
+        do {
+          checkCancelled();
+          const before = el.getBoundingClientRect();
+          const tileHeight = Math.max(100, (window.visualViewport?.height || window.innerHeight) - 160);
+          window.scrollTo({ left: savedScrollX, top: window.scrollY + before.top + offset - 80 - (window.visualViewport?.offsetTop || 0), behavior: 'instant' });
+          await new Promise(resolve => setTimeout(resolve, 650));
+          checkCancelled();
+          const rect = el.getBoundingClientRect();
+          if (rect.width < 80 || rect.height < 40) break;
+          const region = { left: rect.left, top: rect.top + offset, width: rect.width, height: Math.min(tileHeight, rect.height - offset) };
+          const res = await sendMessage({ type: 'CAPTURE_TAB_VIEWPORT' });
+          checkCancelled();
+          if (!res?.ok || !res?.dataUrl) throw new Error(res?.error || '본문 미디어를 캡쳐하지 못했습니다.');
+          const cropped = await cropImageFromDataUrl(res.dataUrl, region);
+          if (!cropped) throw new Error('본문 미디어 캡쳐 영역을 확인할 수 없습니다.');
+          results.push(cropped);
+          offset += region.height;
+        } while (offset < el.getBoundingClientRect().height && results.length < 8);
+      }
+      if (results.length === 8) showToast('미디어 캡쳐는 최대 8개 영역까지 전달합니다.', 'info');
+      return results;
+    } finally {
+      overlays.forEach((o, idx) => { o.style.visibility = prevVisibilities[idx]; });
+      window.scrollTo({ left: savedScrollX, top: savedScrollY, behavior: 'instant' });
+      resumeScrollLocks.forEach(resume => resume());
+      mediaCaptureInProgress = false;
+    }
+  }
+
   async function runPostSummary(articleBody, button) {
     if (cancelButtonRequest(button)) return;
-    const text = limitPostSummarySource(extractArticleText(articleBody));
+    const text = limitPostSummarySource(extractArticleText(articleBody))
+      || (usePostImageCapture && findArticleMediaElements(articleBody).length ? '첨부된 게시물 미디어를 요약해 주세요.' : '');
     if (!text) {
       showToast('요약할 게시물 본문을 찾지 못했습니다.', 'warning');
       return;
@@ -652,10 +774,16 @@
     closeReview();
     const requestState = beginButtonRequest(button, POST_SUMMARY_ACTION.id);
     try {
+      let images = [];
+      if (usePostImageCapture) {
+        images = await captureArticleMediaSnippets(articleBody, () => requestState.cancelRequested);
+        if (requestState.cancelRequested) throw new Error('요청을 취소했습니다.');
+      }
       const response = await sendMessage({
         type: 'SUMMARIZE_POST',
         requestId: createTrackedRequestId(button),
-        text
+        text,
+        images
       });
       if (!response?.ok) throw new Error(response?.error || '게시물을 요약하지 못했습니다.');
       showPostSummary(response.summary, POST_SUMMARY_ACTION.label);
@@ -684,14 +812,17 @@
       extractArticleText(articleBody),
       COMMENT_REACTION_POST_LIMIT,
       1200
-    );
+    ) || (usePostImageCapture && findArticleMediaElements(articleBody).length ? '첨부된 게시물 미디어에 대한 댓글입니다.' : '');
     const commentsSource = buildCommentReactionSource(comments);
     closeReview();
     const requestState = beginButtonRequest(button, COMMENT_REACTION_ACTION.id);
     try {
+      const images = usePostImageCapture ? await captureArticleMediaSnippets(articleBody, () => requestState.cancelRequested) : [];
+      if (requestState.cancelRequested) throw new Error('요청을 취소했습니다.');
       const response = await sendMessage({
         type: 'SUMMARIZE_REACTIONS',
         requestId: createTrackedRequestId(button),
+        images,
         postText,
         commentsText: commentsSource.text,
         commentCount: comments.length,
@@ -708,7 +839,8 @@
 
   async function runTermGlossary(articleBody, button) {
     if (cancelButtonRequest(button)) return;
-    const text = limitPostSummarySource(extractArticleText(articleBody));
+    const text = limitPostSummarySource(extractArticleText(articleBody))
+      || (usePostImageCapture && findArticleMediaElements(articleBody).length ? '첨부된 게시물 미디어의 용어를 정리해 주세요.' : '');
     if (!text) {
       showToast('용어를 찾을 게시물 본문을 찾지 못했습니다.', 'warning');
       return;
@@ -716,9 +848,12 @@
     closeReview();
     const requestState = beginButtonRequest(button, TERM_GLOSSARY_ACTION.id);
     try {
+      const images = usePostImageCapture ? await captureArticleMediaSnippets(articleBody, () => requestState.cancelRequested) : [];
+      if (requestState.cancelRequested) throw new Error('요청을 취소했습니다.');
       const response = await sendMessage({
         type: 'BUILD_GLOSSARY',
         requestId: createTrackedRequestId(button),
+        images,
         text
       });
       if (!response?.ok) throw new Error(response?.error || '용어 사전을 만들지 못했습니다.');
@@ -923,7 +1058,8 @@
     if (cancelButtonRequest(button)) return;
     const articleBody = findArticleBody();
     const postText = articleBody
-      ? limitPostSummarySource(extractArticleText(articleBody), COMMENT_GENERATION_POST_LIMIT, 1200)
+      ? (limitPostSummarySource(extractArticleText(articleBody), COMMENT_GENERATION_POST_LIMIT, 1200)
+        || (usePostImageCapture && findArticleMediaElements(articleBody).length ? '첨부된 게시물 미디어에 대한 댓글을 작성해 주세요.' : ''))
       : '';
     if (!postText) {
       showToast('댓글을 작성할 게시물 본문을 찾지 못했습니다.', 'warning');
@@ -934,9 +1070,12 @@
     closeReview();
     const requestState = beginButtonRequest(button, COMMENT_GENERATE_ACTION.id);
     try {
+      const images = usePostImageCapture ? await captureArticleMediaSnippets(articleBody, () => requestState.cancelRequested) : [];
+      if (requestState.cancelRequested) throw new Error('요청을 취소했습니다.');
       const response = await sendMessage({
         type: 'GENERATE_COMMENT',
         requestId: createTrackedRequestId(button),
+        images,
         tone,
         postText
       });
@@ -2874,8 +3013,15 @@
         }
       });
 
+      const images = usePostImageCapture ? (history.findLast(entry => entry.images?.length)?.images || []) : [];
+
       try {
-        const response = await sendMessage({ type: 'CHAT', requestId: currentActionId, messages: outgoingMessages });
+        const response = await sendMessage({
+          type: 'CHAT',
+          requestId: currentActionId,
+          messages: outgoingMessages,
+          images
+        });
         if (actionRequestId !== currentActionId) return;
         if (!response?.ok) throw new Error(response?.error || '답변을 받지 못했습니다.');
         const answer = String(response.message || '').trim();
@@ -3120,7 +3266,8 @@
         hasCompletedReading = false;
       }
 
-      const rawContext = isBoardChat ? getChatBoardContext() : getChatPostContext(resolvedKind, target);
+      const rawContext = (isBoardChat ? getChatBoardContext() : getChatPostContext(resolvedKind, target))
+        || (!isBoardChat && usePostImageCapture && findArticleMediaElements(findArticleBody()).length ? '첨부된 게시물 미디어를 읽어 주세요.' : '');
       if (!rawContext) {
         showToast(isBoardChat ? '읽을 게시판 목록을 찾을 수 없습니다.' : (resolvedKind === 'body' ? '읽을 게시물 내용을 먼저 작성해 주세요.' : '게시물 본문을 찾을 수 없습니다.'), 'warning');
         return;
@@ -3180,7 +3327,17 @@
         }
       });
 
+      let readSucceeded = false;
       try {
+        let images = [];
+        if (!isBoardChat && usePostImageCapture) {
+          const articleBody = findArticleBody();
+          if (articleBody) {
+            images = await captureArticleMediaSnippets(articleBody, () => currentRequestId !== readRequestId);
+            if (currentRequestId !== readRequestId) return;
+          }
+        }
+
         const response = await sendMessage({
           type: 'CHAT',
           requestId: currentRequestId,
@@ -3189,14 +3346,19 @@
               role: 'user',
               content: userPrompt
             }
-          ]
+          ],
+          images
         });
         if (currentRequestId !== readRequestId) return;
-        const rawAnswer = String(response?.message || '').trim() || fallbackAnswer;
+        if (!response?.ok) throw new Error(response?.error || '게시물을 읽지 못했습니다.');
+        readUserEntry.images = images;
+        const rawAnswer = String(response?.message || '').trim();
+        if (!rawAnswer) throw new Error('AI가 빈 답변을 반환했습니다.');
         let answer = rawAnswer.replace(/^(?:AI|답변|Assistant):\s*/i, '').trim();
         if ((answer.startsWith('"') && answer.endsWith('"')) || (answer.startsWith('“') && answer.endsWith('”'))) {
           answer = answer.slice(1, -1).trim();
         }
+        readSucceeded = true;
         readAssistantEntry.content = answer || fallbackAnswer;
         if (readAssistantBubble?.isConnected) {
           const wasNearBottom = (messages.scrollHeight - messages.scrollTop - messages.clientHeight) <= 120;
@@ -3207,9 +3369,9 @@
         }
       } catch (error) {
         if (error?.message === '요청을 취소했습니다.' || currentRequestId !== readRequestId) return;
-        readAssistantEntry.content = fallbackAnswer;
+        readAssistantEntry.content = `게시물을 읽지 못했습니다. ${error.message || ''}`;
         if (readAssistantBubble?.isConnected) {
-          renderAssistantContent(readAssistantBubble, fallbackAnswer);
+          renderAssistantContent(readAssistantBubble, readAssistantEntry.content);
           scrollChatToBottom(messages, true);
         }
       } finally {
@@ -3217,7 +3379,7 @@
           chatStreamHandlers.delete(currentRequestId);
           readRequestId = null;
           isReadingPost = false;
-          hasCompletedReading = true;
+          hasCompletedReading = readSucceeded;
           readUserEntry = null;
           readAssistantEntry = null;
           readAssistantBubble = null;
@@ -3424,17 +3586,24 @@
     const previousTop = document.body.style.top;
     const previousWidth = document.body.style.width;
 
-    document.body.style.overflow = 'hidden';
-    document.body.style.position = 'fixed';
-    document.body.style.top = `-${scrollY}px`;
-    document.body.style.width = '100%';
+    const lockScroll = () => {
+      document.body.style.overflow = 'hidden';
+      document.body.style.position = 'fixed';
+      document.body.style.top = `-${scrollY}px`;
+      document.body.style.width = '100%';
+    };
+    lockScroll();
 
     panel._aiangCleanupOverflow = () => {
       document.body.style.overflow = previousOverflow;
       document.body.style.position = previousPosition;
       document.body.style.top = previousTop;
       document.body.style.width = previousWidth;
-      window.scrollTo(0, scrollY);
+      window.scrollTo({ left: 0, top: scrollY, behavior: 'instant' });
+    };
+    panel._aiangSuspendScrollLock = () => {
+      panel._aiangCleanupOverflow();
+      return () => { if (panel.isConnected) lockScroll(); };
     };
     overlay.append(panel);
     document.body.append(overlay);
@@ -4135,6 +4304,9 @@
       }
       syncAllOpenModalsFontSize();
     }
+    if (changes.usePostImageCapture) {
+      usePostImageCapture = changes.usePostImageCapture.newValue === true;
+    }
   });
   window.addEventListener('resize', () => {
     const panel = document.querySelector('.aiang-review-popover');
@@ -4165,6 +4337,7 @@
       fontSizeCustom = ['small', 'medium', 'large'].includes(response?.settings?.fontSizeCustom)
         ? response.settings.fontSizeCustom
         : 'medium';
+      usePostImageCapture = response?.settings?.usePostImageCapture === true;
       syncAllOpenModalsFontSize();
       syncCommentGenerationControls();
       scheduleScan();

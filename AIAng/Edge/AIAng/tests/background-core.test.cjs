@@ -40,6 +40,12 @@ function loadCore(fetchImplementation = fetch, options = {}) {
     TextEncoder,
     ReadableStream,
     Uint8Array,
+    Blob,
+    setTimeout,
+    clearTimeout,
+    ...(options.chromeOverrides ? { chrome: { ...chrome, ...options.chromeOverrides } } : {}),
+    ...(options.navigator ? { navigator: options.navigator } : {}),
+    ...(options.recognizeCapturedImages ? { recognizeCapturedImages: options.recognizeCapturedImages } : {}),
     fetch: (url, fetchOptions) => {
       if (url === 'chrome-extension://test/shared/prompts.json') {
         return Promise.resolve({
@@ -93,7 +99,11 @@ function loadCore(fetchImplementation = fetch, options = {}) {
     ensurePromptCatalog,
     ensureFeatureFlags,
     getSettings,
-    sanitizeSettings
+    sanitizeSettings,
+    attachImagesToMessages,
+    sanitizeImageUrls,
+    callGeminiNano,
+    captureSenderTab
   };`, context);
   return context.__core;
 }
@@ -655,4 +665,154 @@ test('provides font size options with damoang default and sanitizes custom sizes
   const fullSettings = await testCore.handleMessage({ type: 'GET_SETTINGS' });
   assert.equal(fullSettings.settings.fontSizeMode, 'damoang');
   assert.equal(fullSettings.settings.fontSizeCustom, 'medium');
+});
+
+test('provides usePostImageCapture option with default false and sanitizes value', async () => {
+  const testCore = loadCore(fetch);
+  const defaultSettings = await testCore.getSettings();
+  assert.equal(defaultSettings.usePostImageCapture, false);
+
+  const sanitizedTrue = testCore.sanitizeSettings({ usePostImageCapture: true });
+  assert.equal(sanitizedTrue.usePostImageCapture, true);
+
+  const sanitizedFalse = testCore.sanitizeSettings({ usePostImageCapture: 'not-boolean' });
+  assert.equal(sanitizedFalse.usePostImageCapture, false);
+
+  const fullSettings = await testCore.handleMessage({ type: 'GET_SETTINGS' });
+  assert.equal(fullSettings.settings.usePostImageCapture, false);
+});
+
+test('adds media analysis guideline to post summary prompts when images are provided', () => {
+  const noImagePrompts = core.buildPostSummaryPrompts('본문 텍스트', []);
+  assert.ok(!noImagePrompts.user.includes('첨부된 미디어 캡쳐 화면도 종합하여'));
+
+  const withImagePrompts = core.buildPostSummaryPrompts('본문 텍스트', ['data:image/jpeg;base64,1234']);
+  assert.ok(withImagePrompts.user.includes('첨부된 미디어 캡쳐 화면도 종합하여'));
+});
+
+test('uses standard image_url content for every OpenAI-compatible endpoint', () => {
+  const dataUrl = 'data:image/jpeg;base64,aGVsbG8=';
+  const messages = [{ role: 'system', content: 'instructions' }, { role: 'user', content: 'question' }];
+  const result = core.attachImagesToMessages(messages, [dataUrl]);
+  assert.equal(result[1].content[1].image_url.url, dataUrl);
+  assert.equal(result[1].images, undefined);
+  assert.equal(messages[1].content, 'question');
+});
+
+test('media payload rejects URLs, malformed data, excess count and size', () => {
+  const image = 'data:image/jpeg;base64,aGVsbG8=';
+  assert.equal(core.sanitizeImageUrls([image])[0], image);
+  for (const input of [['https://example.com/private.png'], ['data:text/html;base64,aA=='], ['data:image/png;base64,<bad>'], Array(9).fill(image), ['data:image/png;base64,' + 'A'.repeat(3_000_000)]]) {
+    assert.throws(() => core.sanitizeImageUrls(input));
+  }
+});
+
+test('Gemini receives image Blobs with an image-enabled session, including streaming', async () => {
+  let options, prompt, destroyed = false;
+  const chunks = [];
+  const model = {
+    availability: async () => 'available',
+    create: async input => {
+      options = input;
+      return {
+        prompt: async () => '',
+        promptStreaming: async function* (input) { prompt = input; yield '분석'; yield '분석 완료'; },
+        destroy: () => { destroyed = true; }
+      };
+    }
+  };
+  const testCore = loadCore(fetch, { LanguageModel: model, settings: { provider: 'gemini', geminiKeepAlive: true } });
+  const answer = await testCore.callGeminiNano({ system: 'instructions', user: 'read media' }, new AbortController().signal, {}, value => chunks.push(value), null, ['data:image/png;base64,aGVsbG8=']);
+  assert.equal(options.expectedInputs[1].type, 'image');
+  assert.ok(prompt[0].content[0].value.startsWith('read media'));
+  assert.match(prompt[0].content[0].value, /영상 재생 내용과 음성은 포함되지 않습니다/);
+  assert.ok(prompt[0].content[1].value instanceof Blob);
+  assert.equal(await prompt[0].content[1].value.text(), 'hello');
+  assert.equal(answer, '분석 완료');
+  assert.equal(destroyed, true);
+});
+
+test('image session failures never retry as text-only and pretend to see images', async () => {
+  let count = 0;
+  const testCore = loadCore(fetch, { LanguageModel: {
+    availability: async () => 'available',
+    create: async () => { count++; throw new DOMException('unsupported', 'NotSupportedError'); }
+  } });
+  await assert.rejects(testCore.callGeminiNano({ system: 's', user: 'u' }, new AbortController().signal, {}, null, null, ['data:image/png;base64,aA==']), /이미지 입력/);
+  assert.equal(count, 1);
+});
+
+test('Edge passes actual OCR evidence to its text model', async () => {
+  let received;
+  const testCore = loadCore(fetch, {
+    navigator: { userAgent: 'Mozilla/5.0 Edg/150.0' },
+    recognizeCapturedImages: async images => { assert.equal(images.length, 1); return '[OCR] 서울 행사 9월 8일'; },
+    LanguageModel: {
+      availability: async () => 'available',
+      create: async () => ({ prompt: async input => { received = input; return '행사 안내'; }, destroy() {} })
+    }
+  });
+  await testCore.callGeminiNano({ system: 's', user: '요약' }, new AbortController().signal, {}, null, null, ['data:image/png;base64,aA==']);
+  assert.match(received, /서울 행사 9월 8일/);
+  assert.doesNotMatch(received, /첨부된 본문 미디어 캡쳐/);
+});
+
+test('capture refuses a different active tab and never calls screenshot API', async () => {
+  let captures = 0;
+  const testCore = loadCore(fetch, { chromeOverrides: { tabs: {
+    query: async () => [{ id: 2 }], captureVisibleTab: async () => { captures++; return 'screenshot'; }
+  } } });
+  await assert.rejects(testCore.captureSenderTab({ tab: { id: 1, windowId: 10 } }), /게시물 탭/);
+  assert.equal(captures, 0);
+});
+
+
+test('all post-context actions transmit captures only when the setting is enabled', async () => {
+  const image = 'data:image/png;base64,aGVsbG8=';
+  for (const enabled of [false, true]) {
+    const requests = [];
+    const testCore = loadCore(async (_url, options) => {
+      const request = JSON.parse(options.body); requests.push(request);
+      return { ok: true, headers: new Headers({ 'content-type': 'application/json' }),
+        json: async () => ({ choices: [{ message: { content: '확인한 내용입니다.' } }] }) };
+    }, { commentGenerationEnabled: true, settings: { provider: 'openai', model: 'vision-model', usePostImageCapture: enabled } });
+    await testCore.handleMessage({ type: 'SUMMARIZE_POST', text: '이미지 게시물', images: [image] }, { url: 'https://damoang.net/free/1' });
+    await testCore.processChatRequest({ messages: [{ role: 'user', content: '이 게시물을 읽으세요' }], images: [image] });
+    for (const type of ['SUMMARIZE_REACTIONS', 'BUILD_GLOSSARY', 'GENERATE_COMMENT']) {
+      await testCore.handleMessage({ type, text: '본문', postText: '본문', commentsText: '댓글', commentCount: 1, sampledCommentCount: 1, tone: 'positive', images: [image] }, { url: 'https://damoang.net/free/1' });
+    }
+    assert.equal(requests.length, 5);
+    for (const request of requests) {
+      const user = request.messages.at(-1);
+      assert.equal(Array.isArray(user.content), enabled);
+      if (enabled) assert.equal(user.content[1].image_url.url, image);
+      assert.equal(user.images, undefined);
+    }
+  }
+});
+
+test('service-worker model requests use an offscreen document and relay stream events', async () => {
+  const listeners = new Set(); let created = 0; let routed;
+  const extensionURL = value => `chrome-extension://test/${value}`;
+  const runtime = {
+    getURL: extensionURL,
+    onInstalled: { addListener() {} },
+    onMessage: { addListener(listener) { listeners.add(listener); }, removeListener(listener) { listeners.delete(listener); } },
+    async sendMessage(message) {
+      routed = message;
+      for (const listener of listeners) listener({ type: 'AIANG_BUILTIN_EVENT', id: message.id, kind: 'chunk', value: '중간 답변' }, { url: extensionURL('offscreen.html') });
+      return { ok: true, result: '최종 답변' };
+    }
+  };
+  const testCore = loadCore(fetch, { chromeOverrides: { runtime, offscreen: {
+    hasDocument: async () => false, createDocument: async options => { assert.equal(options.url, 'offscreen.html'); created++; }
+  } } });
+  const chunks = [];
+  const response = await testCore.callGeminiNano({ system: 's', user: 'u' }, new AbortController().signal, {}, value => chunks.push(value), null, ['data:image/png;base64,aA==']);
+  assert.equal(response, '최종 답변');
+  assert.equal(created, 1);
+  assert.equal(routed.target, 'aiang-offscreen');
+  assert.equal(routed.images.length, 1);
+  assert.deepEqual(chunks, ['중간 답변']);
+  assert.equal(listeners.size, 1, 'temporary response listener is removed');
 });
