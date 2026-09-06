@@ -198,5 +198,57 @@
     "system": "당신은 웹 기사 및 게시물 용어 정리 전문가입니다.",
     "intro": "아래 게시물 내용을 문맥으로 사용해 질문에 답하세요.",
     "question": "게시물을 이해하는 데 도움이 되는 전문용어, 약어, 개념들을 골라 용어를 굵게 표시한 읽기 쉬운 Markdown 형식의 사전 목록으로 설명해주세요."
+  },
+  "ui": {
+    "actions": {
+      "spellcheck": { "label": "맞춤법 검사", "short": "맞춤법" },
+      "honorific": { "label": "경어체로 교정", "short": "경어체" },
+      "improve": { "label": "문장 개선", "short": "문장 개선" },
+      "decorate": { "label": "글 꾸미기", "short": "글 꾸미기" },
+      "chat": { "label": "뭐였더라?", "short": "뭐였더라?" },
+      "suggest_tags": { "label": "태그 생성", "short": "태그 생성" },
+      "generate_comment": { "label": "댓글 생성", "short": "댓글 생성" },
+      "suggest_title": { "label": "글 제목 추천", "short": "제목 추천" },
+      "summarize_post": { "label": "게시물 요약", "short": "요약" },
+      "summarize_reactions": { "label": "댓글 반응 요약", "short": "댓글 요약" },
+      "build_glossary": { "label": "용어 사전", "short": "용어 사전" }
+    },
+    "floatingMenu": {
+      "headings": {
+        "body": "글쓰기 AI 지원",
+        "post": "게시물 AI 지원",
+        "board": "게시판 AI 지원"
+      },
+      "items": {
+        "spellcheck": "{{subject}}의 맞춤법을 검사해 주세요",
+        "honorific": "{{subject}}을 경어체로 교정해 주세요",
+        "improve": "{{subject}}의 문장을 다듬어 주세요",
+        "decorate": "{{subject}}을 꾸며 주세요",
+        "suggest_tags": "작성 중인 글에 어울리는 태그를 생성해 주세요",
+        "suggest_title": "작성 중인 글에 어울리는 제목을 추천해 주세요",
+        "summarize_post": "게시물을 요약해 주세요",
+        "summarize_reactions": "댓글 반응을 요약해 주세요",
+        "build_glossary": "용어 사전을 보여 주세요",
+        "read_board": "이 게시판의 글 목록을 읽어 주세요",
+        "chat": "궁금한 내용을 질문할게요",
+        "settings": "AI 지원 설정"
+      },
+      "subjects": {
+        "body": "작성 중인 글",
+        "comment": "댓글"
+      },
+      "launcher": {
+        "default": "AIAng AI 지원 메뉴",
+        "busy": "AIAng 처리 중",
+        "cancellable": "AIAng 처리 중 (클릭하면 취소)"
+      }
+    },
+    "commentTones": {
+      "positive": "긍정•동의•응원",
+      "negative": "부정•부동의",
+      "angry": "화가나요",
+      "joke": "농담"
+    }
   }
 }
+

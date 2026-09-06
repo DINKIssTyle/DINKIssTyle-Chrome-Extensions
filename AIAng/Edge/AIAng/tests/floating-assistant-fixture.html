@@ -19,7 +19,7 @@ window.releaseTestRequests = () => {
  for(const callback of pending.values()) callback({ok:true,correctedText:'교정한 문장입니다.',suggestions:[],message:'내용을 읽었습니다.',summary:'요약했습니다.',glossary:'용어 사전입니다.'});
  pending.clear();
 };
-window.testSettings = {enabled:true, floatingAssistantEnabled:params.get('floating')!=='off',floatingAssistantPosition:'right',usePostImageCapture:params.has('media')};
+window.testSettings = {enabled:true, floatingAssistantEnabled:params.get('floating')!=='off',floatingAssistantPosition:params.get('position')||'right',floatingAssistantHeight:params.get('height')||'default',floatingAssistantSize:params.get('size')||'large',usePostImageCapture:params.has('media')};
 window.setSettings = values => {
   const changes = Object.fromEntries(Object.entries(values).map(([key,value]) => [key,{oldValue:testSettings[key],newValue:value}]));
   Object.assign(testSettings,values); listeners.forEach(listener => listener(changes,'local'));

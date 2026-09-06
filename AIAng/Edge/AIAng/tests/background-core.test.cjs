@@ -831,11 +831,56 @@ test('floating assistant is opt-in and public settings expose a validated positi
   const core = loadCore();
   const defaults = await core.getSettings();
   assert.equal(defaults.floatingAssistantEnabled, false);
-  assert.equal(defaults.floatingAssistantPosition, 'right');
+  assert.equal(defaults.floatingAssistantPosition, 'center');
+  assert.equal(defaults.floatingAssistantHeight, 'default');
+  assert.equal(defaults.floatingAssistantSize, 'small');
+  assert.equal(core.sanitizeSettings({floatingAssistantHeight:'unknown'}).floatingAssistantHeight,'default');
+  assert.equal(core.sanitizeSettings({floatingAssistantSize:'unknown'}).floatingAssistantSize,'small');
+  for(const height of ['default','slight','high']) {
+    const configured = loadCore(fetch, {settings:{floatingAssistantHeight:height}});
+    assert.equal((await configured.handleMessage({type:'GET_SETTINGS'})).settings.floatingAssistantHeight,height);
+  }
+  for(const size of ['small','medium','large']) {
+    const configured = loadCore(fetch, {settings:{floatingAssistantSize:size}});
+    assert.equal((await configured.handleMessage({type:'GET_SETTINGS'})).settings.floatingAssistantSize,size);
+  }
   assert.equal(core.sanitizeSettings({floatingAssistantEnabled:'true',floatingAssistantPosition:'top'}).floatingAssistantEnabled,false);
-  assert.equal(core.sanitizeSettings({floatingAssistantPosition:'top'}).floatingAssistantPosition,'right');
+  assert.equal(core.sanitizeSettings({floatingAssistantPosition:'top'}).floatingAssistantPosition,'center');
   const enabledCore = loadCore(fetch, {settings:{floatingAssistantEnabled:true,floatingAssistantPosition:'left'}});
   const response = await enabledCore.handleMessage({type:'GET_SETTINGS'});
   assert.equal(response.settings.floatingAssistantEnabled,true);
   assert.equal(response.settings.floatingAssistantPosition,'left');
+  const centerCore = loadCore(fetch, {settings:{floatingAssistantPosition:'center'}});
+  assert.equal((await centerCore.handleMessage({type:'GET_SETTINGS'})).settings.floatingAssistantPosition,'center');
 });
+
+test('selection patches preserve unrelated settings and reject content-page writes', async () => {
+  let stored = { endpoint: 'http://localhost:1234/v1', apiKey: 'saved-key', personalization: 'saved note', temperature: 0.7, floatingAssistantHeight: 'default' };
+  const writes = [];
+  const instance = loadCore(fetch, { chromeOverrides: { storage: { local: {
+    get: async defaults => ({ ...defaults, ...stored }),
+    set: async patch => { writes.push({ ...patch }); stored = { ...stored, ...patch }; }
+  } } } });
+  const sender = { url: 'chrome-extension://test/options.html' };
+  await instance.handleMessage({ type: 'PATCH_SETTINGS', settings: { floatingAssistantHeight: 'high', endpoint: 'http://draft.invalid', apiKey: 'draft-key', personalization: 'draft note' } }, sender);
+  assert.deepEqual(writes[0], { floatingAssistantHeight: 'high' });
+  assert.equal(stored.apiKey, 'saved-key');
+  assert.equal(stored.personalization, 'saved note');
+  const result = await instance.handleMessage({ type: 'PATCH_SETTINGS', settings: { provider: 'gemini', enabled: false, fontSizeCustom: 'large' } }, sender);
+  assert.equal(result.settings.provider, 'gemini');
+  assert.equal(result.settings.floatingAssistantHeight, 'high');
+  assert.equal(result.settings.temperature, 0.7);
+  await instance.handleMessage({ type: 'PATCH_SETTINGS', settings: { floatingAssistantHeight: 'invalid' } }, sender);
+  assert.equal(stored.floatingAssistantHeight, 'default');
+  await assert.rejects(instance.handleMessage({ type: 'PATCH_SETTINGS', settings: { enabled: true } }, { url: 'https://damoang.net/free' }), /설정 화면/);
+});
+
+test('provides centralized ui labels and floating menu configuration in prompts.json', () => {
+  const ui = promptCatalog?.ui;
+  assert.ok(ui, 'ui section should exist in prompts.json');
+  assert.ok(ui.actions?.spellcheck?.label, 'spellcheck action label should exist');
+  assert.ok(ui.floatingMenu?.headings?.body, 'floatingMenu headings should exist');
+  assert.ok(ui.floatingMenu?.items?.spellcheck, 'floatingMenu item templates should exist');
+  assert.ok(ui.commentTones?.positive, 'commentTones should exist');
+});
+

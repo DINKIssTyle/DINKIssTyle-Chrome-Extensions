@@ -389,7 +389,8 @@ button:disabled { cursor: wait; opacity: .62; }
   transition: opacity 150ms ease;
 }
 
-.segmented-control.is-disabled {
+.segmented-control.is-disabled,
+.segmented-control:has(input:disabled) {
   opacity: 0.45;
   pointer-events: none;
 }
@@ -464,6 +465,68 @@ button:disabled { cursor: wait; opacity: .62; }
 #status { flex: 1 1 auto; margin: 0; color: var(--muted-foreground); font-size: 11px; }
 #status.success { color: var(--success); }
 #status.error { color: var(--destructive); }
+
+.provider-actions {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 10px;
+  margin-top: 4px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+
+.card-action-center {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  margin-top: 16px;
+}
+
+.card-action-center .primary-button {
+  min-width: 130px;
+}
+
+.options-toast {
+  position: fixed;
+  left: 50%;
+  bottom: 28px;
+  transform: translateX(-50%) translateY(20px);
+  z-index: 10000;
+  padding: 10px 20px;
+  border: 1px solid var(--border);
+  border-radius: 9999px;
+  background: var(--card);
+  color: var(--foreground);
+  font-size: 13px;
+  font-weight: 600;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.2), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 180ms ease, transform 180ms cubic-bezier(0.16, 1, 0.3, 1);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: min(90vw, 440px);
+  text-align: center;
+  white-space: nowrap;
+}
+
+.options-toast.is-visible {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+  pointer-events: auto;
+}
+
+.options-toast-success {
+  border-color: color-mix(in oklch, var(--success) 45%, var(--border));
+}
+
+.options-toast-error {
+  border-color: var(--destructive);
+  color: var(--destructive);
+}
+
 .card-toggle-row {
   display: flex;
   align-items: flex-start;
@@ -682,3 +745,14 @@ button:disabled { cursor: wait; opacity: .62; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; }
 }
+
+/* Separate the floating controls while keeping the shared segmented style. */
+.floating-settings-fields { display: grid; gap: 24px; margin-top: 24px; }
+.floating-settings-fields > .switch-row { padding-bottom: 20px; border-bottom: 1px solid var(--border); }
+.floating-settings-fields > .field { gap: 10px; }
+.floating-settings-fields .segmented-control { max-width: 100%; }
+.floating-settings-fields .segmented-item { flex: 1; min-width: 0; }
+.floating-settings-fields .segmented-item span { width: 100%; padding-inline: 12px; white-space: nowrap; }
+.settings-save-help { margin: 0 0 18px; color: var(--muted-foreground); font-size: 12px; line-height: 1.6; }
+.selection-status { margin: 18px 0 0; color: var(--muted-foreground); font-size: 11px; line-height: 1.5; }
+.selection-status.error { color: var(--destructive); }

@@ -21,6 +21,7 @@
       </div>
     </header>
 
+    <p class="settings-save-help">스위치와 선택 항목은 변경 시 즉시 저장됩니다. AI 제공자 정보와 개인화 지침은 각 섹션의 저장 버튼을 눌러 주세요.</p>
     <form id="settings-form">
       <section class="card">
         <div class="section-heading">
@@ -85,6 +86,11 @@
               </div>
               <input id="temperature" type="number" min="0" max="2" step="0.1">
             </div>
+
+            <div class="field full provider-actions">
+              <button id="test" class="outline-button" type="button">연결 테스트</button>
+              <button id="save-provider" class="primary-button" type="button">저장</button>
+            </div>
           </div>
 
           <div id="gemini-fields" class="subgrid full" hidden>
@@ -141,6 +147,71 @@
       </section>
 
       <section class="card">
+        <div class="section-heading compact"><div>
+          <h2>플로팅 AI 지원</h2>
+          <p>화면에 고정된 AIAng 버튼에서 상황에 맞는 AI 기능을 실행합니다. 켜면 페이지의 기존 AI 도구가 플로팅 메뉴로 바뀝니다. 채팅창의 액션 칩은 그대로 사용할 수 있습니다.</p>
+        </div></div>
+        <div class="floating-settings-fields">
+          <label class="switch-row">
+            <input id="floating-assistant-enabled" type="checkbox">
+            <span class="switch" aria-hidden="true"></span>
+            <span>플로팅 AI 지원 사용</span>
+          </label>
+          <div class="field full">
+            <span>플로팅 위치</span>
+            <div class="segmented-control" role="radiogroup" aria-label="플로팅 위치">
+              <label class="segmented-item">
+                <input type="radio" name="floating-assistant-position" value="left" disabled>
+                <span>좌하단</span>
+              </label>
+              <label class="segmented-item">
+                <input type="radio" name="floating-assistant-position" value="center" checked disabled>
+                <span>중앙 하단</span>
+              </label>
+              <label class="segmented-item">
+                <input type="radio" name="floating-assistant-position" value="right" disabled>
+                <span>우하단</span>
+              </label>
+            </div>
+          </div>
+          <div class="field full">
+            <span>플로팅 높이</span>
+            <div class="segmented-control" role="radiogroup" aria-label="플로팅 높이">
+              <label class="segmented-item">
+                <input type="radio" name="floating-assistant-height" value="default" checked disabled>
+                <span>기본 높이</span>
+              </label>
+              <label class="segmented-item">
+                <input type="radio" name="floating-assistant-height" value="slight" disabled>
+                <span>살짝 높이</span>
+              </label>
+              <label class="segmented-item">
+                <input type="radio" name="floating-assistant-height" value="high" disabled>
+                <span>더 높이</span>
+              </label>
+            </div>
+          </div>
+          <div class="field full">
+            <span>플로팅 버튼 크기</span>
+            <div class="segmented-control" role="radiogroup" aria-label="플로팅 버튼 크기">
+              <label class="segmented-item">
+                <input type="radio" name="floating-assistant-size" value="small" checked disabled>
+                <span>작음</span>
+              </label>
+              <label class="segmented-item">
+                <input type="radio" name="floating-assistant-size" value="medium" disabled>
+                <span>보통</span>
+              </label>
+              <label class="segmented-item">
+                <input type="radio" name="floating-assistant-size" value="large" disabled>
+                <span>큼</span>
+              </label>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="card">
         <div class="section-heading compact">
           <div>
             <h2>게시물 분석</h2>
@@ -154,7 +225,7 @@
                 본문의 이미지와 유튜브·트위터·인스타그램 등 외부 임베드의 화면을 캡쳐하여 게시물 요약과 ‘이 게시물을 읽으세요’ 대화에 사용합니다. 이미지 지원 모델에는 캡쳐를, Edge AI에는 캡쳐에서 인식한 글자를 전달합니다. 영상 재생 내용과 음성은 포함되지 않습니다.
               </p>
               <p class="field-help">
-                캡쳐를 켜고 저장하면 브라우저가 모든 사이트 접근 권한을 요청합니다. 화면 캡쳐 API에 필요한 권한이며, 캡쳐 요청은 다모앙 게시물에서만 처리합니다.
+                캡쳐를 켜면 브라우저가 모든 사이트 접근 권한을 요청합니다. 화면 캡쳐 API에 필요한 권한이며, 캡쳐 요청은 다모앙 게시물에서만 처리합니다.
               </p>
             </div>
             <label class="switch-row">
@@ -178,6 +249,9 @@
             placeholder="예: 나는 언제나 친절한 사람입니다. 다정한 말투와 교양 있는 문장을 사용해 주세요."></textarea>
           <small class="counter"><span id="personalization-count">0</span>/4000</small>
         </label>
+        <div class="card-action-center">
+          <button id="save-personalization" class="primary-button" type="button">저장</button>
+        </div>
       </section>
 
       <section class="card">
@@ -218,29 +292,8 @@
         </div>
       </section>
 
-      <section class="card">
-        <div class="section-heading compact"><div>
-          <h2>플로팅 AI 지원</h2>
-          <p>화면에 고정된 AIAng 버튼에서 상황에 맞는 AI 기능을 실행합니다. 켜면 페이지의 기존 AI 도구가 플로팅 메뉴로 바뀝니다. 채팅창의 액션 칩은 그대로 사용할 수 있습니다.</p>
-        </div></div>
-        <label class="switch-row">
-          <input id="floating-assistant-enabled" type="checkbox">
-          <span class="switch" aria-hidden="true"></span>
-          <span>플로팅 AI 지원 사용</span>
-        </label>
-        <label class="field">
-          <span>플로팅 위치</span>
-          <select id="floating-assistant-position" disabled>
-            <option value="left">좌하단</option>
-            <option value="right" selected>우하단</option>
-          </select>
-        </label>
-      </section>
-
       <div class="footer-actions">
         <p id="status" role="status" aria-live="polite"></p>
-        <button id="test" class="outline-button" type="button">연결 테스트</button>
-        <button class="primary-button" type="submit">저장</button>
       </div>
     </form>
 

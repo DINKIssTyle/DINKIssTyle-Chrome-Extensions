@@ -21,15 +21,58 @@
   const IMPROVEMENT_ACTIONS = [HONORIFIC_ACTION, IMPROVE_ACTION, DECORATE_ACTION];
   const BODY_ACTIONS = [SPELLCHECK_ACTION, ...IMPROVEMENT_ACTIONS, CHAT_ACTION, TAG_SUGGEST_ACTION, TITLE_SUGGEST_ACTION];
   const COMMENT_ACTIONS = [SPELLCHECK_ACTION, ...IMPROVEMENT_ACTIONS, CHAT_ACTION];
-  const LABELS = Object.fromEntries([
+  const DEFAULT_LABELS = Object.freeze(Object.fromEntries([
     ...BODY_ACTIONS,
     ...COMMENT_ACTIONS,
     COMMENT_GENERATE_ACTION,
     POST_SUMMARY_ACTION,
     COMMENT_REACTION_ACTION,
     TERM_GLOSSARY_ACTION
-  ]
-    .map(action => [action.id, action.label]));
+  ].map(action => [action.id, action.label])));
+
+  function getActionLabel(id, fallback) {
+    return promptCatalog?.ui?.actions?.[id]?.label || fallback || DEFAULT_LABELS[id] || id;
+  }
+
+  function getActionShort(id, fallback) {
+    return promptCatalog?.ui?.actions?.[id]?.short || fallback || DEFAULT_LABELS[id] || id;
+  }
+
+  function getFloatingMenuHeading(kind, fallback) {
+    return promptCatalog?.ui?.floatingMenu?.headings?.[kind] || fallback;
+  }
+
+  function getFloatingActionLabel(id, subject, fallback) {
+    const template = promptCatalog?.ui?.floatingMenu?.items?.[id] || fallback;
+    if (subject && typeof template === 'string' && template.includes('{{subject}}')) {
+      return template.replace('{{subject}}', subject);
+    }
+    return template || fallback;
+  }
+
+  function getFloatingSubject(kind) {
+    return promptCatalog?.ui?.floatingMenu?.subjects?.[kind] || (kind === 'body' ? '작성 중인 글' : '댓글');
+  }
+
+  function getFloatingLauncherLabel(state) {
+    return promptCatalog?.ui?.floatingMenu?.launcher?.[state] || (
+      state === 'busy' ? 'AIAng 처리 중' :
+      state === 'cancellable' ? 'AIAng 처리 중 (클릭하면 취소)' :
+      'AIAng AI 지원 메뉴'
+    );
+  }
+
+  function getCommentToneLabel(id, fallback) {
+    return promptCatalog?.ui?.commentTones?.[id] || fallback;
+  }
+
+  const LABELS = new Proxy(DEFAULT_LABELS, {
+    get(target, prop) {
+      if (typeof prop !== 'string') return target[prop];
+      return promptCatalog?.ui?.actions?.[prop]?.label || target[prop] || prop;
+    }
+  });
+
   const MEDIA_LEAF_SELECTOR = 'img, video, audio, iframe, canvas, object, embed';
   const MEDIA_WRAPPER_SELECTOR = 'figure, picture, a, [data-type="image"], [data-node-type="image"], [data-node-view-wrapper], [data-youtube-video], .image-resizer';
   const POST_EDITOR_PATH_PATTERN = /\/(?:write|edit)(?:\/|$)/;
@@ -38,6 +81,7 @@
   const COMMENT_REACTION_POST_LIMIT = 6000;
   const COMMENT_REACTION_COMMENTS_LIMIT = 9000;
   const COMMENT_GENERATION_POST_LIMIT = 6000;
+
   const COMMENT_GENERATION_TONES = [
     { id: 'positive', label: '긍정•동의•응원' },
     { id: 'negative', label: '부정•부동의' },
@@ -126,7 +170,9 @@
   let fontSizeCustom = 'medium';
   let usePostImageCapture = false;
   let floatingAssistantEnabled = false;
-  let floatingAssistantPosition = 'right';
+  let floatingAssistantPosition = 'center';
+  let floatingAssistantHeight = 'default';
+  let floatingAssistantSize = 'small';
   let lastFocusedEditor = null;
   const EDITOR_SELECTOR = '[contenteditable="true"].tiptap.ProseMirror, textarea[placeholder*="댓글을 입력하세요"]';
 
@@ -246,25 +292,25 @@
     const add = (id, label, icon, run) => actions.push({ id, label, icon, run });
     const { kind, editor, article } = context;
     if (kind === 'body' || editor) {
-      const subject = kind === 'body' ? '작성 중인 글' : '댓글';
-      add('spellcheck', `${subject}의 맞춤법을 검사해 주세요`, 'check', button =>
+      const subject = getFloatingSubject(kind === 'body' ? 'body' : 'comment');
+      add('spellcheck', getFloatingActionLabel('spellcheck', subject, `${subject}의 맞춤법을 검사해 주세요`), 'check', button =>
         kind === 'body' ? runPostSpellcheck(editor, button) : runAction(editor, 'spellcheck', button));
-      add('honorific', `${subject}을 경어체로 교정해 주세요`, 'chat', button => runAction(editor, 'honorific', button));
-      add('improve', `${subject}의 문장을 다듬어 주세요`, 'sparkle', button => runAction(editor, 'improve', button));
-      add('decorate', `${subject}을 꾸며 주세요`, 'palette', button => runAction(editor, 'decorate', button));
+      add('honorific', getFloatingActionLabel('honorific', subject, `${subject}을 경어체로 교정해 주세요`), 'chat', button => runAction(editor, 'honorific', button));
+      add('improve', getFloatingActionLabel('improve', subject, `${subject}의 문장을 다듬어 주세요`), 'sparkle', button => runAction(editor, 'improve', button));
+      add('decorate', getFloatingActionLabel('decorate', subject, `${subject}을 꾸며 주세요`), 'palette', button => runAction(editor, 'decorate', button));
       if (kind === 'body') {
-        add('suggest_tags', '작성 중인 글에 어울리는 태그를 생성해 주세요', 'tag', button => runTagGeneration(editor, button));
-        add('suggest_title', '작성 중인 글에 어울리는 제목을 추천해 주세요', 'title', button => runTitleSuggestions(editor, button));
+        add('suggest_tags', getFloatingActionLabel('suggest_tags', subject, '작성 중인 글에 어울리는 태그를 생성해 주세요'), 'tag', button => runTagGeneration(editor, button));
+        add('suggest_title', getFloatingActionLabel('suggest_title', subject, '작성 중인 글에 어울리는 제목을 추천해 주세요'), 'title', button => runTitleSuggestions(editor, button));
       }
     }
     if (kind === 'post') {
-      add('summarize_post', '게시물을 요약해 주세요', 'sparkle', () => runPostSummary(article));
-      if (context.hasComments) add('summarize_reactions', '댓글 반응을 요약해 주세요', 'chat', () => runCommentReactionSummary(article));
-      add('build_glossary', '용어 사전을 보여 주세요', 'book', () => runTermGlossary(article));
+      add('summarize_post', getFloatingActionLabel('summarize_post', null, '게시물을 요약해 주세요'), 'sparkle', () => runPostSummary(article));
+      if (context.hasComments) add('summarize_reactions', getFloatingActionLabel('summarize_reactions', null, '댓글 반응을 요약해 주세요'), 'chat', () => runCommentReactionSummary(article));
+      add('build_glossary', getFloatingActionLabel('build_glossary', null, '용어 사전을 보여 주세요'), 'book', () => runTermGlossary(article));
     } else if (kind === 'board') {
-      add('read_board', '이 게시판의 글 목록을 읽어 주세요', 'book', () => openChatModal(document.body, 'board', null, true));
+      add('read_board', getFloatingActionLabel('read_board', null, '이 게시판의 글 목록을 읽어 주세요'), 'book', () => openChatModal(document.body, 'board', null, true));
     }
-    add('chat', '궁금한 내용을 질문할게요', 'question', () =>
+    add('chat', getFloatingActionLabel('chat', null, '궁금한 내용을 질문할게요'), 'question', () =>
       openChatModal(editor || article || document.body, kind === 'post' ? 'comment' : kind));
     return actions;
   }
@@ -285,7 +331,9 @@
     if (image.getAttribute('src') !== url) image.src = url;
     launcher.setAttribute('aria-busy', String(busy));
     const cancellable = Boolean(launcher.parentElement.querySelector('.is-loading'));
-    const label = busy ? (cancellable ? 'AIAng 처리 중 (클릭하면 취소)' : 'AIAng 처리 중') : 'AIAng AI 지원 메뉴';
+    const label = busy
+      ? (cancellable ? getFloatingLauncherLabel('cancellable') : getFloatingLauncherLabel('busy'))
+      : getFloatingLauncherLabel('default');
     launcher.setAttribute('aria-label', label);
     launcher.title = label;
   }
@@ -325,6 +373,7 @@
       root.style.removeProperty('left');
       root.style.removeProperty('right');
       root.style.removeProperty('--aiang-floating-menu-width');
+      root.style.removeProperty('--aiang-floating-menu-inset');
     };
     if (!boundary) { reset(); return; }
     const rect = boundary.getBoundingClientRect();
@@ -332,9 +381,18 @@
     const right = Math.min(document.documentElement.clientWidth - 18, rect.right);
     const width = root.querySelector('.aiang-floating-launcher').getBoundingClientRect().width;
     if (right - left < width) { reset(); return; }
-    root.style.left = `${floatingAssistantPosition === 'left' ? left : right - width}px`;
+    const half = width / 2;
+    const viewportRight = document.documentElement.clientWidth - 18;
+    const canStraddle = floatingAssistantPosition === 'left'
+      ? rect.left - half >= 18 : rect.right + half <= viewportRight;
+    const inset = floatingAssistantPosition !== 'center' && canStraddle ? half : 0;
+    const x = floatingAssistantPosition === 'center' ? (left + right - width) / 2
+      : floatingAssistantPosition === 'left' ? left - inset : right - width + inset;
+    root.style.left = `${x}px`;
+    // Keep the menu inside the content column while the button straddles its edge.
+    root.style.setProperty('--aiang-floating-menu-inset', `${inset}px`);
     root.style.right = 'auto';
-    root.style.setProperty('--aiang-floating-menu-width', `${Math.min(360, right - left)}px`);
+    root.style.setProperty('--aiang-floating-menu-width', `${Math.min(320, right - left)}px`);
   }
 
   function syncFloatingAssistant() {
@@ -387,6 +445,8 @@
       document.body.append(root);
     }
     root.dataset.position = floatingAssistantPosition;
+    root.dataset.height = floatingAssistantHeight;
+    root.dataset.size = floatingAssistantSize;
     positionFloatingAssistant(root);
     syncFloatingActivity();
     if (!root.querySelector('.aiang-floating-menu').hidden) refreshFloatingMenu(root);
@@ -404,7 +464,7 @@
     menu.replaceChildren();
     const heading = document.createElement('div');
     heading.className = 'aiang-floating-heading';
-    heading.textContent = context.kind === 'body' ? '글쓰기 AI 지원' : context.kind === 'post' ? '게시물 AI 지원' : '게시판 AI 지원';
+    heading.textContent = getFloatingMenuHeading(context.kind, context.kind === 'body' ? '글쓰기 AI 지원' : context.kind === 'post' ? '게시물 AI 지원' : '게시판 AI 지원');
     menu.append(heading);
     for (const action of floatingActions(context)) {
       const button = document.createElement('button');
@@ -438,7 +498,7 @@
     settings.type = 'button';
     settings.className = 'aiang-floating-item aiang-floating-settings';
     settings.setAttribute('role', 'menuitem');
-    settings.innerHTML = `${ICONS.settings}<span>AI 지원 설정</span>`;
+    settings.innerHTML = `${ICONS.settings}<span>${getFloatingActionLabel('settings', null, 'AI 지원 설정')}</span>`;
     settings.addEventListener('click', () => { closeActionMenu(); openSettings(); });
     menu.append(settings);
     if (focusedAction) (menu.querySelector(`[data-action="${focusedAction}"]`) || menu.querySelector('[role="menuitem"]'))?.focus({ preventScroll: true });
@@ -474,7 +534,7 @@
       button.className = 'aiang-action';
       if (IMPROVEMENT_ACTIONS.includes(action)) button.classList.add('aiang-enhancement-action');
       button.dataset.action = action.id;
-      button.innerHTML = `${ICONS[action.icon]}<span class="aiang-long-label">${action.label}</span><span class="aiang-short-label">${action.short}</span>`;
+      button.innerHTML = `${ICONS[action.icon]}<span class="aiang-long-label">${getActionLabel(action.id, action.label)}</span><span class="aiang-short-label">${getActionShort(action.id, action.short)}</span>`;
       button.addEventListener('click', event => {
         event.preventDefault();
         toastToolbarAnchor = toolbar;
@@ -514,7 +574,7 @@
       buttonClassName: 'aiang-improvement-button',
       action: { id: 'improvement_menu', label, short: label, icon: 'sparkle' },
       menuLabel: `${label} 메뉴`,
-      items: IMPROVEMENT_ACTIONS.map(action => ({ id: action.id, label: action.label })),
+      items: IMPROVEMENT_ACTIONS.map(action => ({ id: action.id, label: getActionLabel(action.id, action.label) })),
       onSelect: (actionId, button) => {
         toastToolbarAnchor = toolbar;
         runAction(editor, actionId, button);
@@ -532,7 +592,7 @@
     button.dataset.action = COMMENT_GENERATE_ACTION.id;
     button.setAttribute('aria-haspopup', 'menu');
     button.setAttribute('aria-expanded', 'false');
-    button.innerHTML = `${ICONS[COMMENT_GENERATE_ACTION.icon]}<span class="aiang-long-label">${COMMENT_GENERATE_ACTION.label}</span><span class="aiang-short-label">${COMMENT_GENERATE_ACTION.short}</span>`;
+    button.innerHTML = `${ICONS[COMMENT_GENERATE_ACTION.icon]}<span class="aiang-long-label">${getActionLabel(COMMENT_GENERATE_ACTION.id, COMMENT_GENERATE_ACTION.label)}</span><span class="aiang-short-label">${getActionShort(COMMENT_GENERATE_ACTION.id, COMMENT_GENERATE_ACTION.short)}</span>`;
 
     const menu = document.createElement('div');
     menu.className = 'aiang-action-menu aiang-comment-generate-menu aiang-no-select';
@@ -545,7 +605,7 @@
       item.className = 'aiang-action-menu-option aiang-comment-generate-option';
       item.dataset.tone = tone.id;
       item.setAttribute('role', 'menuitem');
-      item.textContent = tone.label;
+      item.textContent = getCommentToneLabel(tone.id, tone.label);
       item.addEventListener('click', event => {
         event.stopPropagation();
         closeActionMenu();
@@ -737,7 +797,7 @@
     const postButton = document.createElement('button');
     postButton.type = 'button';
     postButton.className = 'aiang-summary-button';
-    postButton.innerHTML = `${ICONS[POST_SUMMARY_ACTION.icon]}<span>${POST_SUMMARY_ACTION.label}</span>`;
+    postButton.innerHTML = `${ICONS[POST_SUMMARY_ACTION.icon]}<span>${getActionLabel(POST_SUMMARY_ACTION.id, POST_SUMMARY_ACTION.label)}</span>`;
     postButton.addEventListener('click', () => {
       toastToolbarAnchor = slot;
       runPostSummary(articleBody, postButton);
@@ -746,7 +806,7 @@
     const reactionButton = document.createElement('button');
     reactionButton.type = 'button';
     reactionButton.className = 'aiang-summary-button';
-    reactionButton.innerHTML = `${ICONS[COMMENT_REACTION_ACTION.icon]}<span>${COMMENT_REACTION_ACTION.label}</span>`;
+    reactionButton.innerHTML = `${ICONS[COMMENT_REACTION_ACTION.icon]}<span>${getActionLabel(COMMENT_REACTION_ACTION.id, COMMENT_REACTION_ACTION.label)}</span>`;
     reactionButton.addEventListener('click', () => {
       toastToolbarAnchor = slot;
       runCommentReactionSummary(articleBody, reactionButton);
@@ -755,7 +815,7 @@
     const glossaryButton = document.createElement('button');
     glossaryButton.type = 'button';
     glossaryButton.className = 'aiang-summary-button';
-    glossaryButton.innerHTML = `${ICONS[TERM_GLOSSARY_ACTION.icon]}<span>${TERM_GLOSSARY_ACTION.label}</span>`;
+    glossaryButton.innerHTML = `${ICONS[TERM_GLOSSARY_ACTION.icon]}<span>${getActionLabel(TERM_GLOSSARY_ACTION.id, TERM_GLOSSARY_ACTION.label)}</span>`;
     glossaryButton.addEventListener('click', () => {
       toastToolbarAnchor = slot;
       runTermGlossary(articleBody, glossaryButton);
@@ -1060,9 +1120,9 @@
       return;
     }
     const config = {
-      postSummary: { label: POST_SUMMARY_ACTION.label, icon: ICONS.sparkle, type: 'SUMMARIZE_POST', resultKey: 'summary' },
-      commentSummary: { label: COMMENT_REACTION_ACTION.label, icon: ICONS.commentAdd, type: 'SUMMARIZE_REACTIONS', resultKey: 'summary' },
-      glossary: { label: TERM_GLOSSARY_ACTION.label, icon: ICONS.book, type: 'BUILD_GLOSSARY', resultKey: 'glossary' }
+      postSummary: { label: getActionLabel(POST_SUMMARY_ACTION.id, POST_SUMMARY_ACTION.label), icon: ICONS.sparkle, type: 'SUMMARIZE_POST', resultKey: 'summary' },
+      commentSummary: { label: getActionLabel(COMMENT_REACTION_ACTION.id, COMMENT_REACTION_ACTION.label), icon: ICONS.commentAdd, type: 'SUMMARIZE_REACTIONS', resultKey: 'summary' },
+      glossary: { label: getActionLabel(TERM_GLOSSARY_ACTION.id, TERM_GLOSSARY_ACTION.label), icon: ICONS.book, type: 'BUILD_GLOSSARY', resultKey: 'glossary' }
     }[action];
     const request = { type: config.type, text: postText };
     let context = `[게시물 본문]\n${limitPostSummarySource(postText, 3600, 1000)}`;
@@ -3380,11 +3440,10 @@
     const updateActionChips = () => {
       const busy = isBusyAnswering || isReadingPost;
       setAIActivity(panel, busy);
-      if (floatingAssistantEnabled) {
-        const badge = header.querySelector('.aiang-review-badge');
-        const url = extensionAPI.runtime.getURL(busy ? 'icons/AIAng.gif' : 'icons/AIAng.png');
-        if (badge.getAttribute('src') !== url) badge.src = url;
-      }
+      // All entry points share the same chat header and activity state.
+      const badge = header.querySelector('.aiang-review-badge');
+      const url = extensionAPI.runtime.getURL(busy ? 'icons/AIAng.gif' : 'icons/AIAng.png');
+      if (badge.getAttribute('src') !== url) badge.src = url;
       actionsBar.replaceChildren();
       updateReadPostButtonState();
       actionsBar.append(readPostButton);
@@ -4467,6 +4526,8 @@
 
   function positionToastAboveToolbar(toast) {
     if (!toast?.isConnected) return;
+    const isMobile = window.innerWidth <= 768 || IS_IPHONE;
+    const activeModal = document.querySelector('.aiang-chat-modal, .aiang-review-modal');
     const visibleToolbars = Array.from(document.querySelectorAll('.aiang-toolbar'))
       .filter(toolbar => {
         const rect = toolbar.getBoundingClientRect();
@@ -4477,12 +4538,31 @@
       && preferredRect.bottom > 0 && preferredRect.top < window.innerHeight
       ? toastToolbarAnchor
       : visibleToolbars[0];
-    if (!anchor) {
+    const isLauncherAnchor = Boolean(anchor?.classList?.contains('aiang-floating-launcher'));
+
+    if (isMobile || activeModal || isLauncherAnchor || !anchor) {
       toast.style.left = '50%';
       toast.style.right = 'auto';
-      toast.style.top = 'auto';
-      toast.style.bottom = '72px';
       toast.style.transform = 'translateX(-50%)';
+
+      const modalAnchor = activeModal?.querySelector?.('.aiang-chat-actions, .aiang-chat-composer, .aiang-review-footer')
+        || (activeModal ? activeModal : null);
+      const target = modalAnchor || anchor;
+
+      if (target?.isConnected) {
+        const targetRect = target.getBoundingClientRect();
+        const toastRect = toast.getBoundingClientRect();
+        const margin = 10;
+        let top = targetRect.top - toastRect.height - margin;
+        if (top < margin) {
+          top = Math.min(window.innerHeight - toastRect.height - margin, targetRect.bottom + margin);
+        }
+        toast.style.top = `${Math.max(margin, top)}px`;
+        toast.style.bottom = 'auto';
+      } else {
+        toast.style.top = 'auto';
+        toast.style.bottom = isMobile ? 'max(24px, env(safe-area-inset-bottom, 24px))' : '72px';
+      }
       return;
     }
 
@@ -4568,13 +4648,19 @@
       }
       syncAllOpenModalsFontSize();
     }
-    if (changes.floatingAssistantEnabled || changes.floatingAssistantPosition) {
+    if (changes.floatingAssistantEnabled || changes.floatingAssistantPosition || changes.floatingAssistantHeight || changes.floatingAssistantSize) {
       if (changes.floatingAssistantEnabled) {
         floatingAssistantEnabled = changes.floatingAssistantEnabled.newValue === true;
         removeControls();
       }
+      if (changes.floatingAssistantHeight) {
+        floatingAssistantHeight = ['default', 'slight', 'high'].includes(changes.floatingAssistantHeight.newValue) ? changes.floatingAssistantHeight.newValue : 'default';
+      }
       if (changes.floatingAssistantPosition) {
-        floatingAssistantPosition = changes.floatingAssistantPosition.newValue === 'left' ? 'left' : 'right';
+        floatingAssistantPosition = ['left', 'center', 'right'].includes(changes.floatingAssistantPosition.newValue) ? changes.floatingAssistantPosition.newValue : 'center';
+      }
+      if (changes.floatingAssistantSize) {
+        floatingAssistantSize = ['small', 'medium', 'large'].includes(changes.floatingAssistantSize.newValue) ? changes.floatingAssistantSize.newValue : 'small';
       }
       scheduleScan();
     }
@@ -4619,7 +4705,9 @@
       const nextFloating = response.settings?.floatingAssistantEnabled === true;
       if (floatingAssistantEnabled !== nextFloating || (extensionEnabled && !response.settings?.enabled)) removeControls();
       floatingAssistantEnabled = nextFloating;
-      floatingAssistantPosition = response.settings?.floatingAssistantPosition === 'left' ? 'left' : 'right';
+      floatingAssistantHeight = ['default', 'slight', 'high'].includes(response.settings?.floatingAssistantHeight) ? response.settings.floatingAssistantHeight : 'default';
+      floatingAssistantPosition = ['left', 'center', 'right'].includes(response.settings?.floatingAssistantPosition) ? response.settings?.floatingAssistantPosition : 'center';
+      floatingAssistantSize = ['small', 'medium', 'large'].includes(response.settings?.floatingAssistantSize) ? response.settings.floatingAssistantSize : 'small';
       extensionEnabled = Boolean(response?.ok && response.settings?.enabled);
       commentGenerationEnabled = response?.settings?.features?.commentGeneration === true;
       promptCatalog = response?.settings?.prompts || null;

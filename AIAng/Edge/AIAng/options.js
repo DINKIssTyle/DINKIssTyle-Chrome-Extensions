@@ -3,9 +3,13 @@ const $ = selector => document.querySelector(selector);
 const form = $('#settings-form');
 const enabled = $('#enabled');
 const floatingAssistantEnabled = $('#floating-assistant-enabled');
-const floatingAssistantPosition = $('#floating-assistant-position');
+const floatingAssistantPositions = document.querySelectorAll('input[name="floating-assistant-position"]');
+const floatingAssistantHeights = document.querySelectorAll('input[name="floating-assistant-height"]');
+const floatingAssistantSizes = document.querySelectorAll('input[name="floating-assistant-size"]');
 floatingAssistantEnabled.addEventListener('change', () => {
-  floatingAssistantPosition.disabled = !floatingAssistantEnabled.checked;
+  floatingAssistantPositions.forEach(input => { input.disabled = !floatingAssistantEnabled.checked; });
+  floatingAssistantHeights.forEach(input => { input.disabled = !floatingAssistantEnabled.checked; });
+  floatingAssistantSizes.forEach(input => { input.disabled = !floatingAssistantEnabled.checked; });
 });
 const provider = $('#provider');
 const endpoint = $('#endpoint');
@@ -23,8 +27,27 @@ const geminiFields = $('#gemini-fields');
 const geminiKeepAlive = $('#gemini-keep-alive');
 const status = $('#status');
 const testButton = $('#test');
+const saveProviderButton = $('#save-provider');
+const savePersonalizationButton = $('#save-personalization');
 const loadModelsButton = $('#load-models');
 const toggleKeyButton = $('#toggle-key');
+
+let optionsToastTimer = null;
+function showOptionsToast(message, type = 'success', duration = 2400) {
+  let toast = document.getElementById('options-toast');
+  if (!toast) {
+    toast = document.createElement('div');
+    toast.id = 'options-toast';
+    toast.className = 'options-toast';
+    document.body.append(toast);
+  }
+  toast.textContent = message;
+  toast.className = `options-toast options-toast-${type} is-visible`;
+  clearTimeout(optionsToastTimer);
+  optionsToastTimer = setTimeout(() => {
+    toast?.classList.remove('is-visible');
+  }, duration);
+}
 const fontSizeModeDamoang = $('#font-size-mode-damoang');
 const fontSizeModeCustom = $('#font-size-mode-custom');
 const customFontSizeWrap = $('#custom-font-size-wrap');
@@ -39,6 +62,90 @@ const builtinDownloadPercent = $('#builtin-download-percent');
 const builtinDownloadBytes = $('#builtin-download-bytes');
 const startBuiltinDownloadButton = $('#start-builtin-download');
 let loadedModels = [];
+let savedSettings = null;
+let saveQueue = Promise.resolve();
+const selectionRevisions = new Map();
+const selectionKeys = {
+  enabled: 'enabled', provider: 'provider', 'temperature-auto': 'temperatureAuto',
+  model: 'model',
+  'gemini-keep-alive': 'geminiKeepAlive', 'use-post-image-capture': 'usePostImageCapture',
+  'floating-assistant-enabled': 'floatingAssistantEnabled',
+  'floating-assistant-position': 'floatingAssistantPosition',
+  'floating-assistant-height': 'floatingAssistantHeight',
+  'floating-assistant-size': 'floatingAssistantSize',
+  'font-size-mode': 'fontSizeMode', 'font-size-custom': 'fontSizeCustom'
+};
+
+form.addEventListener('change', event => {
+  const control = event.target;
+  const key = selectionKeys[control.name || control.id];
+  if (!key || !savedSettings) return;
+  const value = control.type === 'checkbox' ? control.checked : control.value;
+  saveSelection(key, value, control);
+});
+
+function enqueueSave(operation) {
+  const pending = saveQueue.then(operation);
+  saveQueue = pending.catch(() => {});
+  return pending;
+}
+
+function selectionStatus(control, message, error = false) {
+  const card = control.closest('.card');
+  let note = card.querySelector('.selection-status');
+  if (!note) {
+    note = document.createElement('p');
+    note.className = 'selection-status';
+    note.setAttribute('role', 'status');
+    card.append(note);
+  }
+  note.textContent = message;
+  note.classList.toggle('error', error);
+}
+
+function restoreSelection(key, control) {
+  const value = savedSettings[key];
+  if (control.type === 'radio') {
+    form.querySelectorAll(`input[name="${control.name}"]`).forEach(input => {
+      input.checked = input.value === value;
+    });
+  } else if (control.type === 'checkbox') control.checked = Boolean(value);
+  else control.value = value;
+  floatingAssistantPositions.forEach(input => { input.disabled = !floatingAssistantEnabled.checked; });
+  floatingAssistantHeights.forEach(input => { input.disabled = !floatingAssistantEnabled.checked; });
+  floatingAssistantSizes.forEach(input => { input.disabled = !floatingAssistantEnabled.checked; });
+  updateProviderUI();
+  updateTemperatureUI();
+  updateFontSizeUI();
+}
+
+function saveSelection(key, value, control) {
+  if (!savedSettings) return;
+  const revision = (selectionRevisions.get(key) || 0) + 1;
+  selectionRevisions.set(key, revision);
+  selectionStatus(control, '변경 사항을 저장하는 중…');
+  // Request capture permission while the user's switch activation is still live.
+  const permission = key === 'usePostImageCapture' && value
+    ? chrome.permissions.request({ origins: ['<all_urls>'] }).then(granted => ({ granted }), error => ({ error }))
+    : Promise.resolve({ granted: true });
+  return enqueueSave(async () => {
+    try {
+      const result = await permission;
+      if (result.error) throw result.error;
+      if (!result.granted) throw new Error('이미지 캡쳐 접근 권한이 허용되지 않아 변경하지 않았습니다.');
+      const response = await sendMessage({ type: 'PATCH_SETTINGS', settings: { [key]: value } });
+      if (!response?.ok) throw new Error(response?.error || '설정을 저장하지 못했습니다.');
+      savedSettings = response.settings;
+      selectionStatus(control, '변경 사항을 저장했습니다.');
+      showOptionsToast('변경 사항이 저장되었습니다.', 'success');
+    } catch (error) {
+      if (selectionRevisions.get(key) === revision) restoreSelection(key, control);
+      selectionStatus(control, error.message, true);
+      showStatus(error.message, 'error');
+      showOptionsToast(error.message, 'error');
+    }
+  });
+}
 
 document.addEventListener('DOMContentLoaded', loadSettings);
 provider.addEventListener('change', updateProviderUI);
@@ -117,6 +224,7 @@ modelMenu.addEventListener('click', event => {
   model.value = option.dataset.model || '';
   model.focus();
   closeModelMenu();
+  saveSelection('model', model.value, model);
 });
 document.addEventListener('click', event => {
   if (!event.target.closest('.model-control')) closeModelMenu();
@@ -150,37 +258,84 @@ toggleKeyButton.addEventListener('click', () => {
   toggleKeyButton.textContent = reveal ? '숨기기' : '보기';
 });
 
-form.addEventListener('submit', async event => {
-  event.preventDefault();
-  setBusy(true, '저장하는 중…');
+async function handleSaveProvider() {
+  setBusy(true, 'AI 제공자 설정을 저장하는 중…');
   try {
-    const settings = collectSettings();
-    if (settings.usePostImageCapture) {
-      const granted = await chrome.permissions.request({ origins: ['<all_urls>'] });
-      if (!granted) throw new Error('본문 미디어 캡쳐를 사용하려면 브라우저의 화면 캡쳐 접근 권한이 필요합니다.');
-    }
-    await ensureEndpointPermission(settings);
-    const response = await sendMessage({ type: 'SAVE_SETTINGS', settings });
-    if (!response?.ok) throw new Error(response?.error || '설정을 저장하지 못했습니다.');
-    showStatus('설정을 저장했습니다.', 'success');
+    const providerSettings = {
+      provider: provider.value,
+      endpoint: endpoint.value,
+      apiKey: apiKey.value,
+      model: model.value,
+      temperature: temperature.value,
+      temperatureAuto: temperatureAuto.checked
+    };
+    await ensureEndpointPermission(providerSettings);
+    const response = await enqueueSave(() => sendMessage({ type: 'PATCH_SETTINGS', settings: providerSettings }));
+    if (!response?.ok) throw new Error(response?.error || 'AI 제공자 설정을 저장하지 못했습니다.');
+    savedSettings = response.settings;
+    if (saveProviderButton) selectionStatus(saveProviderButton, 'AI 제공자 설정을 저장했습니다.');
+    showStatus('AI 제공자 설정을 저장했습니다.', 'success');
+    showOptionsToast('AI 제공자 설정을 저장했습니다.', 'success');
   } catch (error) {
     showStatus(error.message, 'error');
+    showOptionsToast(error.message, 'error');
   } finally {
     setBusy(false);
+  }
+}
+
+async function handleSavePersonalization() {
+  setBusy(true, '개인화 설정을 저장하는 중…');
+  try {
+    const response = await enqueueSave(() => sendMessage({
+      type: 'PATCH_SETTINGS',
+      settings: { personalization: personalization.value }
+    }));
+    if (!response?.ok) throw new Error(response?.error || '개인화 설정을 저장하지 못했습니다.');
+    savedSettings = response.settings;
+    if (savePersonalizationButton) selectionStatus(savePersonalizationButton, '개인화 설정을 저장했습니다.');
+    showStatus('개인화 설정을 저장했습니다.', 'success');
+    showOptionsToast('개인화 설정을 저장했습니다.', 'success');
+  } catch (error) {
+    showStatus(error.message, 'error');
+    showOptionsToast(error.message, 'error');
+  } finally {
+    setBusy(false);
+  }
+}
+
+saveProviderButton?.addEventListener('click', handleSaveProvider);
+savePersonalizationButton?.addEventListener('click', handleSavePersonalization);
+
+form.addEventListener('submit', async event => {
+  event.preventDefault();
+  if (document.activeElement === personalization) {
+    await handleSavePersonalization();
+  } else {
+    await handleSaveProvider();
   }
 });
 
 testButton.addEventListener('click', async () => {
   setBusy(true, '연결을 확인하는 중…');
   try {
-    const settings = collectSettings();
+    const settings = {
+      provider: provider.value,
+      endpoint: endpoint.value,
+      apiKey: apiKey.value,
+      model: model.value,
+      temperature: temperature.value,
+      temperatureAuto: temperatureAuto.checked
+    };
     await ensureEndpointPermission(settings);
     const response = await sendMessage({ type: 'TEST_CONNECTION', settings });
     if (!response?.ok) throw new Error(response?.error || '연결하지 못했습니다.');
     updateModelList(response.models || []);
     showStatus(response.message || '연결되었습니다.', 'success');
+    showOptionsToast(response.message || '연결되었습니다.', 'success');
   } catch (error) {
     showStatus(error.message, 'error');
+    showOptionsToast(error.message, 'error');
   } finally {
     setBusy(false);
   }
@@ -247,10 +402,18 @@ async function loadSettings() {
     const response = await sendMessage({ type: 'GET_SETTINGS_FULL' });
     if (!response?.ok) throw new Error(response?.error || '설정을 불러오지 못했습니다.');
     const settings = response.settings;
+    savedSettings = settings;
     enabled.checked = settings.enabled;
     floatingAssistantEnabled.checked = settings.floatingAssistantEnabled === true;
-    floatingAssistantPosition.value = settings.floatingAssistantPosition === 'left' ? 'left' : 'right';
-    floatingAssistantPosition.disabled = !floatingAssistantEnabled.checked;
+    const floatingHeight = ['default', 'slight', 'high'].includes(settings.floatingAssistantHeight) ? settings.floatingAssistantHeight : 'default';
+    floatingAssistantHeights.forEach(input => { input.checked = input.value === floatingHeight; });
+    const floatingPosition = ['left', 'center', 'right'].includes(settings.floatingAssistantPosition) ? settings.floatingAssistantPosition : 'center';
+    floatingAssistantPositions.forEach(input => { input.checked = input.value === floatingPosition; });
+    const floatingSize = ['small', 'medium', 'large'].includes(settings.floatingAssistantSize) ? settings.floatingAssistantSize : 'small';
+    floatingAssistantSizes.forEach(input => { input.checked = input.value === floatingSize; });
+    floatingAssistantPositions.forEach(input => { input.disabled = !floatingAssistantEnabled.checked; });
+    floatingAssistantHeights.forEach(input => { input.disabled = !floatingAssistantEnabled.checked; });
+    floatingAssistantSizes.forEach(input => { input.disabled = !floatingAssistantEnabled.checked; });
     provider.value = settings.provider;
     endpoint.value = settings.endpoint;
     apiKey.value = settings.apiKey;
@@ -281,7 +444,9 @@ function collectSettings() {
   return {
     enabled: enabled.checked,
     floatingAssistantEnabled: floatingAssistantEnabled.checked,
-    floatingAssistantPosition: floatingAssistantPosition.value,
+    floatingAssistantPosition: document.querySelector('input[name="floating-assistant-position"]:checked')?.value || 'center',
+    floatingAssistantHeight: document.querySelector('input[name="floating-assistant-height"]:checked')?.value || 'default',
+    floatingAssistantSize: document.querySelector('input[name="floating-assistant-size"]:checked')?.value || 'small',
     provider: provider.value,
     endpoint: endpoint.value,
     apiKey: apiKey.value,
@@ -465,7 +630,9 @@ async function ensureEndpointPermission(settings) {
 }
 
 function setBusy(busy, message = '') {
-  [testButton, loadModelsButton, form.querySelector('[type="submit"]')].forEach(button => button.disabled = busy);
+  [testButton, loadModelsButton, saveProviderButton, savePersonalizationButton]
+    .filter(Boolean)
+    .forEach(button => button.disabled = busy);
   if (busy) showStatus(message);
 }
 

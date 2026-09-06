@@ -12,7 +12,9 @@ const DEFAULT_SETTINGS = Object.freeze({
   geminiKeepAlive: false,
   usePostImageCapture: false,
   floatingAssistantEnabled: false,
-  floatingAssistantPosition: 'right'
+  floatingAssistantPosition: 'center',
+  floatingAssistantHeight: 'default',
+  floatingAssistantSize: 'small'
 });
 
 let promptCatalog = globalThis.__AIANG_PROMPT_CATALOG__ || null;
@@ -120,6 +122,8 @@ async function handleMessage(message, sender) {
           geminiKeepAlive: settings.geminiKeepAlive,
           floatingAssistantEnabled: settings.floatingAssistantEnabled,
           floatingAssistantPosition: settings.floatingAssistantPosition,
+          floatingAssistantHeight: settings.floatingAssistantHeight,
+          floatingAssistantSize: settings.floatingAssistantSize,
           usePostImageCapture: settings.usePostImageCapture
         }
       };
@@ -130,6 +134,20 @@ async function handleMessage(message, sender) {
     case 'SAVE_SETTINGS': {
       assertExtensionPage(sender);
       await chrome.storage.local.set(sanitizeSettings(message.settings));
+      const saved = await getSettings();
+      syncGeminiKeepAliveState(saved).catch(() => {});
+      return { settings: saved };
+    }
+    case 'PATCH_SETTINGS': {
+      assertExtensionPage(sender);
+      // Only persist explicit selections; never overwrite unsaved text fields.
+      const selectable = new Set(['enabled', 'provider', 'model', 'temperatureAuto',
+        'fontSizeMode', 'fontSizeCustom', 'geminiKeepAlive', 'usePostImageCapture',
+        'floatingAssistantEnabled', 'floatingAssistantPosition', 'floatingAssistantHeight', 'floatingAssistantSize']);
+      const sanitized = sanitizeSettings(message.settings);
+      const patch = Object.fromEntries(Object.keys(message.settings || {})
+        .filter(key => selectable.has(key)).map(key => [key, sanitized[key]]));
+      await chrome.storage.local.set(patch);
       const saved = await getSettings();
       syncGeminiKeepAliveState(saved).catch(() => {});
       return { settings: saved };
@@ -266,7 +284,9 @@ function sanitizeSettings(input = {}) {
     fontSizeCustom,
     geminiKeepAlive: input.geminiKeepAlive === true,
     floatingAssistantEnabled: input.floatingAssistantEnabled === true,
-    floatingAssistantPosition: input.floatingAssistantPosition === 'left' ? 'left' : 'right',
+    floatingAssistantHeight: ['default', 'slight', 'high'].includes(input.floatingAssistantHeight) ? input.floatingAssistantHeight : 'default',
+    floatingAssistantSize: ['small', 'medium', 'large'].includes(input.floatingAssistantSize) ? input.floatingAssistantSize : 'small',
+    floatingAssistantPosition: ['left', 'center', 'right'].includes(input.floatingAssistantPosition) ? input.floatingAssistantPosition : 'center',
     usePostImageCapture: input.usePostImageCapture === true
   };
 }
