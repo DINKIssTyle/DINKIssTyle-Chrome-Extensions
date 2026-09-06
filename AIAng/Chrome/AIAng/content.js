@@ -665,48 +665,56 @@
     return candidates.filter(el => !candidates.some(other => other !== el && other.contains(el)));
   }
 
-  function cropImageFromDataUrl(viewportDataUrl, rect) {
-    return new Promise(resolve => {
-      const img = new Image();
-      img.onload = () => {
-        try {
-          const viewportWidth = window.visualViewport?.width || window.innerWidth || document.documentElement.clientWidth || 1;
-          const viewportHeight = window.visualViewport?.height || window.innerHeight || document.documentElement.clientHeight || 1;
-          const left = rect.left - (window.visualViewport?.offsetLeft || 0);
-          const top = rect.top - (window.visualViewport?.offsetTop || 0);
-          const scaleX = img.width / viewportWidth;
-          const scaleY = img.height / viewportHeight;
+  function createMediaCaptureCanvas(width, height) {
+    // Preserve readable long images without allocating an unbounded canvas.
+    const scale = Math.min(1, 1280 / width, 8192 / height, Math.sqrt(4_000_000 / (width * height)));
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.max(1, Math.round(width * scale));
+    canvas.height = Math.max(1, Math.round(height * scale));
+    const context = canvas.getContext('2d');
+    context.fillStyle = '#fff';
+    context.fillRect(0, 0, canvas.width, canvas.height);
+    return canvas;
+  }
 
-          const sx = Math.max(0, Math.floor(left * scaleX));
-          const sy = Math.max(0, Math.floor(top * scaleY));
-          const sw = Math.min(img.width, Math.ceil((left + rect.width) * scaleX)) - sx;
-          const sh = Math.min(img.height, Math.ceil((top + rect.height) * scaleY)) - sy;
+  async function drawMediaCaptureTile(dataUrl, region, viewport, canvas, mediaWidth, mediaHeight, offsetX, offsetY) {
+    const image = new Image();
+    image.src = dataUrl;
+    await image.decode();
+    const left = region.left - viewport.left;
+    const top = region.top - viewport.top;
+    // A clipped tile must never be stretched into an apparently complete image.
+    if (left < -1 || top < -1 || left + region.width > viewport.width + 1 || top + region.height > viewport.height + 1) {
+      throw new Error('미디어 전체를 화면에 표시하지 못했습니다. 화면 확대를 해제한 뒤 다시 시도해 주세요.');
+    }
+    const sourceScaleX = image.width / viewport.width;
+    const sourceScaleY = image.height / viewport.height;
+    const x = offsetX / mediaWidth * canvas.width;
+    const y = offsetY / mediaHeight * canvas.height;
+    const right = (offsetX + region.width) / mediaWidth * canvas.width;
+    const bottom = (offsetY + region.height) / mediaHeight * canvas.height;
+    canvas.getContext('2d').drawImage(image,
+      Math.max(0, left) * sourceScaleX, Math.max(0, top) * sourceScaleY,
+      region.width * sourceScaleX, region.height * sourceScaleY,
+      x, y, right - x, bottom - y);
+  }
 
-          if (sw <= 10 || sh <= 10) return resolve(null);
-
-          const maxDim = 1280;
-          let dw = sw / scaleX;
-          let dh = sh / scaleY;
-          if (dw > maxDim || dh > maxDim) {
-            const ratio = Math.min(maxDim / dw, maxDim / dh);
-            dw = Math.round(dw * ratio);
-            dh = Math.round(dh * ratio);
-          }
-
-          const canvas = document.createElement('canvas');
-          canvas.width = Math.max(1, Math.round(dw));
-          canvas.height = Math.max(1, Math.round(dh));
-          const ctx = canvas.getContext('2d');
-          ctx.drawImage(img, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height);
-          resolve(canvas.toDataURL('image/jpeg', 0.8));
-        } catch (err) {
-          console.warn('[AIAng] 이미지 크롭 실패:', err);
-          resolve(null);
-        }
-      };
-      img.onerror = () => resolve(null);
-      img.src = viewportDataUrl;
-    });
+  function encodeMediaCapture(canvas) {
+    // Eight captures remain below the existing 12 MB request limit.
+    let result = canvas.toDataURL('image/jpeg', 0.85);
+    for (const quality of [0.7, 0.55]) {
+      if (result.length <= 1_500_000) return result;
+      result = canvas.toDataURL('image/jpeg', quality);
+    }
+    while (result.length > 1_500_000) {
+      const smaller = document.createElement('canvas');
+      smaller.width = Math.max(1, Math.floor(canvas.width * 0.8));
+      smaller.height = Math.max(1, Math.floor(canvas.height * 0.8));
+      smaller.getContext('2d').drawImage(canvas, 0, 0, smaller.width, smaller.height);
+      canvas = smaller;
+      result = canvas.toDataURL('image/jpeg', 0.75);
+    }
+    return result;
   }
 
   let mediaCaptureInProgress = false;
@@ -732,28 +740,55 @@
       for (const el of elements) {
         if (results.length >= 8) break;
         checkCancelled();
-        // Tile tall media instead of silently dropping the top and bottom of screenshots.
-        let offset = 0;
+        // Scroll tiles are implementation details: one DOM media element becomes one attachment.
+        let canvas;
+        let mediaWidth = 0;
+        let mediaHeight = 0;
+        let offsetY = 0;
         do {
-          checkCancelled();
-          const before = el.getBoundingClientRect();
-          const tileHeight = Math.max(100, (window.visualViewport?.height || window.innerHeight) - 160);
-          window.scrollTo({ left: savedScrollX, top: window.scrollY + before.top + offset - 80 - (window.visualViewport?.offsetTop || 0), behavior: 'instant' });
-          await new Promise(resolve => setTimeout(resolve, 650));
-          checkCancelled();
-          const rect = el.getBoundingClientRect();
-          if (rect.width < 80 || rect.height < 40) break;
-          const region = { left: rect.left, top: rect.top + offset, width: rect.width, height: Math.min(tileHeight, rect.height - offset) };
-          const res = await sendMessage({ type: 'CAPTURE_TAB_VIEWPORT' });
-          checkCancelled();
-          if (!res?.ok || !res?.dataUrl) throw new Error(res?.error || '본문 미디어를 캡쳐하지 못했습니다.');
-          const cropped = await cropImageFromDataUrl(res.dataUrl, region);
-          if (!cropped) throw new Error('본문 미디어 캡쳐 영역을 확인할 수 없습니다.');
-          results.push(cropped);
-          offset += region.height;
-        } while (offset < el.getBoundingClientRect().height && results.length < 8);
+          let offsetX = 0;
+          let rowHeight = 0;
+          do {
+            checkCancelled();
+            const before = el.getBoundingClientRect();
+            window.scrollTo({
+              left: window.scrollX + before.left + offsetX - 16 - (window.visualViewport?.offsetLeft || 0),
+              top: window.scrollY + before.top + offsetY - 80 - (window.visualViewport?.offsetTop || 0),
+              behavior: 'instant'
+            });
+            await new Promise(resolve => setTimeout(resolve, 650));
+            checkCancelled();
+            const rect = el.getBoundingClientRect();
+            if (rect.width < 80 || rect.height < 40) throw new Error('캡쳐할 미디어가 사라졌습니다. 다시 시도해 주세요.');
+            if (!canvas) {
+              mediaWidth = rect.width;
+              mediaHeight = rect.height;
+              canvas = createMediaCaptureCanvas(mediaWidth, mediaHeight);
+            } else if (Math.abs(rect.width - mediaWidth) > 1 || Math.abs(rect.height - mediaHeight) > 1) {
+              throw new Error('캡쳐 중 미디어 크기가 변경되었습니다. 로딩이 끝난 뒤 다시 시도해 주세요.');
+            }
+            const viewport = {
+              left: window.visualViewport?.offsetLeft || 0, top: window.visualViewport?.offsetTop || 0,
+              width: window.visualViewport?.width || window.innerWidth,
+              height: window.visualViewport?.height || window.innerHeight
+            };
+            rowHeight ||= Math.min(Math.max(1, viewport.height - 160), mediaHeight - offsetY);
+            const region = {
+              left: rect.left + offsetX, top: rect.top + offsetY,
+              width: Math.min(Math.max(1, viewport.width - 32), mediaWidth - offsetX), height: rowHeight
+            };
+            const res = await sendMessage({ type: 'CAPTURE_TAB_VIEWPORT' });
+            checkCancelled();
+            if (!res?.ok || !res?.dataUrl) throw new Error(res?.error || '본문 미디어를 캡쳐하지 못했습니다.');
+            await drawMediaCaptureTile(res.dataUrl, region, viewport, canvas, mediaWidth, mediaHeight, offsetX, offsetY);
+            offsetX += region.width;
+          } while (offsetX < mediaWidth);
+          offsetY += rowHeight;
+        } while (offsetY < mediaHeight);
+        checkCancelled();
+        results.push(encodeMediaCapture(canvas));
       }
-      if (results.length === 8) showToast('미디어 캡쳐는 최대 8개 영역까지 전달합니다.', 'info');
+      if (elements.length > 8) showToast('본문 미디어는 앞에서부터 최대 8개까지 전달합니다.', 'info');
       return results;
     } finally {
       overlays.forEach((o, idx) => { o.style.visibility = prevVisibilities[idx]; });

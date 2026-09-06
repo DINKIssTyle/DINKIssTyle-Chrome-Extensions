@@ -684,10 +684,10 @@ test('provides usePostImageCapture option with default false and sanitizes value
 
 test('adds media analysis guideline to post summary prompts when images are provided', () => {
   const noImagePrompts = core.buildPostSummaryPrompts('본문 텍스트', []);
-  assert.ok(!noImagePrompts.user.includes('첨부된 미디어 캡쳐 화면도 종합하여'));
+  for (const rule of promptCatalog.postSummary.mediaRules) assert.ok(!noImagePrompts.user.includes(rule));
 
   const withImagePrompts = core.buildPostSummaryPrompts('본문 텍스트', ['data:image/jpeg;base64,1234']);
-  assert.ok(withImagePrompts.user.includes('첨부된 미디어 캡쳐 화면도 종합하여'));
+  for (const rule of promptCatalog.postSummary.mediaRules) assert.ok(withImagePrompts.user.includes(rule));
 });
 
 test('uses standard image_url content for every OpenAI-compatible endpoint', () => {
@@ -782,6 +782,10 @@ test('all post-context actions transmit captures only when the setting is enable
       await testCore.handleMessage({ type, text: '본문', postText: '본문', commentsText: '댓글', commentCount: 1, sampledCommentCount: 1, tone: 'positive', images: [image] }, { url: 'https://damoang.net/free/1' });
     }
     assert.equal(requests.length, 5);
+    const summaryUserContent = enabled ? requests[0].messages.at(-1).content[0].text : requests[0].messages.at(-1).content;
+    for (const rule of promptCatalog.postSummary.mediaRules) {
+      assert.equal(summaryUserContent.includes(rule), enabled, 'the direct summary request includes visual analysis rules only with media');
+    }
     for (const request of requests) {
       const user = request.messages.at(-1);
       assert.equal(Array.isArray(user.content), enabled);

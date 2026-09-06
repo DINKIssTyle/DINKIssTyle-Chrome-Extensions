@@ -64,7 +64,7 @@ test('rendered media detection, cropped captures, cancellation, and local Korean
       window.scrollTo(0, 200);
     });
     const screenshots = await page.evaluate(() => captureArticleMediaSnippets(document.querySelector('#article')));
-    assert.equal(screenshots.length, 3, 'tall image is captured completely in three regions');
+    assert.equal(screenshots.length, 1, 'three scroll captures of one media element become one attachment');
     assert.equal(await page.evaluate(() => window.scrollY), 200);
     assert.equal(await page.locator('.aiang-overlay').evaluate(el => el.style.visibility), '');
     const pixels = await page.evaluate(async urls => {
@@ -72,12 +72,13 @@ test('rendered media detection, cropped captures, cancellation, and local Korean
         const image = new Image(); image.src = url; await image.decode();
         const canvas = document.createElement('canvas'); canvas.width = image.width; canvas.height = image.height;
         const context = canvas.getContext('2d'); context.drawImage(image, 0, 0);
-        return { width: image.width, height: image.height, first: Array.from(context.getImageData(20, 20, 1, 1).data) };
+        return { width: image.width, height: image.height, first: Array.from(context.getImageData(20, 20, 1, 1).data), bottom: Array.from(context.getImageData(20, image.height - 20, 1, 1).data), seam: Array.from(context.getImageData(20, 540, 1, 1).data) };
       }));
     }, screenshots);
-    assert.deepEqual(pixels.map(p => [p.width, p.height]), [[400, 540], [400, 540], [400, 120]]);
+    assert.deepEqual(pixels.map(p => [p.width, p.height]), [[400, 1200]]);
     assert.ok(pixels[0].first[0] > 240 && pixels[0].first[1] < 10, 'overlay excluded; first tile is red');
-    assert.ok(pixels[2].first[2] > 240, 'last tile contains the bottom blue region');
+    assert.ok(pixels[0].bottom[2] > 240, 'single attachment includes the blue bottom');
+    assert.ok(pixels[0].seam[0] > 240 && pixels[0].seam[1] < 10, 'no white gap at the scroll stitch');
     await assert.rejects(page.evaluate(() => captureArticleMediaSnippets(document.querySelector('#article'), () => true)), /취소/);
     assert.equal(captures, 3);
     // The real chat modal fixes the body in place. Capture must temporarily unlock it.
@@ -89,17 +90,39 @@ test('rendered media detection, cropped captures, cancellation, and local Korean
       showModalPanel(panel);
     });
     const modalCaptures = await page.evaluate(() => captureArticleMediaSnippets(document.querySelector('#article')));
-    assert.equal(modalCaptures.length, 3);
+    assert.equal(modalCaptures.length, 1);
     assert.equal(await page.evaluate(() => document.body.style.position), 'fixed');
     assert.equal(await page.evaluate(() => document.body.style.top), '-200px');
     await page.evaluate(() => { document.querySelector('.aiang-review')._aiangCleanupOverflow(); document.querySelector('.aiang-overlay').remove(); });
     assert.equal(await page.evaluate(() => window.scrollY), 200);
-    // A partially offscreen rectangle must never include pixels outside its right/bottom edge.
-    const clipped = await page.evaluate(async url => {
-      const data = await cropImageFromDataUrl(url, { left: -100, top: -100, width: 200, height: 200 });
-      const image = new Image(); image.src = data; await image.decode(); return [image.width, image.height];
-    }, 'data:image/png;base64,' + (await page.screenshot()).toString('base64'));
-    assert.deepEqual(clipped, [100, 100]);
+    // Distinct media stay distinct; only scroll tiles belonging to the same element are joined.
+    await page.evaluate(() => {
+      const image = document.querySelector('#tall'); image.after(image.cloneNode());
+    });
+    const distinct = await page.evaluate(() => captureArticleMediaSnippets(document.querySelector('#article')));
+    assert.equal(distinct.length, 2);
+    // A single long image must not be truncated by the eight-media attachment limit.
+    const veryLong = await page.evaluate(async () => {
+      const article = document.querySelector('#article');
+      article.querySelectorAll('img')[1].remove();
+      const canvas = document.createElement('canvas'); canvas.width = 400; canvas.height = 5000;
+      const context = canvas.getContext('2d'); context.fillStyle = 'red'; context.fillRect(0, 0, 400, 4900);
+      context.fillStyle = 'blue'; context.fillRect(0, 4900, 400, 100);
+      const element = article.querySelector('img'); element.style.height = '5000px'; element.src = canvas.toDataURL(); await element.decode();
+      const captures = await captureArticleMediaSnippets(article);
+      const image = new Image(); image.src = captures[0]; await image.decode();
+      canvas.width = image.width; canvas.height = image.height; context.drawImage(image, 0, 0);
+      return { count: captures.length, height: image.height, bottom: Array.from(context.getImageData(20, image.height - 20, 1, 1).data) };
+    });
+    assert.equal(veryLong.count, 1);
+    assert.equal(veryLong.height, 5000);
+    assert.ok(veryLong.bottom[2] > 240, 'the end of a media element beyond eight scroll tiles is preserved');
+    // Refuse clipped tiles instead of stretching incomplete pixels into a full attachment.
+    await assert.rejects(page.evaluate(async url => {
+      const canvas = createMediaCaptureCanvas(200, 200);
+      await drawMediaCaptureTile(url, { left: -100, top: -100, width: 200, height: 200 },
+        { left: 0, top: 0, width: 900, height: 700 }, canvas, 200, 200, 0, 0);
+    }, 'data:image/png;base64,' + (await page.screenshot()).toString('base64')), /미디어 전체/);
     externalRequests.length = 0;
     await page.addInitScript(base => {
       window.chrome = { runtime: { id: 'test-extension', getURL: value => base + '/' + value,
