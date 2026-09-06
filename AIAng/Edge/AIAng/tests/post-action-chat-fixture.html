@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="ko"><head><meta charset="utf-8"><title>본문 액션 채팅 검증</title>
+<link rel="stylesheet" href="../content.css">
+<style>body{margin:0;padding:48px;font:16px/1.6 system-ui}main{max-width:760px;margin:auto}textarea{width:100%;height:80px}</style>
+</head><body><main><h1>우주 망원경 관측</h1>
+<article data-aiang-article-body><p>우주 망원경은 먼 은하를 관측합니다. 적외선 자료로 별의 탄생을 연구합니다.</p></article>
+<section id="comments"><h2>댓글 (2)</h2><ul><li class="comment-item"><div class="comment-body">적외선 관측이 흥미롭습니다.</div></li><li class="comment-item"><div class="comment-body">관측 비용이 궁금합니다.</div></li></ul><textarea placeholder="댓글을 입력하세요"></textarea></section></main>
+<script>
+const pending = new Map();
+const listeners = [];
+window.testRequests = [];
+window.testHold = false;
+window.testFail = false;
+window.testImages = new URLSearchParams(location.search).has('media');
+if(window.testImages) {
+ const canvas=document.createElement('canvas'); canvas.width=300; canvas.height=1100;
+ const context=canvas.getContext('2d'); context.fillStyle='blue'; context.fillRect(0,0,300,1100);
+ const image=document.createElement('img'); image.src=canvas.toDataURL(); image.style.cssText='display:block;width:300px;height:1100px';
+ document.querySelector('article').append(image);
+}
+window.chrome = {
+ runtime: { lastError:null, getURL:value => '../'+value, onMessage:{addListener(listener){listeners.push(listener)}},
+  sendMessage(message, callback) {
+    if(message.type==='GET_SETTINGS') { fetch('../shared/prompts.json').then(response => response.json()).then(prompts => callback({ok:true,settings:{enabled:true,usePostImageCapture:window.testImages,prompts}})); return; }
+    window.testRequests.push(message);
+    if(message.type==='CANCEL_REQUEST') {
+      pending.get(message.requestId)?.({ok:false,error:'요청을 취소했습니다.'}); pending.delete(message.requestId); callback({ok:true}); return;
+    }
+    if(message.type==='CAPTURE_TAB_VIEWPORT') { const canvas=document.createElement('canvas'); canvas.width=innerWidth; canvas.height=innerHeight; callback({ok:true,dataUrl:canvas.toDataURL()}); return; }
+    if(window.testFail) { callback({ok:false,error:'테스트 요청 실패'}); return; }
+    const answer = () => {
+      const result = message.type==='SUMMARIZE_POST' ? {summary:'## 게시물 요약\n\n적외선 망원경으로 별의 탄생을 연구합니다.'}
+        : message.type==='SUMMARIZE_REACTIONS' ? {summary:'## 댓글 반응\n\n흥미와 비용에 관한 질문이 있습니다.'}
+        : message.type==='BUILD_GLOSSARY' ? {glossary:'## 용어 사전\n\n**적외선**: 빛의 한 종류입니다.'}
+        : {message:'관측한 적외선 자료를 분석합니다.'};
+      callback({ok:true,...result});
+    };
+    if(window.testHold) pending.set(message.requestId, callback);
+    else setTimeout(answer, 30);
+  }
+ }, storage:{onChanged:{addListener(){}}}
+};
+</script><script src="../shared/review-presentation.js"></script><script src="../content.js"></script></body></html>

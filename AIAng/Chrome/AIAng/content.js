@@ -147,6 +147,7 @@
   }
 
   const chatHistories = new WeakMap();
+  const completedChatActions = new WeakMap();
   const boardChatHistories = new Map();
   const chatStreamHandlers = new Map();
   const buttonRequestStates = new WeakMap();
@@ -798,106 +799,51 @@
     }
   }
 
-  async function runPostSummary(articleBody, button) {
-    if (cancelButtonRequest(button)) return;
-    const text = limitPostSummarySource(extractArticleText(articleBody))
-      || (usePostImageCapture && findArticleMediaElements(articleBody).length ? '첨부된 게시물 미디어를 요약해 주세요.' : '');
-    if (!text) {
-      showToast('요약할 게시물 본문을 찾지 못했습니다.', 'warning');
-      return;
-    }
-    closeReview();
-    const requestState = beginButtonRequest(button, POST_SUMMARY_ACTION.id);
-    try {
-      let images = [];
-      if (usePostImageCapture) {
-        images = await captureArticleMediaSnippets(articleBody, () => requestState.cancelRequested);
-        if (requestState.cancelRequested) throw new Error('요청을 취소했습니다.');
-      }
-      const response = await sendMessage({
-        type: 'SUMMARIZE_POST',
-        requestId: createTrackedRequestId(button),
-        text,
-        images
-      });
-      if (!response?.ok) throw new Error(response?.error || '게시물을 요약하지 못했습니다.');
-      showPostSummary(response.summary, POST_SUMMARY_ACTION.label);
-    } catch (error) {
-      showRequestError(error, requestState, '게시물을 요약하지 못했습니다.');
-    } finally {
-      finishButtonRequest(button, requestState);
-    }
+  async function runPostSummary(articleBody) {
+    openPostActionChat(articleBody, 'postSummary');
   }
 
-  async function runCommentReactionSummary(articleBody, button) {
-    if (cancelButtonRequest(button)) return;
-    const comments = collectCommentTexts(articleBody);
-    if (!comments.length) {
-      const declaredCount = getDeclaredDamoangCommentCount(articleBody);
-      showToast(
-        declaredCount > 0
+  async function runCommentReactionSummary(articleBody) {
+    openPostActionChat(articleBody, 'commentSummary');
+  }
+
+  async function runTermGlossary(articleBody) {
+    openPostActionChat(articleBody, 'glossary');
+  }
+
+  function openPostActionChat(articleBody, action) {
+    const postText = limitPostSummarySource(extractArticleText(articleBody))
+      || (usePostImageCapture && findArticleMediaElements(articleBody).length ? '첨부된 게시물 미디어를 참고하세요.' : '');
+    if (!postText) {
+      showToast('분석할 게시물 본문을 찾지 못했습니다.', 'warning');
+      return;
+    }
+    const config = {
+      postSummary: { label: POST_SUMMARY_ACTION.label, icon: ICONS.sparkle, type: 'SUMMARIZE_POST', resultKey: 'summary' },
+      commentSummary: { label: COMMENT_REACTION_ACTION.label, icon: ICONS.commentAdd, type: 'SUMMARIZE_REACTIONS', resultKey: 'summary' },
+      glossary: { label: TERM_GLOSSARY_ACTION.label, icon: ICONS.book, type: 'BUILD_GLOSSARY', resultKey: 'glossary' }
+    }[action];
+    const request = { type: config.type, text: postText };
+    let context = `[게시물 본문]\n${limitPostSummarySource(postText, 3600, 1000)}`;
+    let localAnswer = '';
+    if (action === 'commentSummary') {
+      const comments = collectCommentTexts(articleBody);
+      const source = buildCommentReactionSource(comments);
+      Object.assign(request, {
+        postText: limitPostSummarySource(postText, COMMENT_REACTION_POST_LIMIT, 1200),
+        commentsText: source.text, commentCount: comments.length, sampledCommentCount: source.sampledCount
+      });
+      context = `[게시물 본문]\n${limitPostSummarySource(postText, 2400, 700)}\n\n[게시물 댓글]\n${limitPostSummarySource(source.text, 1200, 400)}`;
+      if (!comments.length) {
+        localAnswer = getDeclaredDamoangCommentCount(articleBody) > 0
           ? '댓글을 아직 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.'
-          : '요약할 댓글이 아직 없습니다.',
-        'info'
-      );
-      return;
+          : '요약할 댓글이 아직 없습니다.';
+      }
     }
-
-    const postText = limitPostSummarySource(
-      extractArticleText(articleBody),
-      COMMENT_REACTION_POST_LIMIT,
-      1200
-    ) || (usePostImageCapture && findArticleMediaElements(articleBody).length ? '첨부된 게시물 미디어에 대한 댓글입니다.' : '');
-    const commentsSource = buildCommentReactionSource(comments);
-    closeReview();
-    const requestState = beginButtonRequest(button, COMMENT_REACTION_ACTION.id);
-    try {
-      const images = usePostImageCapture ? await captureArticleMediaSnippets(articleBody, () => requestState.cancelRequested) : [];
-      if (requestState.cancelRequested) throw new Error('요청을 취소했습니다.');
-      const response = await sendMessage({
-        type: 'SUMMARIZE_REACTIONS',
-        requestId: createTrackedRequestId(button),
-        images,
-        postText,
-        commentsText: commentsSource.text,
-        commentCount: comments.length,
-        sampledCommentCount: commentsSource.sampledCount
-      });
-      if (!response?.ok) throw new Error(response?.error || '댓글 반응을 요약하지 못했습니다.');
-      showPostSummary(response.summary, COMMENT_REACTION_ACTION.label);
-    } catch (error) {
-      showRequestError(error, requestState, '댓글 반응을 요약하지 못했습니다.');
-    } finally {
-      finishButtonRequest(button, requestState);
-    }
-  }
-
-  async function runTermGlossary(articleBody, button) {
-    if (cancelButtonRequest(button)) return;
-    const text = limitPostSummarySource(extractArticleText(articleBody))
-      || (usePostImageCapture && findArticleMediaElements(articleBody).length ? '첨부된 게시물 미디어의 용어를 정리해 주세요.' : '');
-    if (!text) {
-      showToast('용어를 찾을 게시물 본문을 찾지 못했습니다.', 'warning');
-      return;
-    }
-    closeReview();
-    const requestState = beginButtonRequest(button, TERM_GLOSSARY_ACTION.id);
-    try {
-      const images = usePostImageCapture ? await captureArticleMediaSnippets(articleBody, () => requestState.cancelRequested) : [];
-      if (requestState.cancelRequested) throw new Error('요청을 취소했습니다.');
-      const response = await sendMessage({
-        type: 'BUILD_GLOSSARY',
-        requestId: createTrackedRequestId(button),
-        images,
-        text
-      });
-      if (!response?.ok) throw new Error(response?.error || '용어 사전을 만들지 못했습니다.');
-      showPostSummary(response.glossary, TERM_GLOSSARY_ACTION.label);
-    } catch (error) {
-      showRequestError(error, requestState, '용어 사전을 만들지 못했습니다.');
-    } finally {
-      finishButtonRequest(button, requestState);
-    }
+    openChatModal(articleBody, 'post', {
+      ...config, chipId: action, articleBody, request, localAnswer,
+      prompt: `${context}\n\n${config.label}을 요청합니다.`
+    });
   }
 
   function collectCommentTexts(articleBody) {
@@ -2308,50 +2254,6 @@
     showModalPanel(panel);
   }
 
-  function showPostSummary(summary, title = POST_SUMMARY_ACTION.label) {
-    const text = String(summary || '').trim();
-    if (!text) throw new Error('AI가 빈 요약을 반환했습니다. 다시 시도해 주세요.');
-
-    closeReview();
-    const panel = document.createElement('section');
-    panel.className = 'aiang-review aiang-review-modal aiang-title-review aiang-summary-review';
-    panel.setAttribute('role', 'dialog');
-    panel.setAttribute('aria-modal', 'true');
-    panel.setAttribute('aria-label', `${title} 결과`);
-
-    const header = document.createElement('header');
-    header.className = 'aiang-review-header aiang-no-select';
-    header.innerHTML = `<div><img class="aiang-review-badge" src="${REVIEW_ICON_URL}" alt=""><strong>${title}</strong></div>`;
-    const close = document.createElement('button');
-    close.type = 'button';
-    close.className = 'aiang-close';
-    close.setAttribute('aria-label', '닫기');
-    close.textContent = '×';
-    close.addEventListener('click', closeReview);
-    header.append(close);
-    panel.append(header);
-
-    const body = document.createElement('div');
-    body.className = 'aiang-review-body';
-    const content = document.createElement('div');
-    content.className = 'aiang-summary-content';
-    renderSummaryMarkdown(content, text);
-    body.append(content);
-    panel.append(body);
-
-    const footer = document.createElement('footer');
-    footer.className = 'aiang-review-footer aiang-no-select';
-    appendAIAccuracyNotice(footer);
-    const done = document.createElement('button');
-    done.type = 'button';
-    done.className = 'aiang-secondary';
-    done.textContent = '닫기';
-    done.addEventListener('click', closeReview);
-    footer.append(done);
-    panel.append(footer);
-    showModalPanel(panel);
-  }
-
   function appendAIAccuracyNotice(footer) {
     const notice = document.createElement('p');
     notice.className = 'aiang-ai-accuracy-notice';
@@ -2852,14 +2754,33 @@
     return promptCatalog?.chat?.readPost || {};
   }
 
-  function openChatModal(target, kind) {
+  function trimChatHistory(history) {
+    const context = history.findLast(entry => entry.contextRead === true);
+    while (history.length > 20) history.splice(history[0] === context ? 1 : 0, 1);
+  }
+
+  function buildChatHistoryMessages(history) {
+    const context = history.findLast(entry => entry.contextRead === true || entry.containsPostContext);
+    const entries = history.map(entry => ({ entry, role: entry.role,
+      content: limitPostSummarySource(entry.content, 4000, 1000) }));
+    let size = entries.reduce((total, entry) => total + entry.content.length, 0);
+    while ((size > 16000 || entries.length > 20) && entries.length > 1) {
+      const index = entries.findIndex((item, index) => item.entry !== context && index < entries.length - 1);
+      if (index < 0) break;
+      size -= entries.splice(index, 1)[0].content.length;
+    }
+    return entries.map(({ role, content }) => ({ role, content }));
+  }
+
+  function openChatModal(target, kind, initialAction = null) {
     closeActionMenu();
     closeReview();
     const resolvedKind = kind || target?.dataset?.aiangKind || target?._aiangToolbarSlot?.dataset?.aiangKind || 'comment';
     const isBoardChat = resolvedKind === 'board';
     const currentBoardSlug = isBoardChat ? getChatBoardSlug() : null;
     const currentBoardName = isBoardChat ? getChatBoardName(currentBoardSlug) : '';
-    const chatTarget = (target && typeof target === 'object') ? target : document.body;
+    const chatTarget = (!isBoardChat && resolvedKind !== 'body' ? findArticleBody() : null)
+      || ((target && typeof target === 'object') ? target : document.body);
 
     let history;
     if (isBoardChat) {
@@ -2908,12 +2829,23 @@
     actionsBar.className = 'aiang-chat-actions aiang-no-select';
 
     const followupConfig = promptCatalog?.chat?.followup || {};
+    // Keep completion independent of message trimming for this conversation.
+    let completedActions = completedChatActions.get(history);
+    if (!completedActions) {
+      completedActions = new Set();
+      completedChatActions.set(history, completedActions);
+    }
+    const completedActionLabels = isBoardChat ? {} : {
+      postSummary: followupConfig.postSummary?.completedLabel || '게시물을 요약했습니다',
+      commentSummary: followupConfig.commentSummary?.completedLabel || '댓글을 요약했습니다',
+      glossary: followupConfig.glossary?.completedLabel || '용어 사전을 생성했습니다'
+    };
 
     let isBusyAnswering = false;
     const promptConfig = isBoardChat ? getChatReadBoardConfig() : getChatReadPostConfig();
     const buttonLabel = promptConfig.buttonLabel || (isBoardChat ? '이 게시판 목록을 읽으세요' : '이 게시물을 읽으세요');
     const buttonReading = promptConfig.buttonReading || (isBoardChat ? '게시판 목록을 읽는 중' : '게시물을 읽는 중');
-    const buttonCompleted = promptConfig.buttonCompleted || (isBoardChat ? '이 게시판 목록을 읽었어요' : '이 게시물을 읽었어요');
+    const buttonCompleted = promptConfig.buttonCompleted || (isBoardChat ? '이 게시판 목록을 읽었어요' : '이 게시물을 읽었습니다');
 
     const readPostButton = document.createElement('button');
     readPostButton.type = 'button';
@@ -2931,23 +2863,8 @@
     let activeBubble = null;
     let activeUserBubble = null;
 
-    let hasCompletedReading = history.some(entry =>
-      entry.role === 'user' && (
-        entry.displayText === buttonLabel ||
-        entry.displayText === buttonCompleted ||
-        entry.content?.includes(buttonLabel) ||
-        entry.content?.includes(isBoardChat ? '이 게시판 목록을 모두 읽었습니다.' : '이 게시물을 모두 읽었습니다.')
-      )
-    );
-
-    const hasReadPost = () => hasCompletedReading || history.some(entry =>
-      entry.role === 'user' && (
-        entry.displayText === buttonLabel ||
-        entry.displayText === buttonCompleted ||
-        entry.content?.includes(buttonLabel) ||
-        entry.content?.includes(isBoardChat ? '이 게시판 목록을 모두 읽었습니다.' : '이 게시물을 모두 읽었습니다.')
-      )
-    );
+    let hasCompletedReading = history.some(entry => entry.contextRead === true);
+    const hasReadPost = () => hasCompletedReading || history.some(entry => entry.contextRead === true);
 
     const updateReadPostButtonState = () => {
       readPostButton.classList.remove('is-reading');
@@ -2968,13 +2885,13 @@
         readPostButton.setAttribute('aria-label', `${buttonReading} (취소하려면 클릭)`);
         readPostButton.innerHTML = `<span class="aiang-spinner"></span><span>${buttonReading}</span><span class="aiang-chip-cancel-icon" aria-hidden="true">✕</span>`;
       } else {
-        readPostButton.disabled = false;
+        readPostButton.disabled = isBusyAnswering;
         readPostButton.setAttribute('aria-label', buttonLabel);
         readPostButton.innerHTML = `${ICONS.book}<span>${buttonLabel}</span>`;
       }
     };
 
-    const cancelActiveAction = () => {
+    const cancelActiveAction = (notify = true) => {
       if (actionRequestId) {
         const cancelId = actionRequestId;
         actionRequestId = null;
@@ -2998,20 +2915,22 @@
       activeUserBubble = null;
       activeBubble = null;
       if (!history.length && !empty.isConnected) messages.append(empty);
+      send.disabled = false;
+      send.classList.remove('is-loading');
       renderHistory(false);
       updateActionChips();
-      showToast('요청을 취소했습니다.', 'info');
+      if (notify !== false) showToast('요청을 취소했습니다.', 'info');
     };
 
-    const sendPromptMessage = async (prompt, label, chipId = null) => {
-      if (isReadingPost || send.disabled) return;
+    const sendPromptMessage = async (prompt, label, chipId = null, postAction = null) => {
+      if (isReadingPost || send.disabled || completedActions.has(chipId)) return;
       if (isBusyAnswering) {
         if (activeActionChipId && activeActionChipId === chipId) {
           cancelActiveAction();
         }
         return;
       }
-      const cleanPrompt = String(prompt || '').trim();
+      const cleanPrompt = String(postAction && hasReadPost() ? label : (prompt || '')).trim();
       if (!cleanPrompt) return;
 
       isBusyAnswering = true;
@@ -3020,7 +2939,7 @@
       send.classList.add('is-loading');
       updateActionChips();
 
-      const userEntry = { role: 'user', content: cleanPrompt, displayText: label };
+      const userEntry = { role: 'user', content: cleanPrompt, displayText: label, containsPostContext: Boolean(postAction) && !hasReadPost() };
       history.push(userEntry);
       const userBubble = appendMessageBubble('user', cleanPrompt, label);
       activeUserEntry = userEntry;
@@ -3029,7 +2948,7 @@
 
       const currentActionId = createRequestId();
       actionRequestId = currentActionId;
-      const outgoingMessages = history.map(({ role, content }) => ({ role, content }));
+      const outgoingMessages = buildChatHistoryMessages(history);
 
       const assistantEntry = { role: 'assistant', content: '…' };
       history.push(assistantEntry);
@@ -3048,26 +2967,39 @@
         }
       });
 
-      const images = usePostImageCapture ? (history.findLast(entry => entry.images?.length)?.images || []) : [];
+      let images = usePostImageCapture ? (history.findLast(entry => entry.images?.length)?.images || []) : [];
 
       try {
-        const response = await sendMessage({
-          type: 'CHAT',
-          requestId: currentActionId,
-          messages: outgoingMessages,
-          images
-        });
+        if (postAction && usePostImageCapture && !postAction.localAnswer) {
+          images = await captureArticleMediaSnippets(postAction.articleBody, () => actionRequestId !== currentActionId);
+          if (actionRequestId !== currentActionId) return;
+        }
+        const response = postAction?.localAnswer
+          ? { ok: true, message: postAction.localAnswer }
+          : await sendMessage(postAction ? {
+              ...postAction.request, requestId: currentActionId, images
+            } : {
+              type: 'CHAT', requestId: currentActionId, messages: outgoingMessages, images
+            });
         if (actionRequestId !== currentActionId) return;
         if (!response?.ok) throw new Error(response?.error || '답변을 받지 못했습니다.');
-        const answer = String(response.message || '').trim();
+        const answer = String(response[postAction && !postAction.localAnswer ? postAction.resultKey : 'message'] || '').trim();
         if (!answer) throw new Error('AI가 빈 답변을 반환했습니다.');
         assistantEntry.content = answer;
+        if (postAction && !postAction.localAnswer) userEntry.images = images;
+        if (!postAction?.localAnswer) {
+          history.filter(entry => entry.containsPostContext).forEach(entry => { entry.contextRead = true; });
+          hasCompletedReading = history.some(entry => entry.contextRead === true);
+        }
         if (bubble.isConnected) {
           const wasNearBottom = (messages.scrollHeight - messages.scrollTop - messages.clientHeight) <= 120;
           renderAssistantContent(bubble, answer);
           if (wasNearBottom) scrollChatToBottom(messages, true);
         }
-        if (history.length > 20) history.splice(0, history.length - 20);
+        trimChatHistory(history);
+        if (!postAction?.localAnswer && completedActionLabels[chipId]) {
+          completedActions.add(chipId);
+        }
       } catch (error) {
         if (actionRequestId !== currentActionId) return;
         const aIndex = history.indexOf(assistantEntry);
@@ -3077,8 +3009,9 @@
         if (uIndex >= 0) history.splice(uIndex, 1);
         if (userBubble.isConnected) userBubble.remove();
         if (!history.length && !empty.isConnected) messages.append(empty);
-        if (error?.message !== '요청을 취소했습니다.') showToast(error?.message || 'AI 요청에 실패했습니다.', 'error');
+        if (error?.message !== '요청을 취소했습니다.') showRequestError(error, null, 'AI 요청에 실패했습니다.');
       } finally {
+        if (actionRequestId !== currentActionId) return;
         if (actionRequestId === currentActionId) {
           chatStreamHandlers.delete(currentActionId);
           actionRequestId = null;
@@ -3116,7 +3049,14 @@
       btn.className = 'aiang-chat-action-chip';
 
       const isActiveThisChip = isBusyAnswering && activeActionChipId === chip.id;
-      if (isActiveThisChip) {
+      if (completedActions.has(chip.id)) {
+        const completedLabel = completedActionLabels[chip.id];
+        btn.disabled = true;
+        btn.title = completedLabel;
+        btn.setAttribute('aria-label', completedLabel);
+        btn.innerHTML = `${ICONS.check}<span></span>`;
+        btn.lastElementChild.textContent = completedLabel;
+      } else if (isActiveThisChip) {
         btn.disabled = false;
         btn.classList.add('is-reading');
         const readingLabel = chip.readingLabel || (chip.label.endsWith('요약') ? `${chip.label} 중` : `${chip.label} 처리 중`);
@@ -3176,6 +3116,12 @@
       actionsBar.replaceChildren();
       updateReadPostButtonState();
       actionsBar.append(readPostButton);
+      if (!hasReadPost() && initialAction) {
+        actionsBar.append(renderActionChipButton({
+          id: initialAction.chipId, label: initialAction.label, icon: initialAction.icon,
+          onClick: () => sendPromptMessage(initialAction.prompt, initialAction.label, initialAction.chipId, initialAction)
+        }));
+      }
       if (hasReadPost()) {
         if (isBoardChat) {
           const chips = [
@@ -3394,6 +3340,7 @@
           answer = answer.slice(1, -1).trim();
         }
         readSucceeded = true;
+        readUserEntry.contextRead = true;
         readAssistantEntry.content = answer || fallbackAnswer;
         if (readAssistantBubble?.isConnected) {
           const wasNearBottom = (messages.scrollHeight - messages.scrollTop - messages.clientHeight) <= 120;
@@ -3540,16 +3487,18 @@
         readRequestId = null;
         chatStreamHandlers.delete(cancelId);
         sendMessage({ type: 'CANCEL_REQUEST', requestId: cancelId }).catch(() => { });
+        for (const entry of [readUserEntry, readAssistantEntry]) {
+          const index = history.indexOf(entry);
+          if (index >= 0) history.splice(index, 1);
+        }
       }
-      if (actionRequestId) {
-        const cancelId = actionRequestId;
-        actionRequestId = null;
-        chatStreamHandlers.delete(cancelId);
-        sendMessage({ type: 'CANCEL_REQUEST', requestId: cancelId }).catch(() => { });
-      }
+      if (actionRequestId) cancelActiveAction(false);
     };
     renderHistory(false);
     showModalPanel(panel);
+    if (initialAction) {
+      void sendPromptMessage(initialAction.prompt, initialAction.label, initialAction.chipId, initialAction);
+    }
     if (!IS_IPHONE && window.innerWidth > 680) {
       requestAnimationFrame(() => input.focus({ preventScroll: true }));
     }

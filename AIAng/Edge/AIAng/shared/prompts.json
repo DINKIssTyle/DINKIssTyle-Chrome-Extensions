@@ -99,7 +99,7 @@
     "readPost": {
       "buttonLabel": "이 게시물을 읽으세요",
       "buttonReading": "게시물을 읽는 중",
-      "buttonCompleted": "이 게시물을 읽었어요",
+      "buttonCompleted": "이 게시물을 읽었습니다",
       "promptTemplate": "[게시물 내용]\n{{postContent}}\n\n위 게시물을 모두 읽었습니다. 아래 규칙에 맞춰 친근하고 자연스럽게 한국어로 딱 한 문단으로만 답하세요:\n- 서두 앵커: 반드시 \"게시물을 읽었습니다. \"로 시작하세요.\n- 요약 제약: 게시물의 핵심 주제나 내용을 공백 포함 80자 내외의 딱 1문장으로 짧고 친근하게 요약하세요 (~에 관한 글이네요 / 이야기네요 등).\n- 결미 앵커: 요약 바로 뒤에 반드시 \" 이제 게시물 내용에 관하여 물어보세요.\"로 마무리하세요.\n- 금지: 서두 인사말, 불필요한 설명, 코드 펜스를 절대 넣지 마세요.",
       "historyUserMessage": "[게시물 내용]\n{{postContent}}\n\n이 게시물을 모두 읽었습니다.",
       "historyDisplayText": "이 게시물을 읽으세요",
@@ -122,17 +122,20 @@
     "followup": {
       "postSummary": {
         "label": "게시물 요약",
+        "completedLabel": "게시물을 요약했습니다",
         "readingLabel": "게시물 요약 중",
         "prompt": "위 게시물의 핵심 내용을 충실하게 읽고 중요한 요점, 배경, 결론을 Markdown 형식으로 깔끔하게 요약해 주세요."
       },
       "commentSummary": {
         "label": "댓글 요약",
+        "completedLabel": "댓글을 요약했습니다",
         "readingLabel": "댓글 요약 중",
         "promptWithComments": "[게시물 댓글 목록]\n{{commentsContent}}\n\n위 댓글들을 분석하여 전체적인 반응과 찬반 의견, 공통된 분위기를 Markdown으로 요약해 주세요.",
         "promptWithoutComments": "현재 이 게시물에 등록된 댓글이 없습니다."
       },
       "glossary": {
         "label": "용어 사전",
+        "completedLabel": "용어 사전을 생성했습니다",
         "readingLabel": "용어 사전 생성 중",
         "prompt": "위 게시물을 이해하는 데 도움이 되는 전문용어, 약어, 인터넷 신조어들을 골라 용어를 굵게 표시한 Markdown 사전 목록으로 알기 쉽게 설명해 주세요."
       },
