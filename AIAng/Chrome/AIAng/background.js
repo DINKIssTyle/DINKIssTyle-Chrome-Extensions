@@ -1,6 +1,6 @@
 const DEFAULT_SETTINGS = Object.freeze({
   enabled: true,
-  provider: 'openai',
+  provider: 'gemini',
   endpoint: 'http://localhost:1234/v1',
   apiKey: '',
   model: 'local-model',
@@ -10,7 +10,9 @@ const DEFAULT_SETTINGS = Object.freeze({
   fontSizeMode: 'damoang',
   fontSizeCustom: 'medium',
   geminiKeepAlive: false,
-  usePostImageCapture: false
+  usePostImageCapture: false,
+  floatingAssistantEnabled: false,
+  floatingAssistantPosition: 'right'
 });
 
 let promptCatalog = globalThis.__AIANG_PROMPT_CATALOG__ || null;
@@ -116,6 +118,8 @@ async function handleMessage(message, sender) {
           fontSizeMode: settings.fontSizeMode,
           fontSizeCustom: settings.fontSizeCustom,
           geminiKeepAlive: settings.geminiKeepAlive,
+          floatingAssistantEnabled: settings.floatingAssistantEnabled,
+          floatingAssistantPosition: settings.floatingAssistantPosition,
           usePostImageCapture: settings.usePostImageCapture
         }
       };
@@ -261,6 +265,8 @@ function sanitizeSettings(input = {}) {
     fontSizeMode,
     fontSizeCustom,
     geminiKeepAlive: input.geminiKeepAlive === true,
+    floatingAssistantEnabled: input.floatingAssistantEnabled === true,
+    floatingAssistantPosition: input.floatingAssistantPosition === 'left' ? 'left' : 'right',
     usePostImageCapture: input.usePostImageCapture === true
   };
 }

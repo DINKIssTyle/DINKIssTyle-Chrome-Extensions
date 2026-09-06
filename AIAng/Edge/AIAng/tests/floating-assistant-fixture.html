@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>플로팅 AI 지원 검증</title>
+<link rel="stylesheet" href="/content.css">
+<style>body{margin:0;padding:32px;background:#f4f5f7;font:16px/1.7 system-ui}main{max-width:720px;margin:auto;padding:24px;background:white;border-radius:16px}textarea,input,.tiptap{box-sizing:border-box;width:100%;padding:12px;border:1px solid #ccc;border-radius:8px}.tiptap{min-height:120px}button{font:inherit}</style>
+</head><body><main>
+<div><button>전체 새글 보기</button><button>보기 설정</button></div>
+<h1>우주 망원경 관측</h1>
+<article data-aiang-article-body><p>우주 망원경은 먼 은하를 관측합니다. 적외선 자료로 별의 탄생을 연구합니다.</p></article>
+<section id="comments"><h2>댓글 (2)</h2><ul><li class="comment-item"><div class="comment-body">적외선 관측이 흥미롭습니다.</div></li><li class="comment-item"><div class="comment-body">관측 비용이 궁금합니다.</div></li></ul><textarea placeholder="댓글을 입력하세요"></textarea></section>
+</main><script>
+const params = new URLSearchParams(location.search);
+const mode = params.get('mode') || 'post';
+const listeners = [];
+const pending = new Map();
+window.testRequests = [];
+window.testHold = false;
+window.testFail = false;
+window.releaseTestRequests = () => {
+ for(const callback of pending.values()) callback({ok:true,correctedText:'교정한 문장입니다.',suggestions:[],message:'내용을 읽었습니다.',summary:'요약했습니다.',glossary:'용어 사전입니다.'});
+ pending.clear();
+};
+window.testSettings = {enabled:true, floatingAssistantEnabled:params.get('floating')!=='off',floatingAssistantPosition:'right',usePostImageCapture:params.has('media')};
+window.setSettings = values => {
+  const changes = Object.fromEntries(Object.entries(values).map(([key,value]) => [key,{oldValue:testSettings[key],newValue:value}]));
+  Object.assign(testSettings,values); listeners.forEach(listener => listener(changes,'local'));
+};
+if(mode==='board') {
+ document.querySelector('article').remove(); document.querySelector('#comments').remove();
+ document.querySelector('main').insertAdjacentHTML('beforeend','<a href="/free/123"><span class="post-title">우주 망원경 관측</span></a>');
+ history.replaceState(null,'','/free');
+} else if(mode==='write') {
+ document.querySelector('article').remove(); document.querySelector('#comments').remove();
+ document.querySelector('main').insertAdjacentHTML('beforeend','<input id="title" placeholder="제목을 입력하세요" value="관측 기슬"><div class="tiptap-editor"><div class="tiptap ProseMirror" contenteditable="true"><p>새로운 관측 기슬을 소개합니다.</p></div></div><input id="tags" placeholder="태그">');
+ history.replaceState(null,'','/write');
+} else if(mode==='empty') {
+ document.querySelector('#comments ul').remove(); document.querySelector('#comments h2').textContent='댓글 (0)';
+}
+if(params.has('media')) {
+ const canvas=document.createElement('canvas');canvas.width=200;canvas.height=200;
+ const image=document.createElement('img');image.src=canvas.toDataURL();document.querySelector('article').append(image);
+}
+window.chrome = {
+ runtime:{lastError:null,getURL:value=>'/'+value,onMessage:{addListener(){}},sendMessage(message,callback){
+  if(message.type==='GET_SETTINGS') {fetch('/shared/prompts.json').then(r=>r.json()).then(prompts=>callback({ok:true,settings:{...testSettings,prompts}}));return;}
+  testRequests.push(message);
+  if(message.type==='CANCEL_REQUEST') {pending.get(message.requestId)?.({ok:false,error:'요청을 취소했습니다.'});pending.delete(message.requestId);callback({ok:true});return;}
+  if(message.type==='CAPTURE_TAB_VIEWPORT') {
+    window.testFloatingHiddenDuringCapture=getComputedStyle(document.querySelector('.aiang-floating')).visibility==='hidden';
+    const canvas=document.createElement('canvas');canvas.width=innerWidth;canvas.height=innerHeight;callback({ok:true,dataUrl:canvas.toDataURL()});return;
+  }
+  if(window.testFail){callback({ok:false,error:'테스트 오류'});return;}
+  const result = message.type==='PROCESS_TEXT' ? {correctedText:message.text.replaceAll('기슬','기술'),suggestions:[]}
+    : message.type==='SUGGEST_TITLES' ? {titles:['새로운 우주 관측 기술','관측 기술의 미래']}
+    : message.type==='SUGGEST_TAGS' ? {tags:['우주','관측']}
+    : message.type==='SUMMARIZE_POST' ? {summary:'별의 탄생을 연구합니다.'}
+    : message.type==='SUMMARIZE_REACTIONS' ? {summary:'관측 비용에 관심이 있습니다.'}
+    : message.type==='BUILD_GLOSSARY' ? {glossary:'적외선은 빛의 한 종류입니다.'}
+    : {message:'게시판 내용을 읽고 답변합니다.'};
+  if(testHold) pending.set(message.requestId,callback); else setTimeout(()=>callback({ok:true,...result}),20);
+ }},storage:{onChanged:{addListener(listener){listeners.push(listener)}}}
+};
+</script><script src="/shared/review-presentation.js"></script><script src="/content.js"></script></body></html>

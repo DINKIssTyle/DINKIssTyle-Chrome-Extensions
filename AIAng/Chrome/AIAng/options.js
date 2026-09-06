@@ -2,6 +2,11 @@ const $ = selector => document.querySelector(selector);
 
 const form = $('#settings-form');
 const enabled = $('#enabled');
+const floatingAssistantEnabled = $('#floating-assistant-enabled');
+const floatingAssistantPosition = $('#floating-assistant-position');
+floatingAssistantEnabled.addEventListener('change', () => {
+  floatingAssistantPosition.disabled = !floatingAssistantEnabled.checked;
+});
 const provider = $('#provider');
 const endpoint = $('#endpoint');
 const apiKey = $('#api-key');
@@ -243,6 +248,9 @@ async function loadSettings() {
     if (!response?.ok) throw new Error(response?.error || '설정을 불러오지 못했습니다.');
     const settings = response.settings;
     enabled.checked = settings.enabled;
+    floatingAssistantEnabled.checked = settings.floatingAssistantEnabled === true;
+    floatingAssistantPosition.value = settings.floatingAssistantPosition === 'left' ? 'left' : 'right';
+    floatingAssistantPosition.disabled = !floatingAssistantEnabled.checked;
     provider.value = settings.provider;
     endpoint.value = settings.endpoint;
     apiKey.value = settings.apiKey;
@@ -272,6 +280,8 @@ async function loadSettings() {
 function collectSettings() {
   return {
     enabled: enabled.checked,
+    floatingAssistantEnabled: floatingAssistantEnabled.checked,
+    floatingAssistantPosition: floatingAssistantPosition.value,
     provider: provider.value,
     endpoint: endpoint.value,
     apiKey: apiKey.value,

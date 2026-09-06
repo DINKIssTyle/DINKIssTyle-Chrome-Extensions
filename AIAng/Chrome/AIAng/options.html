@@ -39,8 +39,8 @@
           <label class="field full">
             <span>AI 제공자</span>
             <select id="provider">
-              <option value="openai">OpenAI 호환 API · LM Studio</option>
               <option value="gemini" id="provider-gemini-option">Google Gemini Nano · Chrome 내장</option>
+              <option value="openai">OpenAI 호환 API · LM Studio</option>
             </select>
           </label>
 
@@ -216,6 +216,25 @@
             </div>
           </div>
         </div>
+      </section>
+
+      <section class="card">
+        <div class="section-heading compact"><div>
+          <h2>플로팅 AI 지원</h2>
+          <p>화면에 고정된 AIAng 버튼에서 상황에 맞는 AI 기능을 실행합니다. 켜면 페이지의 기존 AI 도구가 플로팅 메뉴로 바뀝니다. 채팅창의 액션 칩은 그대로 사용할 수 있습니다.</p>
+        </div></div>
+        <label class="switch-row">
+          <input id="floating-assistant-enabled" type="checkbox">
+          <span class="switch" aria-hidden="true"></span>
+          <span>플로팅 AI 지원 사용</span>
+        </label>
+        <label class="field">
+          <span>플로팅 위치</span>
+          <select id="floating-assistant-position" disabled>
+            <option value="left">좌하단</option>
+            <option value="right" selected>우하단</option>
+          </select>
+        </label>
       </section>
 
       <div class="footer-actions">

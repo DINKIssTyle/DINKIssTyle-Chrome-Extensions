@@ -125,6 +125,10 @@
   let fontSizeMode = 'damoang';
   let fontSizeCustom = 'medium';
   let usePostImageCapture = false;
+  let floatingAssistantEnabled = false;
+  let floatingAssistantPosition = 'right';
+  let lastFocusedEditor = null;
+  const EDITOR_SELECTOR = '[contenteditable="true"].tiptap.ProseMirror, textarea[placeholder*="댓글을 입력하세요"]';
 
   const CUSTOM_FONT_SIZE_MAP = {
     small: '14px',
@@ -152,6 +156,7 @@
   const chatStreamHandlers = new Map();
   const buttonRequestStates = new WeakMap();
   const requestButtonsById = new Map();
+  const aiActivitySources = new Set();
 
   const ICONS = {
     check: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m4 12 5 5L20 6"/></svg>',
@@ -182,6 +187,7 @@
 
   function handleLocationChange() {
     if (location.pathname !== lastKnownPathname || location.search !== lastKnownSearch) {
+      removeFloatingAssistant();
       lastKnownPathname = location.pathname;
       lastKnownSearch = location.search;
       if (document.querySelector('.aiang-chat-modal')) {
@@ -194,6 +200,10 @@
     handleLocationChange();
     cleanupDetachedControls();
     if (!extensionEnabled) return;
+    if (floatingAssistantEnabled) {
+      syncFloatingAssistant();
+      return;
+    }
 
     document.querySelectorAll('[contenteditable="true"].tiptap.ProseMirror, textarea[placeholder*="댓글을 입력하세요"]')
       .forEach(editor => {
@@ -202,6 +212,236 @@
       });
     injectPageSettingsButton();
     scanArticleSummary();
+  }
+
+  function removeFloatingAssistant() {
+    const root = document.querySelector('.aiang-floating');
+    if (!root) return;
+    if (openActionMenu?.button === root.querySelector('.aiang-floating-launcher')) closeActionMenu();
+    root.querySelectorAll('.is-loading').forEach(cancelButtonRequest);
+    root._aiangPositionObserver?.disconnect();
+    root.remove();
+    lastFocusedEditor = null;
+  }
+
+  function floatingContext() {
+    const editors = Array.from(document.querySelectorAll(EDITOR_SELECTOR))
+      .filter(editor => editor.getClientRects().length && !editor.closest('[hidden], [aria-hidden="true"]'));
+    if (POST_EDITOR_PATH_PATTERN.test(location.pathname)) {
+      return { kind: 'body', editor: editors.find(editor => classifyEditor(editor) === 'body') };
+    }
+    const article = findArticleBody();
+    if (article) {
+      const comments = editors.filter(editor => classifyEditor(editor) === 'comment');
+      const hasText = editor => Boolean((editor.value ?? editor.textContent ?? '').replace(/\u200b/g, '').trim());
+      const editor = comments.includes(lastFocusedEditor) && hasText(lastFocusedEditor)
+        ? lastFocusedEditor : comments.find(hasText);
+      return { kind: 'post', article, editor, hasComments: collectCommentTexts(article).length > 0 };
+    }
+    return { kind: 'board' };
+  }
+
+  function floatingActions(context) {
+    const actions = [];
+    const add = (id, label, icon, run) => actions.push({ id, label, icon, run });
+    const { kind, editor, article } = context;
+    if (kind === 'body' || editor) {
+      const subject = kind === 'body' ? '작성 중인 글' : '댓글';
+      add('spellcheck', `${subject}의 맞춤법을 검사해 주세요`, 'check', button =>
+        kind === 'body' ? runPostSpellcheck(editor, button) : runAction(editor, 'spellcheck', button));
+      add('honorific', `${subject}을 경어체로 교정해 주세요`, 'chat', button => runAction(editor, 'honorific', button));
+      add('improve', `${subject}의 문장을 다듬어 주세요`, 'sparkle', button => runAction(editor, 'improve', button));
+      add('decorate', `${subject}을 꾸며 주세요`, 'palette', button => runAction(editor, 'decorate', button));
+      if (kind === 'body') {
+        add('suggest_tags', '작성 중인 글에 어울리는 태그를 생성해 주세요', 'tag', button => runTagGeneration(editor, button));
+        add('suggest_title', '작성 중인 글에 어울리는 제목을 추천해 주세요', 'title', button => runTitleSuggestions(editor, button));
+      }
+    }
+    if (kind === 'post') {
+      add('summarize_post', '게시물을 요약해 주세요', 'sparkle', () => runPostSummary(article));
+      if (context.hasComments) add('summarize_reactions', '댓글 반응을 요약해 주세요', 'chat', () => runCommentReactionSummary(article));
+      add('build_glossary', '용어 사전을 보여 주세요', 'book', () => runTermGlossary(article));
+    } else if (kind === 'board') {
+      add('read_board', '이 게시판의 글 목록을 읽어 주세요', 'book', () => openChatModal(document.body, 'board', null, true));
+    }
+    add('chat', '궁금한 내용을 질문할게요', 'question', () =>
+      openChatModal(editor || article || document.body, kind === 'post' ? 'comment' : kind));
+    return actions;
+  }
+
+  function setAIActivity(source, busy) {
+    if (busy) aiActivitySources.add(source);
+    else aiActivitySources.delete(source);
+    syncFloatingActivity();
+  }
+
+  function syncFloatingActivity() {
+    const launcher = document.querySelector('.aiang-floating-launcher');
+    if (!launcher) return;
+    const busy = aiActivitySources.size > 0;
+    const image = launcher.querySelector('img');
+    const url = extensionAPI.runtime.getURL(busy ? 'icons/AIAng.gif' : 'icons/AIAng.png');
+    // Do not restart the GIF on every page mutation or streaming chunk.
+    if (image.getAttribute('src') !== url) image.src = url;
+    launcher.setAttribute('aria-busy', String(busy));
+    const cancellable = Boolean(launcher.parentElement.querySelector('.is-loading'));
+    const label = busy ? (cancellable ? 'AIAng 처리 중 (클릭하면 취소)' : 'AIAng 처리 중') : 'AIAng AI 지원 메뉴';
+    launcher.setAttribute('aria-label', label);
+    launcher.title = label;
+  }
+
+  function findFloatingContentBoundary() {
+    const visible = element => element instanceof HTMLElement
+      && !element.closest('aside, nav, footer, .aiang-floating, .aiang-review')
+      && element.getBoundingClientRect().width >= 100;
+    if (POST_EDITOR_PATH_PATTERN.test(location.pathname)) {
+      const editor = Array.from(document.querySelectorAll(EDITOR_SELECTOR))
+        .find(element => classifyEditor(element) === 'body' && visible(element));
+      if (editor) return editor.closest('.tiptap-editor') || editor;
+    }
+    const article = findArticleBody();
+    if (visible(article)) return article;
+    const list = Array.from(document.querySelectorAll(
+      '#bo_list, #bo_list_wrap, #fboardlist, [data-aiang-board-list], .post-row, [class*="post-row"]'
+    )).find(visible);
+    if (list) return list;
+    return Array.from(document.querySelectorAll('main, [role="main"]')).find(visible) || null;
+  }
+
+  function positionFloatingAssistant(root) {
+    // Keep the vertical viewport anchor, but use the central content column
+    // rather than the sidebars or outer window edges on desktop.
+    const boundary = window.innerWidth > 680 ? findFloatingContentBoundary() : null;
+    if (root._aiangPositionBoundary !== boundary) {
+      root._aiangPositionObserver?.disconnect();
+      root._aiangPositionBoundary = boundary;
+      if (boundary && typeof ResizeObserver === 'function') {
+        root._aiangPositionObserver ||= new ResizeObserver(scheduleScan);
+        root._aiangPositionObserver.observe(boundary);
+        if (boundary.parentElement) root._aiangPositionObserver.observe(boundary.parentElement);
+      }
+    }
+    const reset = () => {
+      root.style.removeProperty('left');
+      root.style.removeProperty('right');
+      root.style.removeProperty('--aiang-floating-menu-width');
+    };
+    if (!boundary) { reset(); return; }
+    const rect = boundary.getBoundingClientRect();
+    const left = Math.max(18, rect.left);
+    const right = Math.min(document.documentElement.clientWidth - 18, rect.right);
+    const width = root.querySelector('.aiang-floating-launcher').getBoundingClientRect().width;
+    if (right - left < width) { reset(); return; }
+    root.style.left = `${floatingAssistantPosition === 'left' ? left : right - width}px`;
+    root.style.right = 'auto';
+    root.style.setProperty('--aiang-floating-menu-width', `${Math.min(360, right - left)}px`);
+  }
+
+  function syncFloatingAssistant() {
+    let root = document.querySelector('.aiang-floating');
+    if (!root) {
+      root = document.createElement('div');
+      root.className = 'aiang-floating aiang-no-select';
+      const launcher = document.createElement('button');
+      launcher.type = 'button';
+      launcher.className = 'aiang-floating-launcher';
+      launcher.setAttribute('aria-label', 'AIAng AI 지원 메뉴');
+      launcher.setAttribute('aria-haspopup', 'menu');
+      launcher.setAttribute('aria-expanded', 'false');
+      launcher.setAttribute('aria-controls', 'aiang-floating-menu');
+      launcher.innerHTML = `<img src="${extensionAPI.runtime.getURL('icons/AIAng.png')}" alt="" draggable="false">`;
+      const menu = document.createElement('div');
+      menu.id = 'aiang-floating-menu';
+      menu.className = 'aiang-floating-menu';
+      menu.setAttribute('role', 'menu');
+      menu.setAttribute('aria-label', '상황에 맞는 AI 지원');
+      menu.hidden = true;
+      launcher.addEventListener('click', event => {
+        event.stopPropagation();
+        const pendingButtons = Array.from(root.querySelectorAll('.is-loading'));
+        if (pendingButtons.length) {
+          closeActionMenu();
+          pendingButtons.forEach(cancelButtonRequest);
+          return;
+        }
+        if (openActionMenu?.menu === menu) { closeActionMenu(); return; }
+        refreshFloatingMenu(root);
+        closeActionMenu();
+        menu.hidden = false;
+        launcher.setAttribute('aria-expanded', 'true');
+        openActionMenu = { button: launcher, menu };
+        menu.querySelector('[role="menuitem"]:not(:disabled)')?.focus({ preventScroll: true });
+      });
+      menu.addEventListener('keydown', event => {
+        const items = Array.from(menu.querySelectorAll('[role="menuitem"]:not(:disabled)'));
+        const index = items.indexOf(document.activeElement);
+        let next;
+        if (event.key === 'ArrowDown') next = (index + 1) % items.length;
+        if (event.key === 'ArrowUp') next = (index - 1 + items.length) % items.length;
+        if (event.key === 'Home') next = 0;
+        if (event.key === 'End') next = items.length - 1;
+        if (next !== undefined) { event.preventDefault(); items[next]?.focus(); }
+        if (event.key === 'Tab') closeActionMenu();
+      });
+      root.append(menu, launcher);
+      document.body.append(root);
+    }
+    root.dataset.position = floatingAssistantPosition;
+    positionFloatingAssistant(root);
+    syncFloatingActivity();
+    if (!root.querySelector('.aiang-floating-menu').hidden) refreshFloatingMenu(root);
+  }
+
+  function refreshFloatingMenu(root) {
+    const context = floatingContext();
+    const previous = root._aiangContext;
+    if (previous && ['kind', 'editor', 'article', 'hasComments'].every(key => previous[key] === context[key])) return;
+    // Keep a running action's button connected so it can still be cancelled.
+    if (root.querySelector('.is-loading')) return;
+    root._aiangContext = context;
+    const menu = root.querySelector('.aiang-floating-menu');
+    const focusedAction = menu.contains(document.activeElement) ? document.activeElement.dataset.action : null;
+    menu.replaceChildren();
+    const heading = document.createElement('div');
+    heading.className = 'aiang-floating-heading';
+    heading.textContent = context.kind === 'body' ? '글쓰기 AI 지원' : context.kind === 'post' ? '게시물 AI 지원' : '게시판 AI 지원';
+    menu.append(heading);
+    for (const action of floatingActions(context)) {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'aiang-floating-item';
+      button.dataset.action = action.id;
+      button.dataset.floatingLabel = action.label;
+      button.setAttribute('role', 'menuitem');
+      button.disabled = context.kind === 'body' && !context.editor && action.id !== 'chat';
+      button.innerHTML = `${ICONS[action.icon]}<span>${action.label}</span>`;
+      button.addEventListener('click', async () => {
+        if (!extensionEnabled || !floatingAssistantEnabled) return;
+        closeActionMenu();
+        const launcher = root.querySelector('.aiang-floating-launcher');
+        launcher.focus({ preventScroll: true });
+        if (cancelButtonRequest(button)) return;
+        if (root.querySelector('.is-loading')) {
+          showToast('진행 중인 작업이 끝난 뒤 실행해 주세요.', 'info');
+          return;
+        }
+        toastToolbarAnchor = launcher;
+        try {
+          await action.run(button);
+        } finally {
+          scheduleScan();
+        }
+      });
+      menu.append(button);
+    }
+    const settings = document.createElement('button');
+    settings.type = 'button';
+    settings.className = 'aiang-floating-item aiang-floating-settings';
+    settings.setAttribute('role', 'menuitem');
+    settings.innerHTML = `${ICONS.settings}<span>AI 지원 설정</span>`;
+    settings.addEventListener('click', () => { closeActionMenu(); openSettings(); });
+    menu.append(settings);
+    if (focusedAction) (menu.querySelector(`[data-action="${focusedAction}"]`) || menu.querySelector('[role="menuitem"]'))?.focus({ preventScroll: true });
   }
 
   function classifyEditor(editor) {
@@ -461,6 +701,7 @@
   function removeControls() {
     closeActionMenu();
     closeReview();
+    removeFloatingAssistant();
     document.querySelectorAll('.aiang-action.is-loading, .aiang-summary-button.is-loading')
       .forEach(cancelButtonRequest);
     document.querySelectorAll('.aiang-toolbar-slot').forEach(slot => {
@@ -730,7 +971,7 @@
     const savedScrollX = window.scrollX;
     const savedScrollY = window.scrollY;
     const results = [];
-    const overlays = Array.from(document.querySelectorAll('.aiang-overlay, .aiang-review, .aiang-toast'));
+    const overlays = Array.from(document.querySelectorAll('.aiang-overlay, .aiang-review, .aiang-toast, .aiang-floating'));
     const prevVisibilities = overlays.map(o => o.style.visibility);
     const checkCancelled = () => {
       if (isCancelled()) throw new Error('요청을 취소했습니다.');
@@ -1251,7 +1492,7 @@
       }
     } catch (error) {
       if (requestState.cancelRequested || error?.message === '요청을 취소했습니다.') return;
-      showToast(error?.message || '태그를 생성하지 못했습니다.', 'error');
+      showRequestError(error, requestState, '태그를 생성하지 못했습니다.');
     } finally {
       finishButtonRequest(button, requestState);
     }
@@ -1265,6 +1506,7 @@
     const state = { action, requestIds: new Set(), cancelRequested: false };
     buttonRequestStates.set(button, state);
     setButtonLoading(button, true, action);
+    setAIActivity(state, true);
     return state;
   }
 
@@ -1277,6 +1519,7 @@
   }
 
   function finishButtonRequest(button, state) {
+    setAIActivity(state, false);
     if (buttonRequestStates.get(button) !== state) return;
     state.requestIds.forEach(requestId => {
       requestButtonsById.delete(requestId);
@@ -1292,6 +1535,7 @@
     if (!state) return false;
     if (!state.cancelRequested) {
       state.cancelRequested = true;
+      setAIActivity(state, false);
       button.classList.add('is-cancelling');
       const label = button.querySelector('.aiang-loading-label');
       if (label) label.textContent = '취소 중';
@@ -1304,13 +1548,34 @@
   }
 
   function showRequestError(error, state, fallbackMessage) {
-    const message = error?.message || fallbackMessage;
-    const cancelled = state?.cancelRequested || error?.name === 'AbortError' || message === '요청을 취소했습니다.';
+    const rawMessage = error?.message || fallbackMessage || 'AI 요청에 실패했습니다.';
+    const cancelled = state?.cancelRequested || error?.name === 'AbortError' || rawMessage === '요청을 취소했습니다.';
     if (cancelled) {
       showToast('요청을 취소했습니다.', 'info', 1800);
       return;
     }
-    showToast(message, 'error', 3200, true);
+
+    const isDownloadNeeded = /다운로드|download|NotAllowedError/i.test(rawMessage);
+    if (isDownloadNeeded) {
+      const isEdge = isEdgeBrowser();
+      const modelDisplayName = isEdge ? 'Edge 온디바이스 AI' : (IS_SAFARI_WEB_EXTENSION ? 'Apple Intelligence' : 'Gemini Nano');
+      const downloadNotice = `${modelDisplayName} 모델 다운로드가 필요합니다. 설정창으로 이동해 모델을 다운로드해 주세요.`;
+      showToast(downloadNotice, 'warning', 8000, true, {
+        actionLabel: '설정창으로 이동',
+        action: openSettings,
+        title: rawMessage,
+        commentHeaderMessage: '모델 다운로드 필요. 설정창으로 이동해 주세요.'
+      });
+      return;
+    }
+
+    const connectionNotice = 'AI 연결에 실패했습니다. 설정창으로 이동해 AI 설정을 확인해 주세요.';
+    showToast(connectionNotice, 'error', 8000, true, {
+      actionLabel: '설정창으로 이동',
+      action: openSettings,
+      title: rawMessage,
+      commentHeaderMessage: 'AI 연결 실패. 설정창으로 이동해 주세요.'
+    });
   }
 
   function getActionLoadingLabel(action) {
@@ -1357,7 +1622,7 @@
       : `${LABELS[action]} 처리 중, 다시 누르면 취소`;
     button.setAttribute(
       'aria-label',
-      loading ? loadingAria : LABELS[action]
+      loading ? loadingAria : (button.dataset.floatingLabel || LABELS[action])
     );
   }
 
@@ -2772,7 +3037,7 @@
     return entries.map(({ role, content }) => ({ role, content }));
   }
 
-  function openChatModal(target, kind, initialAction = null) {
+  function openChatModal(target, kind, initialAction = null, readBoardImmediately = false) {
     closeActionMenu();
     closeReview();
     const resolvedKind = kind || target?.dataset?.aiangKind || target?._aiangToolbarSlot?.dataset?.aiangKind || 'comment';
@@ -3113,6 +3378,13 @@
     };
 
     const updateActionChips = () => {
+      const busy = isBusyAnswering || isReadingPost;
+      setAIActivity(panel, busy);
+      if (floatingAssistantEnabled) {
+        const badge = header.querySelector('.aiang-review-badge');
+        const url = extensionAPI.runtime.getURL(busy ? 'icons/AIAng.gif' : 'icons/AIAng.png');
+        if (badge.getAttribute('src') !== url) badge.src = url;
+      }
       actionsBar.replaceChildren();
       updateReadPostButtonState();
       actionsBar.append(readPostButton);
@@ -3493,9 +3765,11 @@
         }
       }
       if (actionRequestId) cancelActiveAction(false);
+      setAIActivity(panel, false);
     };
     renderHistory(false);
     showModalPanel(panel);
+    if (readBoardImmediately && isBoardChat) readPostButton.click();
     if (initialAction) {
       void sendPromptMessage(initialAction.prompt, initialAction.label, initialAction.chipId, initialAction);
     }
@@ -4008,26 +4282,28 @@
     return null;
   }
 
-  function showCommentHeaderToast(header, message, kind, duration, withSettings) {
+  function showCommentHeaderToast(header, message, kind, duration, withSettings, options = {}) {
     const existing = header.querySelector('.aiang-comment-header-toast');
     existing?._aiangCleanup?.();
     existing?.remove();
 
+    const displayMessage = options.commentHeaderMessage || message;
     const toast = document.createElement('div');
     toast.className = `aiang-comment-header-toast aiang-comment-header-toast-${kind} aiang-no-select`;
     toast.setAttribute('role', 'status');
     toast.setAttribute('aria-live', 'polite');
 
     const text = document.createElement('span');
-    text.textContent = message;
-    text.title = message;
+    text.textContent = displayMessage;
+    text.title = options.title || message;
     toast.append(text);
 
-    if (withSettings) {
+    if (withSettings || options.actionLabel || options.action) {
       const settingsBtn = document.createElement('button');
       settingsBtn.type = 'button';
-      settingsBtn.textContent = '설정';
-      settingsBtn.addEventListener('click', openSettings);
+      settingsBtn.textContent = options.actionLabel || '설정창으로 이동';
+      settingsBtn.title = options.actionLabel || '설정창으로 이동';
+      settingsBtn.addEventListener('click', options.action || openSettings);
       toast.append(settingsBtn);
     }
 
@@ -4054,13 +4330,13 @@
     return toast;
   }
 
-  function showToast(message, kind = 'info', duration = 3200, withSettings = false) {
+  function showToast(message, kind = 'info', duration = 3200, withSettings = false, options = {}) {
     const commentEditor = toastToolbarAnchor?.dataset?.aiangKind === 'comment'
       ? toastToolbarAnchor._aiangTarget
       : null;
     const commentHeader = commentEditor ? findCommentEditorHeader(commentEditor) : null;
     if (commentHeader) {
-      return showCommentHeaderToast(commentHeader, message, kind, duration, withSettings);
+      return showCommentHeaderToast(commentHeader, message, kind, duration, withSettings, options);
     }
 
     const previous = document.querySelector('.aiang-toast');
@@ -4068,14 +4344,18 @@
     previous?.remove();
     const toast = document.createElement('div');
     toast.className = `aiang-toast aiang-toast-${kind}`;
+    if (options.title) toast.title = options.title;
+
     const text = document.createElement('span');
     text.textContent = message;
     toast.append(text);
-    if (withSettings) {
+    if (withSettings || options.actionLabel || options.action) {
       const settings = document.createElement('button');
       settings.type = 'button';
-      settings.textContent = '설정';
-      settings.addEventListener('click', openSettings);
+      settings.className = 'aiang-toast-link';
+      settings.setAttribute('role', 'link');
+      settings.textContent = options.actionLabel || '설정창으로 이동';
+      settings.addEventListener('click', options.action || openSettings);
       toast.append(settings);
     }
     document.body.append(toast);
@@ -4288,16 +4568,36 @@
       }
       syncAllOpenModalsFontSize();
     }
+    if (changes.floatingAssistantEnabled || changes.floatingAssistantPosition) {
+      if (changes.floatingAssistantEnabled) {
+        floatingAssistantEnabled = changes.floatingAssistantEnabled.newValue === true;
+        removeControls();
+      }
+      if (changes.floatingAssistantPosition) {
+        floatingAssistantPosition = changes.floatingAssistantPosition.newValue === 'left' ? 'left' : 'right';
+      }
+      scheduleScan();
+    }
     if (changes.usePostImageCapture) {
       usePostImageCapture = changes.usePostImageCapture.newValue === true;
     }
   });
   window.addEventListener('resize', () => {
+    if (floatingAssistantEnabled) scheduleScan();
     const panel = document.querySelector('.aiang-review-popover');
     if (panel?._aiangAnchor) positionPopover(panel, panel._aiangAnchor);
     document.querySelectorAll('.aiang-toolbar').forEach(syncImproveActionWidth);
   });
-  window.addEventListener('popstate', handleLocationChange);
+  document.addEventListener('scroll', () => {
+    if (floatingAssistantEnabled) scheduleScan();
+  }, { passive: true, capture: true });
+  window.addEventListener('popstate', scheduleScan);
+  document.addEventListener('focusin', event => {
+    if (event.target.matches?.(EDITOR_SELECTOR)) lastFocusedEditor = event.target;
+  });
+  document.addEventListener('input', event => {
+    if (floatingAssistantEnabled && event.target.matches?.(EDITOR_SELECTOR)) scheduleScan();
+  });
   function syncCommentGenerationControls() {
     document.querySelectorAll('.aiang-toolbar[data-aiang-kind="comment"]').forEach(toolbar => {
       const existing = toolbar.querySelector('.aiang-comment-generate-wrap');
@@ -4312,8 +4612,14 @@
     });
   }
 
-  sendMessage({ type: 'GET_SETTINGS' })
+  function refreshSettings() {
+    return sendMessage({ type: 'GET_SETTINGS' })
     .then(response => {
+      if (!response?.ok) return;
+      const nextFloating = response.settings?.floatingAssistantEnabled === true;
+      if (floatingAssistantEnabled !== nextFloating || (extensionEnabled && !response.settings?.enabled)) removeControls();
+      floatingAssistantEnabled = nextFloating;
+      floatingAssistantPosition = response.settings?.floatingAssistantPosition === 'left' ? 'left' : 'right';
       extensionEnabled = Boolean(response?.ok && response.settings?.enabled);
       commentGenerationEnabled = response?.settings?.features?.commentGeneration === true;
       promptCatalog = response?.settings?.prompts || null;
@@ -4327,4 +4633,13 @@
       scheduleScan();
     })
     .catch(() => { });
+  }
+  // Safari settings live in the host app, outside browser.storage.
+  if (IS_SAFARI_WEB_EXTENSION) {
+    window.addEventListener('focus', refreshSettings);
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden) refreshSettings();
+    });
+  }
+  refreshSettings();
 })();

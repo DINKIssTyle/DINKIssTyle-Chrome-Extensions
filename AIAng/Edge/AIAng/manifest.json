@@ -60,7 +60,9 @@
   "web_accessible_resources": [
     {
       "resources": [
-        "icons/icon48.png"
+        "icons/icon48.png",
+        "icons/AIAng.png",
+        "icons/AIAng.gif"
       ],
       "matches": [
         "https://damoang.net/*",

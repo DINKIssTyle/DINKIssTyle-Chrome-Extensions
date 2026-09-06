@@ -184,7 +184,7 @@ test('aborts an active AI request when its request ID is cancelled', async () =>
       aborted = true;
       reject(new DOMException('Aborted', 'AbortError'));
     }, { once: true });
-  }));
+  }), { settings: { provider: 'openai' } });
   const processing = cancelCore.processTextRequest({
     requestId: 'cancel-test-request',
     action: 'improve',
@@ -326,7 +326,7 @@ test('generates a comment from the post body using saved personalization', async
       json: async () => ({ choices: [{ message: { content: '{"comment":"저도 이 부분에 동의합니다."}' } }] })
     };
   }, {
-    settings: { personalization: '차분하고 짧게 답합니다.' },
+    settings: { provider: 'openai', personalization: '차분하고 짧게 답합니다.' },
     commentGenerationEnabled: true
   });
   const result = await generationCore.handleMessage({
@@ -346,7 +346,7 @@ test('sends full chat history and keeps chat personalization in the system messa
   const chatCore = loadCore(async (_url, options) => {
     requestBody = JSON.parse(options.body);
     return { ok: true, json: async () => ({ choices: [{ message: { content: '스티브 잡스와 스티브 워즈니악 등이 공동 창립했습니다.' } }] }) };
-  }, { settings: { personalization: '간결하게 답합니다.' } });
+  }, { settings: { provider: 'openai', personalization: '간결하게 답합니다.' } });
   const result = await chatCore.handleMessage({
     type: 'CHAT',
     requestId: 'chat-test',
@@ -819,4 +819,23 @@ test('service-worker model requests use an offscreen document and relay stream e
   assert.equal(routed.images.length, 1);
   assert.deepEqual(chunks, ['중간 답변']);
   assert.equal(listeners.size, 1, 'temporary response listener is removed');
+});
+
+test('default AI provider is set to on-device gemini for new users', async () => {
+  const testCore = loadCore();
+  const settings = await testCore.getSettings();
+  assert.equal(settings.provider, 'gemini');
+});
+
+test('floating assistant is opt-in and public settings expose a validated position', async () => {
+  const core = loadCore();
+  const defaults = await core.getSettings();
+  assert.equal(defaults.floatingAssistantEnabled, false);
+  assert.equal(defaults.floatingAssistantPosition, 'right');
+  assert.equal(core.sanitizeSettings({floatingAssistantEnabled:'true',floatingAssistantPosition:'top'}).floatingAssistantEnabled,false);
+  assert.equal(core.sanitizeSettings({floatingAssistantPosition:'top'}).floatingAssistantPosition,'right');
+  const enabledCore = loadCore(fetch, {settings:{floatingAssistantEnabled:true,floatingAssistantPosition:'left'}});
+  const response = await enabledCore.handleMessage({type:'GET_SETTINGS'});
+  assert.equal(response.settings.floatingAssistantEnabled,true);
+  assert.equal(response.settings.floatingAssistantPosition,'left');
 });
