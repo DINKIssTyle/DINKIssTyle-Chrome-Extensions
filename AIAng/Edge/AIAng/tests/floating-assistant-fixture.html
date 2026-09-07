@@ -10,6 +10,9 @@
 </main><script>
 const params = new URLSearchParams(location.search);
 const mode = params.get('mode') || 'post';
+if(params.has('random')) Math.random=()=>Number(params.get('random'));
+if(params.has('title')) document.querySelector('h1').textContent=params.get('title');
+if(params.has('body')) document.querySelector('article p').textContent=params.get('body');
 const listeners = [];
 const pending = new Map();
 window.testRequests = [];
@@ -19,7 +22,7 @@ window.releaseTestRequests = () => {
  for(const callback of pending.values()) callback({ok:true,correctedText:'교정한 문장입니다.',suggestions:[],message:'내용을 읽었습니다.',summary:'요약했습니다.',glossary:'용어 사전입니다.'});
  pending.clear();
 };
-window.testSettings = {enabled:true, floatingAssistantEnabled:params.get('floating')!=='off',floatingAssistantPosition:params.get('position')||'right',floatingAssistantHeight:params.get('height')||'default',floatingAssistantSize:params.get('size')||'large',usePostImageCapture:params.has('media')};
+window.testSettings = {enabled:true, floatingAssistantEnabled:params.get('floating')!=='off',floatingAssistantPosition:params.get('position')||'right',floatingAssistantHeight:params.get('height')||'default',floatingAssistantType:params.get('theme')||'classic',floatingAssistantSize:params.get('size')||'large',usePostImageCapture:params.has('media')};
 window.setSettings = values => {
   const changes = Object.fromEntries(Object.entries(values).map(([key,value]) => [key,{oldValue:testSettings[key],newValue:value}]));
   Object.assign(testSettings,values); listeners.forEach(listener => listener(changes,'local'));
@@ -41,7 +44,7 @@ if(params.has('media')) {
 }
 window.chrome = {
  runtime:{lastError:null,getURL:value=>'/'+value,onMessage:{addListener(){}},sendMessage(message,callback){
-  if(message.type==='GET_SETTINGS') {fetch('/shared/prompts.json').then(r=>r.json()).then(prompts=>callback({ok:true,settings:{...testSettings,prompts}}));return;}
+  if(message.type==='GET_SETTINGS') {Promise.all([fetch('/shared/prompts.json').then(r=>r.json()),fetch('/icons/Ani/catalog.json').then(r=>r.json())]).then(([prompts,animations])=>callback({ok:true,settings:{...testSettings,prompts,animationThemes:animations.themes,animationKeywordRules:animations.keywordRules}}));return;}
   testRequests.push(message);
   if(message.type==='CANCEL_REQUEST') {pending.get(message.requestId)?.({ok:false,error:'요청을 취소했습니다.'});pending.delete(message.requestId);callback({ok:true});return;}
   if(message.type==='CAPTURE_TAB_VIEWPORT') {

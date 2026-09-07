@@ -6,6 +6,25 @@
   const extensionAPI = IS_SAFARI_WEB_EXTENSION
     ? (globalThis.browser ?? globalThis.chrome)
     : (globalThis.chrome ?? globalThis.browser);
+  let extensionContextAvailable = true;
+
+  function extensionResourceURL(path) {
+    if (!extensionContextAvailable) return '';
+    try {
+      return extensionAPI.runtime.getURL(path);
+    } catch (error) {
+      if (!String(error?.message || error).toLowerCase().includes('extension context invalidated')) throw error;
+      extensionContextAvailable = false;
+      queueMicrotask(() => {
+        observer.disconnect();
+        extensionEnabled = false;
+        floatingAssistantEnabled = false;
+        aiActivitySources.clear();
+        removeControls();
+      });
+      return '';
+    }
+  }
   const IS_IPHONE = /iPhone|iPod/i.test(navigator.userAgent);
   const SPELLCHECK_ACTION = { id: 'spellcheck', label: '맞춤법 검사', short: '맞춤법', icon: 'check' };
   const HONORIFIC_ACTION = { id: 'honorific', label: '경어체로 교정', short: '경어체', icon: 'chat' };
@@ -150,7 +169,7 @@
     '[class*="author"]', '[class*="profile"]', '[class*="avatar"]', '[class*="meta"]',
     '[class*="action"]', '[class*="control"]', '[class*="vote"]', '[class*="reaction"]'
   ].join(',');
-  const REVIEW_ICON_URL = extensionAPI.runtime.getURL('icons/icon48.png');
+  const REVIEW_ICON_URL = extensionResourceURL('icons/icon48.png');
   const BLOCK_TAGS = new Set([
     'ADDRESS', 'ARTICLE', 'ASIDE', 'BLOCKQUOTE', 'DIV', 'DL', 'FIGCAPTION', 'FIGURE',
     'FOOTER', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'HEADER', 'HR', 'LI', 'MAIN',
@@ -172,6 +191,9 @@
   let floatingAssistantEnabled = false;
   let floatingAssistantPosition = 'center';
   let floatingAssistantHeight = 'default';
+  let floatingAssistantType = 'classic';
+  let animationThemes = [];
+  let animationKeywordRules = [];
   let floatingAssistantSize = 'small';
   let lastFocusedEditor = null;
   const EDITOR_SELECTOR = '[contenteditable="true"].tiptap.ProseMirror, textarea[placeholder*="댓글을 입력하세요"]';
@@ -266,6 +288,7 @@
     if (openActionMenu?.button === root.querySelector('.aiang-floating-launcher')) closeActionMenu();
     root.querySelectorAll('.is-loading').forEach(cancelButtonRequest);
     root._aiangPositionObserver?.disconnect();
+    clearTimeout(root._petTimer);
     root.remove();
     lastFocusedEditor = null;
   }
@@ -326,9 +349,15 @@
     if (!launcher) return;
     const busy = aiActivitySources.size > 0;
     const image = launcher.querySelector('img');
-    const url = extensionAPI.runtime.getURL(busy ? 'icons/AIAng.gif' : 'icons/AIAng.png');
+    const url = extensionResourceURL(busy ? 'icons/AIAng.gif' : 'icons/AIAng.png');
+    if (!url) return;
     // Do not restart the GIF on every page mutation or streaming chunk.
-    if (image.getAttribute('src') !== url) image.src = url;
+    if (floatingAssistantType !== 'classic') syncThemeAnimation(launcher.parentElement, busy);
+    else {
+      clearTimeout(launcher.parentElement._petTimer);
+      launcher.parentElement._petState = null;
+      if (image.getAttribute('src') !== url) image.src = url;
+    }
     launcher.setAttribute('aria-busy', String(busy));
     const cancellable = Boolean(launcher.parentElement.querySelector('.is-loading'));
     const label = busy
@@ -337,6 +366,141 @@
     launcher.setAttribute('aria-label', label);
     launcher.title = label;
   }
+
+  const petMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
+  function selectedAnimationTheme() {
+    return animationThemes.find(theme => theme.id === floatingAssistantType) || null;
+  }
+
+  function encodeAnimationPath(path) {
+    return String(path).split('/').map(encodeURIComponent).join('/');
+  }
+
+  function currentAnimationState() {
+    if (POST_EDITOR_PATH_PATTERN.test(location.pathname)) return 'newpost';
+    const context = floatingContext();
+    if (context.kind === 'post' && context.editor) {
+      const value = context.editor.value ?? context.editor.textContent ?? '';
+      if (String(value).replace(/\u200b/g, '').trim()) return 'comment';
+    }
+    return context.kind === 'post' ? 'post' : 'idle';
+  }
+
+  function matchingPostAnimationRules() {
+    const article = findArticleBody();
+    if (!article) return [];
+    const source = extractArticleText(article).toLocaleLowerCase('ko-KR');
+    return animationKeywordRules
+      .filter(rule => Array.isArray(rule?.keywords)
+        && rule.keywords.some(keyword => includesAnimationKeyword(source, keyword))
+        && String(rule.state || ''));
+  }
+
+  function includesAnimationKeyword(source, value) {
+    const keyword = String(value || '').trim().toLocaleLowerCase('ko-KR');
+    if (!keyword) return false;
+    if (!/^[a-z0-9-]+$/.test(keyword)) return source.includes(keyword);
+    const escaped = keyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    return new RegExp(`(^|[^a-z0-9])${escaped}(?=$|[^a-z0-9])`).test(source);
+  }
+
+  function animationCandidates(theme, requestedState) {
+    const matches = requestedState === 'post' ? matchingPostAnimationRules() : [];
+    const exclusiveMatches = matches.filter(rule => rule.exclusive === true);
+    const states = requestedState === 'post'
+      ? (exclusiveMatches.length ? exclusiveMatches : [{ state: 'post' }, ...matches]).map(rule => rule.state)
+      : [requestedState];
+    return [...new Map(states.flatMap(state => theme.states?.[state] || [])
+      .map(value => {
+        const asset = normalizeAnimationAsset(value);
+        return [asset.path, asset];
+      })).values()].filter(asset => asset.path);
+  }
+
+  function stopThemeAnimation(root) {
+    clearTimeout(root._petTimer);
+    root._petTimer = null;
+    root._menuPlaying = false;
+    const url = extensionResourceURL('icons/AIAng.png');
+    if (url) root.querySelector('.aiang-floating-launcher img').src = url;
+  }
+
+  function normalizeAnimationAsset(value) {
+    if (typeof value === 'string') return { path: value, durationMs: 2400, maxPlays: 1 };
+    return {
+      path: String(value?.path || ''),
+      durationMs: Math.min(60000, Math.max(250, Number(value?.durationMs) || 2400)),
+      maxPlays: Math.min(20, Math.max(1, Number(value?.maxPlays) || 1))
+    };
+  }
+
+  function showAnimationAsset(root, asset) {
+    root._animationRevision = (root._animationRevision || 0) + 1;
+    const url = extensionResourceURL(`icons/Ani/${encodeAnimationPath(asset.path)}`);
+    if (!url) return;
+    root.querySelector('.aiang-floating-launcher img').src = `${url}?play=${root._animationRevision}`;
+  }
+
+  function chooseStateAnimation(root, values, state) {
+    const candidates = values.map(normalizeAnimationAsset).filter(asset => asset.path);
+    const current = candidates.find(asset => asset.path === root._petLast);
+    if (root._petAnimationState === state && current && root._petPlayCount < current.maxPlays) {
+      root._petPlayCount += 1;
+      return current;
+    }
+    const alternatives = candidates.filter(asset => asset.path !== root._petLast);
+    const pool = alternatives.length ? alternatives : candidates;
+    const asset = pool[Math.floor(Math.random() * pool.length)];
+    root._petAnimationState = state;
+    root._petLast = asset?.path;
+    root._petPlayCount = 1;
+    return asset;
+  }
+
+  function playThemeAnimation(root, requestedState = currentAnimationState()) {
+    const theme = selectedAnimationTheme();
+    if (!root.isConnected || !theme) return;
+    clearTimeout(root._petTimer);
+    if (document.hidden || petMotion.matches) { stopThemeAnimation(root); return; }
+    const candidates = animationCandidates(theme, requestedState);
+    if (!candidates.length) { stopThemeAnimation(root); return; }
+    const asset = chooseStateAnimation(root, candidates, requestedState);
+    if (!asset) { stopThemeAnimation(root); return; }
+    showAnimationAsset(root, asset);
+    root._petTimer = setTimeout(() => {
+      if (!root.isConnected) return;
+      playThemeAnimation(root, currentAnimationState());
+    }, asset.durationMs);
+  }
+
+  function playMenuAnimation(root) {
+    const theme = selectedAnimationTheme();
+    const candidates = (theme?.states?.menu || []).map(normalizeAnimationAsset).filter(asset => asset.path);
+    if (!candidates.length || document.hidden || petMotion.matches) return;
+    clearTimeout(root._petTimer);
+    const alternatives = candidates.filter(asset => asset.path !== root._petLastMenu);
+    const pool = alternatives.length ? alternatives : candidates;
+    const asset = pool[Math.floor(Math.random() * pool.length)];
+    root._petLastMenu = asset.path;
+    root._menuPlaying = true;
+    showAnimationAsset(root, asset);
+    root._petTimer = setTimeout(() => {
+      root._menuPlaying = false;
+      root._petState = null;
+      playThemeAnimation(root, currentAnimationState());
+    }, asset.durationMs);
+  }
+
+  function syncThemeAnimation(root, busy) {
+    if (root._menuPlaying) return;
+    const state = document.hidden || petMotion.matches ? 'paused' : `${currentAnimationState()}:${busy ? 'busy' : 'ready'}`;
+    if (root._petState === state) return;
+    root._petState = state;
+    if (state === 'paused') stopThemeAnimation(root);
+    else playThemeAnimation(root, currentAnimationState());
+  }
+  document.addEventListener('visibilitychange', syncFloatingActivity);
+  petMotion.addEventListener('change', syncFloatingActivity);
 
   function findFloatingContentBoundary() {
     const visible = element => element instanceof HTMLElement
@@ -398,6 +562,8 @@
   function syncFloatingAssistant() {
     let root = document.querySelector('.aiang-floating');
     if (!root) {
+      const iconURL = extensionResourceURL('icons/AIAng.png');
+      if (!iconURL) return;
       root = document.createElement('div');
       root.className = 'aiang-floating aiang-no-select';
       const launcher = document.createElement('button');
@@ -407,7 +573,7 @@
       launcher.setAttribute('aria-haspopup', 'menu');
       launcher.setAttribute('aria-expanded', 'false');
       launcher.setAttribute('aria-controls', 'aiang-floating-menu');
-      launcher.innerHTML = `<img src="${extensionAPI.runtime.getURL('icons/AIAng.png')}" alt="" draggable="false">`;
+      launcher.innerHTML = `<img src="${iconURL}" alt="" draggable="false">`;
       const menu = document.createElement('div');
       menu.id = 'aiang-floating-menu';
       menu.className = 'aiang-floating-menu';
@@ -416,6 +582,7 @@
       menu.hidden = true;
       launcher.addEventListener('click', event => {
         event.stopPropagation();
+        if (floatingAssistantType !== 'classic') playMenuAnimation(root);
         const pendingButtons = Array.from(root.querySelectorAll('.is-loading'));
         if (pendingButtons.length) {
           closeActionMenu();
@@ -447,6 +614,7 @@
     root.dataset.position = floatingAssistantPosition;
     root.dataset.height = floatingAssistantHeight;
     root.dataset.size = floatingAssistantSize;
+    root.dataset.type = floatingAssistantType;
     positionFloatingAssistant(root);
     syncFloatingActivity();
     if (!root.querySelector('.aiang-floating-menu').hidden) refreshFloatingMenu(root);
@@ -930,11 +1098,11 @@
   }
 
   function findArticleTitle(articleBody) {
-    const root = articleBody.closest('article, [role="article"], .text-card-foreground.flex.flex-col')
-      || articleBody.parentElement;
-    const headings = root ? Array.from(root.querySelectorAll('h1, h2')) : [];
-    const heading = headings.find(candidate => !articleBody.contains(candidate)
-      && Boolean(candidate.compareDocumentPosition(articleBody) & Node.DOCUMENT_POSITION_FOLLOWING));
+    const articleRoot = articleBody.closest('article, [role="article"], .text-card-foreground.flex.flex-col');
+    const roots = [...new Set([articleRoot, articleRoot?.parentElement, articleBody.parentElement].filter(Boolean))];
+    const heading = roots.flatMap(root => Array.from(root.querySelectorAll('h1, h2')))
+      .find(candidate => !articleBody.contains(candidate)
+        && Boolean(candidate.compareDocumentPosition(articleBody) & Node.DOCUMENT_POSITION_FOLLOWING));
     const title = String(heading?.textContent || '').replace(/\s+/g, ' ').trim();
     return title.slice(0, 300);
   }
@@ -3442,7 +3610,8 @@
       setAIActivity(panel, busy);
       // All entry points share the same chat header and activity state.
       const badge = header.querySelector('.aiang-review-badge');
-      const url = extensionAPI.runtime.getURL(busy ? 'icons/AIAng.gif' : 'icons/AIAng.png');
+      const url = extensionResourceURL(busy ? 'icons/AIAng.gif' : 'icons/AIAng.png');
+      if (!url) return;
       if (badge.getAttribute('src') !== url) badge.src = url;
       actionsBar.replaceChildren();
       updateReadPostButtonState();
@@ -4648,10 +4817,14 @@
       }
       syncAllOpenModalsFontSize();
     }
-    if (changes.floatingAssistantEnabled || changes.floatingAssistantPosition || changes.floatingAssistantHeight || changes.floatingAssistantSize) {
+    if (changes.floatingAssistantType || changes.floatingAssistantEnabled || changes.floatingAssistantPosition || changes.floatingAssistantHeight || changes.floatingAssistantSize) {
       if (changes.floatingAssistantEnabled) {
         floatingAssistantEnabled = changes.floatingAssistantEnabled.newValue === true;
         removeControls();
+      }
+      if (changes.floatingAssistantType) {
+        floatingAssistantType = String(changes.floatingAssistantType.newValue || 'classic');
+        removeFloatingAssistant();
       }
       if (changes.floatingAssistantHeight) {
         floatingAssistantHeight = ['default', 'slight', 'high'].includes(changes.floatingAssistantHeight.newValue) ? changes.floatingAssistantHeight.newValue : 'default';
@@ -4660,7 +4833,7 @@
         floatingAssistantPosition = ['left', 'center', 'right'].includes(changes.floatingAssistantPosition.newValue) ? changes.floatingAssistantPosition.newValue : 'center';
       }
       if (changes.floatingAssistantSize) {
-        floatingAssistantSize = ['small', 'medium', 'large'].includes(changes.floatingAssistantSize.newValue) ? changes.floatingAssistantSize.newValue : 'small';
+        floatingAssistantSize = ['small', 'medium', 'large', 'xlarge'].includes(changes.floatingAssistantSize.newValue) ? changes.floatingAssistantSize.newValue : 'small';
       }
       scheduleScan();
     }
@@ -4707,7 +4880,12 @@
       floatingAssistantEnabled = nextFloating;
       floatingAssistantHeight = ['default', 'slight', 'high'].includes(response.settings?.floatingAssistantHeight) ? response.settings.floatingAssistantHeight : 'default';
       floatingAssistantPosition = ['left', 'center', 'right'].includes(response.settings?.floatingAssistantPosition) ? response.settings?.floatingAssistantPosition : 'center';
-      floatingAssistantSize = ['small', 'medium', 'large'].includes(response.settings?.floatingAssistantSize) ? response.settings.floatingAssistantSize : 'small';
+      animationThemes = Array.isArray(response.settings?.animationThemes) ? response.settings.animationThemes : [];
+      animationKeywordRules = Array.isArray(response.settings?.animationKeywordRules)
+        ? response.settings.animationKeywordRules : [];
+      floatingAssistantType = animationThemes.some(theme => theme.id === response.settings?.floatingAssistantType)
+        ? response.settings.floatingAssistantType : 'classic';
+      floatingAssistantSize = ['small', 'medium', 'large', 'xlarge'].includes(response.settings?.floatingAssistantSize) ? response.settings.floatingAssistantSize : 'small';
       extensionEnabled = Boolean(response?.ok && response.settings?.enabled);
       commentGenerationEnabled = response?.settings?.features?.commentGeneration === true;
       promptCatalog = response?.settings?.prompts || null;

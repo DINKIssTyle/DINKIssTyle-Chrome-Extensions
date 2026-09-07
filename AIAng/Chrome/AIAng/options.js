@@ -5,10 +5,12 @@ const enabled = $('#enabled');
 const floatingAssistantEnabled = $('#floating-assistant-enabled');
 const floatingAssistantPositions = document.querySelectorAll('input[name="floating-assistant-position"]');
 const floatingAssistantHeights = document.querySelectorAll('input[name="floating-assistant-height"]');
+const floatingAssistantType = $('#floating-assistant-type');
 const floatingAssistantSizes = document.querySelectorAll('input[name="floating-assistant-size"]');
 floatingAssistantEnabled.addEventListener('change', () => {
   floatingAssistantPositions.forEach(input => { input.disabled = !floatingAssistantEnabled.checked; });
   floatingAssistantHeights.forEach(input => { input.disabled = !floatingAssistantEnabled.checked; });
+  floatingAssistantType.disabled = !floatingAssistantEnabled.checked;
   floatingAssistantSizes.forEach(input => { input.disabled = !floatingAssistantEnabled.checked; });
 });
 const provider = $('#provider');
@@ -72,6 +74,7 @@ const selectionKeys = {
   'floating-assistant-enabled': 'floatingAssistantEnabled',
   'floating-assistant-position': 'floatingAssistantPosition',
   'floating-assistant-height': 'floatingAssistantHeight',
+  'floating-assistant-type': 'floatingAssistantType',
   'floating-assistant-size': 'floatingAssistantSize',
   'font-size-mode': 'fontSizeMode', 'font-size-custom': 'fontSizeCustom'
 };
@@ -113,6 +116,7 @@ function restoreSelection(key, control) {
   else control.value = value;
   floatingAssistantPositions.forEach(input => { input.disabled = !floatingAssistantEnabled.checked; });
   floatingAssistantHeights.forEach(input => { input.disabled = !floatingAssistantEnabled.checked; });
+  floatingAssistantType.disabled = !floatingAssistantEnabled.checked;
   floatingAssistantSizes.forEach(input => { input.disabled = !floatingAssistantEnabled.checked; });
   updateProviderUI();
   updateTemperatureUI();
@@ -409,11 +413,17 @@ async function loadSettings() {
     floatingAssistantHeights.forEach(input => { input.checked = input.value === floatingHeight; });
     const floatingPosition = ['left', 'center', 'right'].includes(settings.floatingAssistantPosition) ? settings.floatingAssistantPosition : 'center';
     floatingAssistantPositions.forEach(input => { input.checked = input.value === floatingPosition; });
-    const floatingSize = ['small', 'medium', 'large'].includes(settings.floatingAssistantSize) ? settings.floatingAssistantSize : 'small';
+    const themes = Array.isArray(response.animationThemes) ? response.animationThemes : [];
+    floatingAssistantType.replaceChildren(new Option('기존 아이콘', 'classic'));
+    themes.forEach(theme => floatingAssistantType.add(new Option(theme.name, theme.id)));
+    floatingAssistantType.value = Array.from(floatingAssistantType.options).some(option => option.value === settings.floatingAssistantType)
+      ? settings.floatingAssistantType : 'classic';
+    const floatingSize = ['small', 'medium', 'large', 'xlarge'].includes(settings.floatingAssistantSize) ? settings.floatingAssistantSize : 'small';
     floatingAssistantSizes.forEach(input => { input.checked = input.value === floatingSize; });
     floatingAssistantPositions.forEach(input => { input.disabled = !floatingAssistantEnabled.checked; });
     floatingAssistantHeights.forEach(input => { input.disabled = !floatingAssistantEnabled.checked; });
-    floatingAssistantSizes.forEach(input => { input.disabled = !floatingAssistantEnabled.checked; });
+    floatingAssistantType.disabled = !floatingAssistantEnabled.checked;
+  floatingAssistantSizes.forEach(input => { input.disabled = !floatingAssistantEnabled.checked; });
     provider.value = settings.provider;
     endpoint.value = settings.endpoint;
     apiKey.value = settings.apiKey;
@@ -446,6 +456,7 @@ function collectSettings() {
     floatingAssistantEnabled: floatingAssistantEnabled.checked,
     floatingAssistantPosition: document.querySelector('input[name="floating-assistant-position"]:checked')?.value || 'center',
     floatingAssistantHeight: document.querySelector('input[name="floating-assistant-height"]:checked')?.value || 'default',
+    floatingAssistantType: floatingAssistantType.value || 'classic',
     floatingAssistantSize: document.querySelector('input[name="floating-assistant-size"]:checked')?.value || 'small',
     provider: provider.value,
     endpoint: endpoint.value,

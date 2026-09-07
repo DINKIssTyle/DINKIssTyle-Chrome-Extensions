@@ -158,6 +158,13 @@
             <span>플로팅 AI 지원 사용</span>
           </label>
           <div class="field full">
+            <label for="floating-assistant-type">플로팅 캐릭터</label>
+            <select id="floating-assistant-type" name="floating-assistant-type" disabled>
+              <option value="classic">기존 아이콘</option>
+            </select>
+            <p class="hint"><code>icons/Ani/캐릭터명/</code> 아래의 idle, comment, newpost, post, menu 폴더를 자동으로 인식합니다.</p>
+          </div>
+          <div class="field full">
             <span>플로팅 위치</span>
             <div class="segmented-control" role="radiogroup" aria-label="플로팅 위치">
               <label class="segmented-item">
@@ -205,6 +212,10 @@
               <label class="segmented-item">
                 <input type="radio" name="floating-assistant-size" value="large" disabled>
                 <span>큼</span>
+              </label>
+              <label class="segmented-item">
+                <input type="radio" name="floating-assistant-size" value="xlarge" disabled>
+                <span>매우 큼</span>
               </label>
             </div>
           </div>

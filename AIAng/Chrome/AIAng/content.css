@@ -1838,7 +1838,15 @@
 }
 
 .aiang-floating[data-size="medium"] {
-  --aiang-floating-size: 56px;
+  --aiang-floating-size: 64px;
+}
+
+.aiang-floating[data-size="large"] {
+  --aiang-floating-size: 96px;
+}
+
+.aiang-floating[data-size="xlarge"] {
+  --aiang-floating-size: 128px;
 }
 
 .aiang-floating[data-position="left"] {
@@ -1976,4 +1984,23 @@
 .aiang-floating-item.is-loading>svg,
 .aiang-floating-item.is-loading>span:not(.aiang-loading-content) {
   display: none;
+}
+
+/* The character uses the same 48/64/96/128px hit target and menu geometry. */
+.aiang-floating:not([data-type="classic"]) .aiang-floating-launcher {
+  padding: 0;
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+  border-radius: 12px;
+}
+
+.aiang-floating:not([data-type="classic"]) .aiang-floating-launcher {
+  padding: 0;
+  overflow: hidden;
+  border-radius: 16px;
+}
+
+.aiang-floating[data-type="pet2"] .aiang-floating-launcher img {
+  border-radius: inherit;
 }

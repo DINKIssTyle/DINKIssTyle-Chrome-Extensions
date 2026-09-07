@@ -15,6 +15,8 @@ if [ ! -f "${SOURCE_DIR}/manifest.json" ]; then
   exit 1
 fi
 
+python3 "${SOURCE_DIR}/scripts/generate-animation-catalog.py"
+
 mkdir -p "${DEST_DIR}"
 
 echo "[INFO] 크롬 자원을 엣지 확장 폴더로 복사합니다..."

@@ -15,6 +15,12 @@ if not exist "%SOURCE_DIR%\manifest.json" (
     exit /b 1
 )
 
+py -3 "%SOURCE_DIR%\scripts\generate-animation-catalog.py"
+if errorlevel 1 (
+    echo [ERROR] Failed to generate animation theme catalog.
+    exit /b 1
+)
+
 if not exist "%DEST_DIR%" (
     echo [INFO] Creating Edge destination directory: "%DEST_DIR%"
     mkdir "%DEST_DIR%"

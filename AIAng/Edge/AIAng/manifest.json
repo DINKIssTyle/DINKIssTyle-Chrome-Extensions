@@ -62,7 +62,9 @@
       "resources": [
         "icons/icon48.png",
         "icons/AIAng.png",
-        "icons/AIAng.gif"
+        "icons/AIAng.gif",
+        "icons/Ani/catalog.json",
+        "icons/Ani/*.webp"
       ],
       "matches": [
         "https://damoang.net/*",

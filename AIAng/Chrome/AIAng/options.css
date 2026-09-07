@@ -380,11 +380,11 @@ button:disabled { cursor: wait; opacity: .62; }
 
 .segmented-control {
   display: inline-flex;
-  padding: 3px;
+  padding: 4px;
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
   background: var(--muted);
-  gap: 2px;
+  gap: 3px;
   width: fit-content;
   transition: opacity 150ms ease;
 }
@@ -412,13 +412,16 @@ button:disabled { cursor: wait; opacity: .62; }
 }
 
 .segmented-item span {
-  display: inline-block;
-  padding: 5px 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 7px 18px;
   border-radius: calc(var(--radius-md) - 2px);
   color: var(--muted-foreground);
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 600;
   text-align: center;
+  line-height: 1.4;
   transition: all 150ms cubic-bezier(.4, 0, .2, 1);
   user-select: none;
 }
@@ -750,9 +753,20 @@ button:disabled { cursor: wait; opacity: .62; }
 .floating-settings-fields { display: grid; gap: 24px; margin-top: 24px; }
 .floating-settings-fields > .switch-row { padding-bottom: 20px; border-bottom: 1px solid var(--border); }
 .floating-settings-fields > .field { gap: 10px; }
-.floating-settings-fields .segmented-control { max-width: 100%; }
-.floating-settings-fields .segmented-item { flex: 1; min-width: 0; }
-.floating-settings-fields .segmented-item span { width: 100%; padding-inline: 12px; white-space: nowrap; }
+.floating-settings-fields .segmented-control,
+#custom-font-size-wrap .segmented-control {
+  width: 100%;
+  max-width: 400px;
+}
+.floating-settings-fields .segmented-item,
+#custom-font-size-wrap .segmented-item { flex: 1; min-width: 0; }
+.floating-settings-fields .segmented-item span,
+#custom-font-size-wrap .segmented-item span {
+  width: 100%;
+  padding: 8px 14px;
+  font-size: 13px;
+  white-space: nowrap;
+}
 .settings-save-help { margin: 0 0 18px; color: var(--muted-foreground); font-size: 12px; line-height: 1.6; }
 .selection-status { margin: 18px 0 0; color: var(--muted-foreground); font-size: 11px; line-height: 1.5; }
 .selection-status.error { color: var(--destructive); }

@@ -14,6 +14,7 @@ const DEFAULT_SETTINGS = Object.freeze({
   floatingAssistantEnabled: false,
   floatingAssistantPosition: 'center',
   floatingAssistantHeight: 'default',
+  floatingAssistantType: 'classic',
   floatingAssistantSize: 'small'
 });
 
@@ -21,6 +22,20 @@ let promptCatalog = globalThis.__AIANG_PROMPT_CATALOG__ || null;
 let promptCatalogPromise = null;
 let featureFlags = globalThis.__AIANG_FEATURE_FLAGS__ || null;
 let featureFlagsPromise = null;
+let animationCatalog = globalThis.__AIANG_ANIMATION_CATALOG__ || null;
+let animationCatalogPromise = null;
+
+async function ensureAnimationCatalog() {
+  if (animationCatalog) return animationCatalog;
+  animationCatalogPromise ||= fetch(chrome.runtime.getURL('icons/Ani/catalog.json'))
+    .then(response => response.ok ? response.json() : { version: 1, themes: [] })
+    .catch(() => ({ version: 1, themes: [] }))
+    .then(catalog => {
+      animationCatalog = catalog && Array.isArray(catalog.themes) ? catalog : { version: 1, themes: [] };
+      return animationCatalog;
+    });
+  return await animationCatalogPromise;
+}
 
 async function ensurePromptCatalog() {
   if (promptCatalog) return promptCatalog;
@@ -109,7 +124,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 async function handleMessage(message, sender) {
   switch (message?.type) {
     case 'GET_SETTINGS': {
-      const [settings, features, prompts] = await Promise.all([getSettings(), ensureFeatureFlags(), ensurePromptCatalog()]);
+      const [settings, features, prompts, animations] = await Promise.all([
+        getSettings(), ensureFeatureFlags(), ensurePromptCatalog(), ensureAnimationCatalog()
+      ]);
       return {
         settings: {
           enabled: settings.enabled,
@@ -123,14 +140,19 @@ async function handleMessage(message, sender) {
           floatingAssistantEnabled: settings.floatingAssistantEnabled,
           floatingAssistantPosition: settings.floatingAssistantPosition,
           floatingAssistantHeight: settings.floatingAssistantHeight,
+          floatingAssistantType: settings.floatingAssistantType,
+          animationThemes: animations.themes,
+          animationKeywordRules: animations.keywordRules || [],
           floatingAssistantSize: settings.floatingAssistantSize,
           usePostImageCapture: settings.usePostImageCapture
         }
       };
     }
-    case 'GET_SETTINGS_FULL':
+    case 'GET_SETTINGS_FULL': {
       assertExtensionPage(sender);
-      return { settings: await getSettings() };
+      const [settings, animations] = await Promise.all([getSettings(), ensureAnimationCatalog()]);
+      return { settings, animationThemes: animations.themes };
+    }
     case 'SAVE_SETTINGS': {
       assertExtensionPage(sender);
       await chrome.storage.local.set(sanitizeSettings(message.settings));
@@ -143,7 +165,7 @@ async function handleMessage(message, sender) {
       // Only persist explicit selections; never overwrite unsaved text fields.
       const selectable = new Set(['enabled', 'provider', 'model', 'temperatureAuto',
         'fontSizeMode', 'fontSizeCustom', 'geminiKeepAlive', 'usePostImageCapture',
-        'floatingAssistantEnabled', 'floatingAssistantPosition', 'floatingAssistantHeight', 'floatingAssistantSize']);
+        'floatingAssistantEnabled', 'floatingAssistantPosition', 'floatingAssistantHeight', 'floatingAssistantSize', 'floatingAssistantType']);
       const sanitized = sanitizeSettings(message.settings);
       const patch = Object.fromEntries(Object.keys(message.settings || {})
         .filter(key => selectable.has(key)).map(key => [key, sanitized[key]]));
@@ -285,10 +307,18 @@ function sanitizeSettings(input = {}) {
     geminiKeepAlive: input.geminiKeepAlive === true,
     floatingAssistantEnabled: input.floatingAssistantEnabled === true,
     floatingAssistantHeight: ['default', 'slight', 'high'].includes(input.floatingAssistantHeight) ? input.floatingAssistantHeight : 'default',
-    floatingAssistantSize: ['small', 'medium', 'large'].includes(input.floatingAssistantSize) ? input.floatingAssistantSize : 'small',
+    floatingAssistantType: sanitizeAnimationTheme(input.floatingAssistantType),
+    floatingAssistantSize: ['small', 'medium', 'large', 'xlarge'].includes(input.floatingAssistantSize) ? input.floatingAssistantSize : 'small',
     floatingAssistantPosition: ['left', 'center', 'right'].includes(input.floatingAssistantPosition) ? input.floatingAssistantPosition : 'center',
     usePostImageCapture: input.usePostImageCapture === true
   };
+}
+
+function sanitizeAnimationTheme(value) {
+  const legacy = { pet: 'AIAng', pet2: 'AIAng 2' };
+  const theme = legacy[value] || String(value || 'classic').trim();
+  return theme === 'classic' || (/^[^/\\\u0000-\u001f]{1,80}$/.test(theme) && theme !== '.' && theme !== '..')
+    ? theme : 'classic';
 }
 
 function clampNumber(value, min, max, fallback) {

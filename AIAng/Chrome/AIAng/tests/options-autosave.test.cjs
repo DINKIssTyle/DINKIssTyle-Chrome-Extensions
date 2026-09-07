@@ -10,7 +10,7 @@ test('option selections persist immediately, move the live launcher, and leave t
   const { chromium } = require(process.env.AIANG_PLAYWRIGHT_MODULE);
   const root = path.resolve(__dirname, '..');
   const server = http.createServer((req, res) => {
-    const file = path.resolve(root, '.' + new URL(req.url, 'http://localhost').pathname);
+    const file = path.resolve(root, '.' + decodeURIComponent(new URL(req.url, 'http://localhost').pathname));
     if (!file.startsWith(root + path.sep)) return res.writeHead(404).end();
     fs.readFile(file, (error, data) => {
       if (error) return res.writeHead(404).end();
@@ -44,7 +44,9 @@ test('option selections persist immediately, move the live launcher, and leave t
         await page.evaluate(values => setSettings(values), message.settings);
       }
       if (message.type === 'LIST_MODELS') return { ok: true, models: ['selected-model'] };
-      return { ok: true, settings: { ...stored } };
+      return { ok: true, settings: { ...stored }, animationThemes: [
+        { id: '3D Ang', name: '3D Ang' }, { id: 'AIAng', name: 'AIAng' }, { id: 'AIAng 2', name: 'AIAng 2' }
+      ] };
     });
     await options.addInitScript(() => {
       window.allowCapture = true;
@@ -58,7 +60,11 @@ test('option selections persist immediately, move the live launcher, and leave t
     await options.locator('#api-key').fill('unsaved-key');
     await options.locator('#endpoint').fill('http://draft.invalid/v1');
     await options.locator('#personalization').fill('unsaved note');
-    const choose = async (name, value) => options.locator(`label:has(input[name="${name}"][value="${value}"])`).click();
+    const choose = async (name, value) => {
+      const select = options.locator(`select[name="${name}"]`);
+      if (await select.count()) await select.selectOption(value);
+      else await options.locator(`label:has(input[name="${name}"][value="${value}"])`).click();
+    };
     const settled = async () => options.evaluate(() => saveQueue);
     const floating = options.locator('.card').filter({ has: options.getByRole('heading', { name: '플로팅 AI 지원', exact: true }) });
     for (const [height, rise] of [['slight', 48], ['high', 96], ['default', 0]]) {
@@ -73,22 +79,26 @@ test('option selections persist immediately, move the live launcher, and leave t
     assert.equal(stored.floatingAssistantPosition, 'center');
     await choose('floating-assistant-size', 'small'); await settled();
     assert.equal(stored.floatingAssistantSize, 'small');
+    await choose('floating-assistant-type', 'AIAng'); await settled();
+    assert.equal(stored.floatingAssistantType, 'AIAng');
+    await choose('floating-assistant-type', '3D Ang'); await settled();
+    assert.equal(stored.floatingAssistantType, '3D Ang');
     await options.locator('#provider').selectOption('gemini'); await settled();
     assert.equal(stored.provider, 'gemini');
     assert.equal(await options.locator('#openai-fields').isHidden(), true);
-    await options.locator('#gemini-keep-alive').check(); await settled();
+    await options.locator('label:has(#gemini-keep-alive)').click(); await settled();
     assert.equal(stored.geminiKeepAlive, true);
     await options.locator('#provider').selectOption('openai'); await settled();
-    await options.locator('#temperature-auto').check(); await settled();
+    await options.locator('label:has(#temperature-auto)').click(); await settled();
     assert.equal(stored.temperatureAuto, true);
     assert.equal(stored.temperature, 0.7);
     await options.locator('#font-size-mode-custom').check();
     await choose('font-size-custom', 'large'); await settled();
     assert.equal(stored.fontSizeCustom, 'large');
     assert.equal(stored.fontSizeMode, 'custom');
-    await options.locator('#enabled').uncheck(); await settled();
+    await options.locator('label:has(#enabled)').click(); await settled();
     await launcher.waitFor({ state: 'detached' });
-    await options.locator('#enabled').check(); await settled(); await launcher.waitFor();
+    await options.locator('label:has(#enabled)').click(); await settled(); await launcher.waitFor();
     assert.equal(stored.apiKey, 'saved-key');
     assert.equal(stored.endpoint, 'http://localhost:1234/v1');
     assert.equal(stored.personalization, 'saved note');
@@ -96,11 +106,11 @@ test('option selections persist immediately, move the live launcher, and leave t
     assert.equal(messages.filter(m => m.type === 'SAVE_SETTINGS').length, 0);
     assert.ok(messages.filter(m => m.type === 'PATCH_SETTINGS').every(m => Object.keys(m.settings).length === 1));
     await options.evaluate(() => { window.allowCapture = false; });
-    await options.locator('#use-post-image-capture').check(); await settled();
+    await options.locator('label:has(#use-post-image-capture)').click(); await settled();
     assert.equal(stored.usePostImageCapture, false);
     assert.equal(await options.locator('#use-post-image-capture').isChecked(), false);
     await options.evaluate(() => { window.allowCapture = true; });
-    await options.locator('#use-post-image-capture').check(); await settled();
+    await options.locator('label:has(#use-post-image-capture)').click(); await settled();
     assert.equal(stored.usePostImageCapture, true);
     failNext = true;
     await choose('floating-assistant-height', 'slight'); await settled();

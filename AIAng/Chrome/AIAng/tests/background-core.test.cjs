@@ -834,13 +834,20 @@ test('floating assistant is opt-in and public settings expose a validated positi
   assert.equal(defaults.floatingAssistantPosition, 'center');
   assert.equal(defaults.floatingAssistantHeight, 'default');
   assert.equal(defaults.floatingAssistantSize, 'small');
+  assert.equal(defaults.floatingAssistantType, 'classic');
+  assert.equal(core.sanitizeSettings({floatingAssistantType:'Custom Ang'}).floatingAssistantType, 'Custom Ang');
+  assert.equal(core.sanitizeSettings({floatingAssistantType:'../invalid'}).floatingAssistantType, 'classic');
+  const pet = loadCore(fetch, {settings:{floatingAssistantType:'pet'}});
+  assert.equal((await pet.handleMessage({type:'GET_SETTINGS'})).settings.floatingAssistantType, 'AIAng');
+  const pet2 = loadCore(fetch, {settings:{floatingAssistantType:'pet2'}});
+  assert.equal((await pet2.handleMessage({type:'GET_SETTINGS'})).settings.floatingAssistantType, 'AIAng 2');
   assert.equal(core.sanitizeSettings({floatingAssistantHeight:'unknown'}).floatingAssistantHeight,'default');
   assert.equal(core.sanitizeSettings({floatingAssistantSize:'unknown'}).floatingAssistantSize,'small');
   for(const height of ['default','slight','high']) {
     const configured = loadCore(fetch, {settings:{floatingAssistantHeight:height}});
     assert.equal((await configured.handleMessage({type:'GET_SETTINGS'})).settings.floatingAssistantHeight,height);
   }
-  for(const size of ['small','medium','large']) {
+  for(const size of ['small','medium','large','xlarge']) {
     const configured = loadCore(fetch, {settings:{floatingAssistantSize:size}});
     assert.equal((await configured.handleMessage({type:'GET_SETTINGS'})).settings.floatingAssistantSize,size);
   }
@@ -883,4 +890,3 @@ test('provides centralized ui labels and floating menu configuration in prompts.
   assert.ok(ui.floatingMenu?.items?.spellcheck, 'floatingMenu item templates should exist');
   assert.ok(ui.commentTones?.positive, 'commentTones should exist');
 });
-

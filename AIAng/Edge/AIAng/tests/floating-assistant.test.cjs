@@ -10,11 +10,11 @@ test('floating assistant switches modes, selects contextual actions, and preserv
   const { chromium } = require(process.env.AIANG_PLAYWRIGHT_MODULE);
   const root = path.resolve(__dirname, '..');
   const server = http.createServer((req,res) => {
-    const file = path.resolve(root,'.'+new URL(req.url,'http://localhost').pathname);
+    const file = path.resolve(root,'.'+decodeURIComponent(new URL(req.url,'http://localhost').pathname));
     if(!file.startsWith(root+path.sep)) {res.writeHead(404).end();return;}
     fs.readFile(file,(error,data) => {
       if(error) {res.writeHead(404).end();return;}
-      res.setHeader('Content-Type',file.endsWith('.js')?'text/javascript':file.endsWith('.css')?'text/css':file.endsWith('.png')?'image/png':file.endsWith('.gif')?'image/gif':'text/html');res.end(data);
+      res.setHeader('Content-Type',file.endsWith('.js')?'text/javascript':file.endsWith('.css')?'text/css':file.endsWith('.png')?'image/png':file.endsWith('.webp')?'image/webp':file.endsWith('.gif')?'image/gif':'text/html');res.end(data);
     });
   });
   await new Promise(resolve => server.listen(0,'127.0.0.1',resolve));
@@ -245,6 +245,34 @@ test('floating assistant switches modes, selects contextual actions, and preserv
       assert.equal((await launcher.boundingBox()).width,pixels);
       assert.equal((await launcher.boundingBox()).height,pixels);
     }
+    await page.evaluate(() => { Math.random = () => 0; });
+    await settings({floatingAssistantType:'AIAng'});
+    await page.waitForFunction(()=>document.querySelector('.aiang-floating-launcher img')?.src.includes('/AIAng/post/read%20-%202.webp'));
+    const firstRepeat = await launcher.locator('img').getAttribute('src');
+    await page.waitForFunction(previous => {
+      const source = document.querySelector('.aiang-floating-launcher img')?.src;
+      return source?.includes('/AIAng/post/read%20-%202.webp') && source !== previous;
+    }, firstRepeat);
+    await page.waitForFunction(()=>document.querySelector('.aiang-floating-launcher img')?.src.includes('/AIAng/post/read-2.webp'));
+    await settings({floatingAssistantType:'3D Ang'});
+    await page.waitForFunction(()=>document.querySelector('.aiang-floating')?.dataset.type==='3D Ang');
+    await page.waitForFunction(()=>document.querySelector('.aiang-floating-launcher img').src.includes('/icons/Ani/3D%20Ang/post/'));
+    const comment = page.locator('textarea[placeholder*="댓글"]');
+    await comment.fill('댓글 내용');
+    await page.waitForFunction(()=>document.querySelector('.aiang-floating-launcher img').src.includes('/icons/Ani/3D%20Ang/comment/'));
+    await page.goto(url+'?mode=write&theme=3D%20Ang');
+    await page.locator('.aiang-floating-launcher').waitFor();
+    await page.waitForFunction(()=>document.querySelector('.aiang-floating-launcher img').src.includes('/icons/Ani/3D%20Ang/newpost/'));
+    await page.goto(url+'?mode=board&theme=3D%20Ang');
+    await page.locator('.aiang-floating-launcher').waitFor();
+    await page.waitForFunction(()=>document.querySelector('.aiang-floating-launcher img').src.includes('/icons/Ani/3D%20Ang/Idle/'));
+    await page.locator('.aiang-floating-launcher').click();
+    await page.waitForFunction(()=>document.querySelector('.aiang-floating-launcher img').src.includes('/icons/Ani/3D%20Ang/menu/'));
+    await page.emulateMedia({reducedMotion:'reduce'});
+    await page.waitForFunction(()=>document.querySelector('.aiang-floating-launcher img').src.endsWith('/icons/AIAng.png'));
+    await settings({floatingAssistantType:'classic'});
+    await page.waitForFunction(()=>document.querySelector('.aiang-floating')?.dataset.type==='classic');
+    assert.match(await launcher.locator('img').getAttribute('src'),/AIAng.png$/);
     assert.deepEqual(errors,[]);
   } finally {await browser?.close();await new Promise(resolve=>server.close(resolve));}
 });

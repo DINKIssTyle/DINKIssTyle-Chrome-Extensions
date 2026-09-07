@@ -1,0 +1,267 @@
+{
+  "version": 4,
+  "keywordRules": [
+    {
+      "state": "happy",
+      "keywords": [
+        "행복",
+        "아름답",
+        "즐거",
+        "당첨",
+        "축하",
+        "합격",
+        "승진",
+        "화창"
+      ]
+    },
+    {
+      "state": "fun",
+      "keywords": [
+        "웃기",
+        "웃겨",
+        "재밌",
+        "재미",
+        "뻘쭘",
+        "개그",
+        "뻘글"
+      ]
+    },
+    {
+      "state": "sad",
+      "keywords": [
+        "슬프",
+        "고인",
+        "rip",
+        "영면",
+        "별세",
+        "슬픔",
+        "명복"
+      ],
+      "exclusive": true
+    },
+    {
+      "state": "korea",
+      "keywords": [
+        "대한민국",
+        "한국",
+        "k-pop",
+        "케이팝",
+        "김구",
+        "안중근",
+        "광복",
+        "선거"
+      ]
+    },
+    {
+      "state": "scary",
+      "keywords": [
+        "공포",
+        "무섭",
+        "무서",
+        "ㄷㄷ",
+        "ㅎㄷ",
+        "이게 뭐죠",
+        "야해",
+        "음란"
+      ]
+    }
+  ],
+  "themes": [
+    {
+      "id": "3D Ang",
+      "name": "3D Ang",
+      "states": {
+        "idle": [
+          {
+            "path": "3D Ang/Idle/큰절받으세앙 - 1.webp",
+            "durationMs": 4983,
+            "maxPlays": 1
+          },
+          {
+            "path": "3D Ang/Idle/폴더인사 - 1.webp",
+            "durationMs": 3003,
+            "maxPlays": 1
+          }
+        ],
+        "comment": [
+          {
+            "path": "3D Ang/comment/띠용 앙.webp",
+            "durationMs": 2343,
+            "maxPlays": 1
+          },
+          {
+            "path": "3D Ang/comment/잠시만 앙.webp",
+            "durationMs": 3003,
+            "maxPlays": 1
+          }
+        ],
+        "newpost": [
+          {
+            "path": "3D Ang/newpost/띠용 앙.webp",
+            "durationMs": 2343,
+            "maxPlays": 1
+          },
+          {
+            "path": "3D Ang/newpost/잠시만 앙.webp",
+            "durationMs": 3003,
+            "maxPlays": 1
+          }
+        ],
+        "post": [
+          {
+            "path": "3D Ang/post/신나다앙.webp",
+            "durationMs": 2013,
+            "maxPlays": 1
+          }
+        ],
+        "menu": [
+          {
+            "path": "3D Ang/menu/사라지 앙.webp",
+            "durationMs": 3960,
+            "maxPlays": 1
+          },
+          {
+            "path": "3D Ang/menu/러브 앙.webp",
+            "durationMs": 2013,
+            "maxPlays": 1
+          },
+          {
+            "path": "3D Ang/menu/점프.webp",
+            "durationMs": 1353,
+            "maxPlays": 1
+          }
+        ],
+        "happy": [],
+        "fun": [
+          {
+            "path": "3D Ang/fun/따봉앙.webp",
+            "durationMs": 2772,
+            "maxPlays": 1
+          },
+          {
+            "path": "3D Ang/fun/오오.webp",
+            "durationMs": 1683,
+            "maxPlays": 1
+          },
+          {
+            "path": "3D Ang/fun/우앙.webp",
+            "durationMs": 2178,
+            "maxPlays": 1
+          },
+          {
+            "path": "3D Ang/fun/하하하앙.webp",
+            "durationMs": 2013,
+            "maxPlays": 1
+          }
+        ],
+        "sad": [
+          {
+            "path": "3D Ang/sad/펑펑울앙.webp",
+            "durationMs": 1683,
+            "maxPlays": 1
+          }
+        ],
+        "korea": [
+          {
+            "path": "3D Ang/korea/태극기앙.webp",
+            "durationMs": 2013,
+            "maxPlays": 1
+          }
+        ],
+        "scary": [
+          {
+            "path": "3D Ang/scary/엄훠나.webp",
+            "durationMs": 3003,
+            "maxPlays": 1
+          },
+          {
+            "path": "3D Ang/scary/으앙쥬금.webp",
+            "durationMs": 2376,
+            "maxPlays": 1
+          },
+          {
+            "path": "3D Ang/scary/죽겠어요.webp",
+            "durationMs": 2343,
+            "maxPlays": 1
+          },
+          {
+            "path": "3D Ang/scary/후덜덜 앙.webp",
+            "durationMs": 3003,
+            "maxPlays": 1
+          }
+        ]
+      }
+    },
+    {
+      "id": "AIAng (2D)",
+      "name": "AIAng (2D)",
+      "states": {
+        "idle": [
+          {
+            "path": "AIAng (2D)/idle/rest-1.webp",
+            "durationMs": 2400,
+            "maxPlays": 1
+          },
+          {
+            "path": "AIAng (2D)/idle/rest-2.webp",
+            "durationMs": 2400,
+            "maxPlays": 1
+          },
+          {
+            "path": "AIAng (2D)/idle/still.webp",
+            "durationMs": 2400,
+            "maxPlays": 1
+          }
+        ],
+        "comment": [
+          {
+            "path": "AIAng (2D)/comment/type-1.webp",
+            "durationMs": 2400,
+            "maxPlays": 1
+          },
+          {
+            "path": "AIAng (2D)/comment/type-2.webp",
+            "durationMs": 2400,
+            "maxPlays": 1
+          }
+        ],
+        "newpost": [
+          {
+            "path": "AIAng (2D)/newpost/type-1.webp",
+            "durationMs": 2400,
+            "maxPlays": 1
+          },
+          {
+            "path": "AIAng (2D)/newpost/type-2.webp",
+            "durationMs": 2400,
+            "maxPlays": 1
+          }
+        ],
+        "post": [
+          {
+            "path": "AIAng (2D)/post/read - 2.webp",
+            "durationMs": 2400,
+            "maxPlays": 2
+          },
+          {
+            "path": "AIAng (2D)/post/read-2.webp",
+            "durationMs": 2400,
+            "maxPlays": 1
+          }
+        ],
+        "menu": [
+          {
+            "path": "AIAng (2D)/menu/read-1.webp",
+            "durationMs": 2400,
+            "maxPlays": 1
+          }
+        ],
+        "happy": [],
+        "fun": [],
+        "sad": [],
+        "korea": [],
+        "scary": []
+      }
+    }
+  ]
+}
