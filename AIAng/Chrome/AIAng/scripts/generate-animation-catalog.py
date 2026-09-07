@@ -2,6 +2,7 @@
 """Build the animation theme catalog from icons/Ani/<theme>/<state>/*.webp."""
 
 import argparse
+import hashlib
 import json
 import re
 from pathlib import Path
@@ -92,14 +93,34 @@ def build_catalog(animation_root, keyword_rules):
     return {"version": 4, "keywordRules": keyword_rules, "themes": themes}
 
 
+def package_assets(catalog, source_root, package_root):
+    """Use ASCII bundle paths while preserving theme IDs and source metadata."""
+    if source_root.resolve() == package_root.resolve():
+        raise ValueError("Package destination must differ from the source")
+    for theme in catalog["themes"]:
+        for assets in theme["states"].values():
+            for asset in assets:
+                source = source_root / asset["path"]
+                name = hashlib.sha256(asset["path"].encode("utf-8")).hexdigest() + ".webp"
+                relative = "assets/" + name
+                destination = package_root / relative
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                destination.write_bytes(source.read_bytes())
+                asset["path"] = relative
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--root", type=Path, default=DEFAULT_ROOT)
     parser.add_argument("--output", type=Path)
     parser.add_argument("--keywords", type=Path, default=DEFAULT_KEYWORDS)
+    parser.add_argument("--package-root", type=Path)
     args = parser.parse_args()
     output = args.output or args.root / "catalog.json"
     catalog = build_catalog(args.root, load_keyword_rules(args.keywords))
+    if args.package_root:
+        package_assets(catalog, args.root, args.package_root)
+        output = args.output or args.package_root / "catalog.json"
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(
         json.dumps(catalog, ensure_ascii=False, indent=2) + "\n",

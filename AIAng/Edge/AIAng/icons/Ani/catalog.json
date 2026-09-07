@@ -19,6 +19,7 @@
       "keywords": [
         "웃기",
         "웃겨",
+        "웃김",
         "재밌",
         "재미",
         "뻘쭘",
@@ -73,60 +74,60 @@
       "states": {
         "idle": [
           {
-            "path": "3D Ang/Idle/큰절받으세앙 - 1.webp",
+            "path": "3D Ang/Idle/022.webp",
             "durationMs": 4983,
             "maxPlays": 1
           },
           {
-            "path": "3D Ang/Idle/폴더인사 - 1.webp",
+            "path": "3D Ang/Idle/023.webp",
             "durationMs": 3003,
             "maxPlays": 1
           }
         ],
         "comment": [
           {
-            "path": "3D Ang/comment/띠용 앙.webp",
-            "durationMs": 2343,
+            "path": "3D Ang/comment/008.webp",
+            "durationMs": 3003,
             "maxPlays": 1
           },
           {
-            "path": "3D Ang/comment/잠시만 앙.webp",
-            "durationMs": 3003,
+            "path": "3D Ang/comment/010.webp",
+            "durationMs": 2343,
             "maxPlays": 1
           }
         ],
         "newpost": [
           {
-            "path": "3D Ang/newpost/띠용 앙.webp",
-            "durationMs": 2343,
+            "path": "3D Ang/newpost/007.webp",
+            "durationMs": 3003,
             "maxPlays": 1
           },
           {
-            "path": "3D Ang/newpost/잠시만 앙.webp",
-            "durationMs": 3003,
+            "path": "3D Ang/newpost/011.webp",
+            "durationMs": 2343,
             "maxPlays": 1
           }
         ],
         "post": [
           {
-            "path": "3D Ang/post/신나다앙.webp",
+            "path": "3D Ang/post/017.webp",
             "durationMs": 2013,
             "maxPlays": 1
           }
         ],
         "menu": [
           {
-            "path": "3D Ang/menu/사라지 앙.webp",
+            "path": "3D Ang/menu/001.webp",
             "durationMs": 3960,
             "maxPlays": 1
           },
           {
-            "path": "3D Ang/menu/러브 앙.webp",
+            "path": "3D Ang/menu/002.webp",
             "durationMs": 2013,
             "maxPlays": 1
           },
           {
-            "path": "3D Ang/menu/점프.webp",
+            "path": "3D Ang/menu/003.webp",
             "durationMs": 1353,
             "maxPlays": 1
           }
@@ -134,58 +135,58 @@
         "happy": [],
         "fun": [
           {
-            "path": "3D Ang/fun/따봉앙.webp",
+            "path": "3D Ang/fun/012.webp",
             "durationMs": 2772,
             "maxPlays": 1
           },
           {
-            "path": "3D Ang/fun/오오.webp",
+            "path": "3D Ang/fun/013.webp",
+            "durationMs": 2013,
+            "maxPlays": 1
+          },
+          {
+            "path": "3D Ang/fun/019.webp",
             "durationMs": 1683,
             "maxPlays": 1
           },
           {
-            "path": "3D Ang/fun/우앙.webp",
+            "path": "3D Ang/fun/021.webp",
             "durationMs": 2178,
-            "maxPlays": 1
-          },
-          {
-            "path": "3D Ang/fun/하하하앙.webp",
-            "durationMs": 2013,
             "maxPlays": 1
           }
         ],
         "sad": [
           {
-            "path": "3D Ang/sad/펑펑울앙.webp",
+            "path": "3D Ang/sad/014.webp",
             "durationMs": 1683,
             "maxPlays": 1
           }
         ],
         "korea": [
           {
-            "path": "3D Ang/korea/태극기앙.webp",
+            "path": "3D Ang/korea/015.webp",
             "durationMs": 2013,
             "maxPlays": 1
           }
         ],
         "scary": [
           {
-            "path": "3D Ang/scary/엄훠나.webp",
+            "path": "3D Ang/scary/005.webp",
             "durationMs": 3003,
             "maxPlays": 1
           },
           {
-            "path": "3D Ang/scary/으앙쥬금.webp",
+            "path": "3D Ang/scary/009.webp",
             "durationMs": 2376,
             "maxPlays": 1
           },
           {
-            "path": "3D Ang/scary/죽겠어요.webp",
+            "path": "3D Ang/scary/016.webp",
             "durationMs": 2343,
             "maxPlays": 1
           },
           {
-            "path": "3D Ang/scary/후덜덜 앙.webp",
+            "path": "3D Ang/scary/018.webp",
             "durationMs": 3003,
             "maxPlays": 1
           }
@@ -261,6 +262,314 @@
         "sad": [],
         "korea": [],
         "scary": []
+      }
+    },
+    {
+      "id": "Ang (Photoreal) Highres",
+      "name": "Ang (Photoreal) Highres",
+      "states": {
+        "idle": [
+          {
+            "path": "Ang (Photoreal) Highres/Idle/idle_b.webp",
+            "durationMs": 5518,
+            "maxPlays": 1
+          },
+          {
+            "path": "Ang (Photoreal) Highres/Idle/idle_c.webp",
+            "durationMs": 5518,
+            "maxPlays": 1
+          },
+          {
+            "path": "Ang (Photoreal) Highres/Idle/idle_d.webp",
+            "durationMs": 5518,
+            "maxPlays": 1
+          },
+          {
+            "path": "Ang (Photoreal) Highres/Idle/idle_g.webp",
+            "durationMs": 5518,
+            "maxPlays": 1
+          },
+          {
+            "path": "Ang (Photoreal) Highres/Idle/idle_h.webp",
+            "durationMs": 5518,
+            "maxPlays": 1
+          },
+          {
+            "path": "Ang (Photoreal) Highres/Idle/idle_i.webp",
+            "durationMs": 5518,
+            "maxPlays": 1
+          }
+        ],
+        "comment": [
+          {
+            "path": "Ang (Photoreal) Highres/comment/check_a.webp",
+            "durationMs": 5518,
+            "maxPlays": 1
+          },
+          {
+            "path": "Ang (Photoreal) Highres/comment/check_b.webp",
+            "durationMs": 5518,
+            "maxPlays": 1
+          },
+          {
+            "path": "Ang (Photoreal) Highres/comment/check_e.webp",
+            "durationMs": 5518,
+            "maxPlays": 1
+          }
+        ],
+        "newpost": [
+          {
+            "path": "Ang (Photoreal) Highres/newpost/check_c.webp",
+            "durationMs": 5518,
+            "maxPlays": 1
+          },
+          {
+            "path": "Ang (Photoreal) Highres/newpost/check_d.webp",
+            "durationMs": 5518,
+            "maxPlays": 1
+          },
+          {
+            "path": "Ang (Photoreal) Highres/newpost/check_f.webp",
+            "durationMs": 5518,
+            "maxPlays": 1
+          }
+        ],
+        "post": [
+          {
+            "path": "Ang (Photoreal) Highres/post/post_a.webp",
+            "durationMs": 5518,
+            "maxPlays": 1
+          },
+          {
+            "path": "Ang (Photoreal) Highres/post/post_b.webp",
+            "durationMs": 5518,
+            "maxPlays": 1
+          },
+          {
+            "path": "Ang (Photoreal) Highres/post/post_c.webp",
+            "durationMs": 5518,
+            "maxPlays": 1
+          },
+          {
+            "path": "Ang (Photoreal) Highres/post/post_d.webp",
+            "durationMs": 5518,
+            "maxPlays": 1
+          }
+        ],
+        "menu": [
+          {
+            "path": "Ang (Photoreal) Highres/menu/menu_a.webp",
+            "durationMs": 4154,
+            "maxPlays": 1
+          },
+          {
+            "path": "Ang (Photoreal) Highres/menu/menu_b.webp",
+            "durationMs": 4092,
+            "maxPlays": 1
+          }
+        ],
+        "happy": [],
+        "fun": [
+          {
+            "path": "Ang (Photoreal) Highres/fun/fun_a.webp",
+            "durationMs": 5518,
+            "maxPlays": 1
+          }
+        ],
+        "sad": [
+          {
+            "path": "Ang (Photoreal) Highres/sad/sad_a.webp",
+            "durationMs": 5518,
+            "maxPlays": 1
+          },
+          {
+            "path": "Ang (Photoreal) Highres/sad/sad_b.webp",
+            "durationMs": 5518,
+            "maxPlays": 1
+          },
+          {
+            "path": "Ang (Photoreal) Highres/sad/sad_c.webp",
+            "durationMs": 5518,
+            "maxPlays": 1
+          }
+        ],
+        "korea": [],
+        "scary": [
+          {
+            "path": "Ang (Photoreal) Highres/scary/scary_a.webp",
+            "durationMs": 5518,
+            "maxPlays": 1
+          },
+          {
+            "path": "Ang (Photoreal) Highres/scary/scary_b.webp",
+            "durationMs": 5518,
+            "maxPlays": 1
+          },
+          {
+            "path": "Ang (Photoreal) Highres/scary/scary_c.webp",
+            "durationMs": 5518,
+            "maxPlays": 1
+          },
+          {
+            "path": "Ang (Photoreal) Highres/scary/scary_d.webp",
+            "durationMs": 5518,
+            "maxPlays": 1
+          }
+        ]
+      }
+    },
+    {
+      "id": "Ang (Photoreal) Lowres",
+      "name": "Ang (Photoreal) Lowres",
+      "states": {
+        "idle": [
+          {
+            "path": "Ang (Photoreal) Lowres/Idle/idle_b.webp",
+            "durationMs": 5518,
+            "maxPlays": 1
+          },
+          {
+            "path": "Ang (Photoreal) Lowres/Idle/idle_c.webp",
+            "durationMs": 5518,
+            "maxPlays": 1
+          },
+          {
+            "path": "Ang (Photoreal) Lowres/Idle/idle_d.webp",
+            "durationMs": 5518,
+            "maxPlays": 1
+          },
+          {
+            "path": "Ang (Photoreal) Lowres/Idle/idle_g.webp",
+            "durationMs": 5518,
+            "maxPlays": 1
+          },
+          {
+            "path": "Ang (Photoreal) Lowres/Idle/idle_h.webp",
+            "durationMs": 5518,
+            "maxPlays": 1
+          },
+          {
+            "path": "Ang (Photoreal) Lowres/Idle/idle_i.webp",
+            "durationMs": 5518,
+            "maxPlays": 1
+          }
+        ],
+        "comment": [
+          {
+            "path": "Ang (Photoreal) Lowres/comment/check_a.webp",
+            "durationMs": 5518,
+            "maxPlays": 1
+          },
+          {
+            "path": "Ang (Photoreal) Lowres/comment/check_c.webp",
+            "durationMs": 5518,
+            "maxPlays": 1
+          },
+          {
+            "path": "Ang (Photoreal) Lowres/comment/check_e.webp",
+            "durationMs": 5518,
+            "maxPlays": 1
+          }
+        ],
+        "newpost": [
+          {
+            "path": "Ang (Photoreal) Lowres/newpost/check_b.webp",
+            "durationMs": 5518,
+            "maxPlays": 1
+          },
+          {
+            "path": "Ang (Photoreal) Lowres/newpost/check_d.webp",
+            "durationMs": 5518,
+            "maxPlays": 1
+          },
+          {
+            "path": "Ang (Photoreal) Lowres/newpost/check_f.webp",
+            "durationMs": 5518,
+            "maxPlays": 1
+          }
+        ],
+        "post": [
+          {
+            "path": "Ang (Photoreal) Lowres/post/post_a.webp",
+            "durationMs": 5518,
+            "maxPlays": 1
+          },
+          {
+            "path": "Ang (Photoreal) Lowres/post/post_b.webp",
+            "durationMs": 5518,
+            "maxPlays": 1
+          },
+          {
+            "path": "Ang (Photoreal) Lowres/post/post_c.webp",
+            "durationMs": 5518,
+            "maxPlays": 1
+          },
+          {
+            "path": "Ang (Photoreal) Lowres/post/post_d.webp",
+            "durationMs": 5518,
+            "maxPlays": 1
+          }
+        ],
+        "menu": [
+          {
+            "path": "Ang (Photoreal) Lowres/menu/menu_a.webp",
+            "durationMs": 4154,
+            "maxPlays": 1
+          },
+          {
+            "path": "Ang (Photoreal) Lowres/menu/menu_b.webp",
+            "durationMs": 4092,
+            "maxPlays": 1
+          }
+        ],
+        "happy": [],
+        "fun": [
+          {
+            "path": "Ang (Photoreal) Lowres/fun/fun_a.webp",
+            "durationMs": 5518,
+            "maxPlays": 1
+          }
+        ],
+        "sad": [
+          {
+            "path": "Ang (Photoreal) Lowres/sad/sad_a.webp",
+            "durationMs": 5518,
+            "maxPlays": 1
+          },
+          {
+            "path": "Ang (Photoreal) Lowres/sad/sad_b.webp",
+            "durationMs": 5518,
+            "maxPlays": 1
+          },
+          {
+            "path": "Ang (Photoreal) Lowres/sad/sad_c.webp",
+            "durationMs": 5518,
+            "maxPlays": 1
+          }
+        ],
+        "korea": [],
+        "scary": [
+          {
+            "path": "Ang (Photoreal) Lowres/scary/scary_a.webp",
+            "durationMs": 5518,
+            "maxPlays": 1
+          },
+          {
+            "path": "Ang (Photoreal) Lowres/scary/scary_b.webp",
+            "durationMs": 5518,
+            "maxPlays": 1
+          },
+          {
+            "path": "Ang (Photoreal) Lowres/scary/scary_c.webp",
+            "durationMs": 5518,
+            "maxPlays": 1
+          },
+          {
+            "path": "Ang (Photoreal) Lowres/scary/scary_d.webp",
+            "durationMs": 5518,
+            "maxPlays": 1
+          }
+        ]
       }
     }
   ]
