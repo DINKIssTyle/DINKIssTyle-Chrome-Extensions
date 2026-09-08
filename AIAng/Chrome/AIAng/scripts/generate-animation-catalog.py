@@ -17,6 +17,7 @@ STATE_ALIASES = {
     "newport": "newpost",
     "post": "post",
     "menu": "menu",
+    "loading": "loading",
 }
 
 REPEAT_SUFFIX = re.compile(r"\s+-\s*(\d+)$")
@@ -70,7 +71,7 @@ def build_catalog(animation_root, keyword_rules):
     if not animation_root.is_dir():
         return {"version": 4, "keywordRules": keyword_rules, "themes": themes}
 
-    state_names = ["idle", "comment", "newpost", "post", "menu"]
+    state_names = ["idle", "comment", "newpost", "post", "menu", "loading"]
     state_names.extend(rule["state"] for rule in keyword_rules if rule["state"] not in state_names)
 
     for theme_dir in sorted(animation_root.iterdir(), key=lambda path: path.name.casefold()):

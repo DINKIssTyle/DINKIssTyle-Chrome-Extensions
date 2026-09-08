@@ -12,6 +12,7 @@ test('post animations mix in keyword folders matched from the title and body', {
   const fallbackAsset = fs.readdirSync(path.join(root, 'icons', 'Ani', '3D Ang', 'post'))
     .filter(name => name.endsWith('.webp')).map(name => path.join(root, 'icons', 'Ani', '3D Ang', 'post', name))[0];
   const testAssets = new Set([
+    '/icons/Ani/3D Ang/loading/loading-test.webp',
     '/icons/Ani/3D Ang/happy/keyword-test.webp',
     '/icons/Ani/3D Ang/sad/keyword-test.webp',
     '/icons/Ani/3D Ang/scary/keyword-test.webp'
@@ -25,6 +26,7 @@ test('post animations mix in keyword folders matched from the title and body', {
       if (pathname === '/icons/Ani/catalog.json') {
         const catalog = JSON.parse(contents);
         const theme = catalog.themes.find(item => item.id === '3D Ang');
+        theme.states.loading = [{ path: '3D Ang/loading/loading-test.webp', durationMs: 250, maxPlays: 2 }];
         theme.states.happy = [{ path: '3D Ang/happy/keyword-test.webp', durationMs: 2400, maxPlays: 1 }];
         theme.states.sad = [{ path: '3D Ang/sad/keyword-test.webp', durationMs: 2400, maxPlays: 1 }];
         theme.states.scary = [{ path: '3D Ang/scary/keyword-test.webp', durationMs: 2400, maxPlays: 1 }];
@@ -64,6 +66,23 @@ test('post animations mix in keyword folders matched from the title and body', {
     await page.goto(`${url}&body=${encodeURIComponent('JavaScript 언어의 문법과 실행 환경을 자세히 소개합니다.')}`);
     await image.waitFor();
     await page.waitForFunction(() => document.querySelector('.aiang-floating-launcher img')?.src.includes('/post/'), null, { timeout: 5000 });
+
+    for (const mode of ['post', 'write']) {
+      await page.goto(`${url}&mode=${mode}`);
+      const editor = page.locator(mode === 'write' ? '.tiptap' : 'textarea');
+      await editor.fill('문장 기슬을 확인해 주세요.');
+      await page.evaluate(() => { testHold = true; });
+      await page.locator('.aiang-floating-launcher').click();
+      await page.locator('.aiang-floating-menu [data-action="improve"]').click();
+      await page.waitForFunction(() => document.querySelector('.aiang-floating-launcher img')?.src.includes('/loading/'));
+      const first = await image.getAttribute('src');
+      await page.waitForFunction(first => {
+        const src = document.querySelector('.aiang-floating-launcher img')?.src;
+        return src?.includes('/loading/') && src !== first;
+      }, first);
+      await page.evaluate(() => releaseTestRequests());
+      await page.waitForFunction(state => document.querySelector('.aiang-floating-launcher img')?.src.includes(`/${state}/`), mode === 'write' ? 'newpost' : 'comment');
+    }
 
     await page.evaluate(() => {
       chrome.runtime.getURL = () => { throw new Error('Extension context invalidated.'); };

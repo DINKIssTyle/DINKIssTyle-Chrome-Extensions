@@ -19,7 +19,7 @@ test('animation catalog discovers character folders and normalizes state aliases
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aiang-animation-catalog-'));
   const script = path.resolve(__dirname, '..', 'scripts', 'generate-animation-catalog.py');
   try {
-    for (const state of ['Idle', 'comment', 'newport', 'post', 'menu', 'happy']) {
+    for (const state of ['Idle', 'comment', 'newport', 'post', 'menu', 'happy', 'loading']) {
       const directory = path.join(root, 'My Ang', state);
       fs.mkdirSync(directory, { recursive: true });
       const name = state === 'post' ? 'reading - 2.webp'
@@ -44,6 +44,7 @@ test('animation catalog discovers character folders and normalizes state aliases
     assert.match(catalog.themes[0].states.newpost[0].path, /My Ang\/newport\/newport\.webp$/);
     assert.match(catalog.themes[0].states.menu[0].path, /My Ang\/menu\/menu\.webp$/);
     assert.equal(catalog.themes[0].states.post[0].maxPlays, 2);
+    assert.equal(catalog.themes[0].states.loading[0].path, 'My Ang/loading/loading.webp');
     assert.equal(catalog.themes[0].states.post[0].durationMs, 2400);
     assert.equal(catalog.themes[0].states.happy[0].maxPlays, 3);
   } finally {

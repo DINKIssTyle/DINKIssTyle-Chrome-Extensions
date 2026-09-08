@@ -376,6 +376,7 @@
   }
 
   function currentAnimationState() {
+    if (aiActivitySources.size > 0) return 'loading';
     if (POST_EDITOR_PATH_PATTERN.test(location.pathname)) return 'newpost';
     const context = floatingContext();
     if (context.kind === 'post' && context.editor) {
@@ -462,7 +463,14 @@
     clearTimeout(root._petTimer);
     if (document.hidden) { stopThemeAnimation(root, false); return; }
     const candidates = animationCandidates(theme, requestedState);
-    if (!candidates.length) { stopThemeAnimation(root); return; }
+    if (!candidates.length) {
+      stopThemeAnimation(root, requestedState !== 'loading');
+      if (requestedState === 'loading') {
+        const url = extensionResourceURL('icons/AIAng.gif');
+        if (url) root.querySelector('.aiang-floating-launcher img').src = url;
+      }
+      return;
+    }
     const asset = chooseStateAnimation(root, candidates, requestedState);
     if (!asset) { stopThemeAnimation(root); return; }
     showAnimationAsset(root, asset);
@@ -473,6 +481,7 @@
   }
 
   function playMenuAnimation(root) {
+    if (aiActivitySources.size > 0) return;
     const theme = selectedAnimationTheme();
     const candidates = (theme?.states?.menu || []).map(normalizeAnimationAsset).filter(asset => asset.path);
     if (!candidates.length || document.hidden) return;
@@ -492,7 +501,8 @@
 
   // An explicitly selected character remains animated even when the OS reduces UI motion.
   function syncThemeAnimation(root, busy) {
-    if (root._menuPlaying) return;
+    if (root._menuPlaying && !busy) return;
+    if (busy) root._menuPlaying = false;
     const state = document.hidden ? 'paused' : `${currentAnimationState()}:${busy ? 'busy' : 'ready'}`;
     if (root._petState === state) return;
     root._petState = state;

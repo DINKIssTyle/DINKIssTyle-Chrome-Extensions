@@ -132,6 +132,13 @@
             "maxPlays": 1
           }
         ],
+        "loading": [
+          {
+            "path": "3D Ang/loading/loading_a.webp",
+            "durationMs": 2673,
+            "maxPlays": 1
+          }
+        ],
         "happy": [],
         "fun": [
           {
@@ -257,6 +264,7 @@
             "maxPlays": 1
           }
         ],
+        "loading": [],
         "happy": [],
         "fun": [],
         "sad": [],
@@ -365,6 +373,18 @@
           {
             "path": "Ang (Photoreal) Highres/menu/menu_b.webp",
             "durationMs": 4092,
+            "maxPlays": 1
+          }
+        ],
+        "loading": [
+          {
+            "path": "Ang (Photoreal) Highres/loading/loading_a.webp",
+            "durationMs": 5518,
+            "maxPlays": 1
+          },
+          {
+            "path": "Ang (Photoreal) Highres/loading/loading_b.webp",
+            "durationMs": 5518,
             "maxPlays": 1
           }
         ],
@@ -519,6 +539,18 @@
           {
             "path": "Ang (Photoreal) Lowres/menu/menu_b.webp",
             "durationMs": 4092,
+            "maxPlays": 1
+          }
+        ],
+        "loading": [
+          {
+            "path": "Ang (Photoreal) Lowres/loading/loading_a.webp",
+            "durationMs": 5518,
+            "maxPlays": 1
+          },
+          {
+            "path": "Ang (Photoreal) Lowres/loading/loading_b.webp",
+            "durationMs": 5518,
             "maxPlays": 1
           }
         ],
