@@ -724,6 +724,8 @@ test('Gemini receives image Blobs with an image-enabled session, including strea
   const testCore = loadCore(fetch, { LanguageModel: model, settings: { provider: 'gemini', geminiKeepAlive: true } });
   const answer = await testCore.callGeminiNano({ system: 'instructions', user: 'read media' }, new AbortController().signal, {}, value => chunks.push(value), null, ['data:image/png;base64,aGVsbG8=']);
   assert.equal(options.expectedInputs[1].type, 'image');
+  assert.equal(options.expectedOutputs[0].type, 'text');
+  assert.equal(options.expectedOutputs[0].languages[0], 'ko');
   assert.ok(prompt[0].content[0].value.startsWith('read media'));
   assert.match(prompt[0].content[0].value, /영상 재생 내용과 음성은 포함되지 않습니다/);
   assert.ok(prompt[0].content[1].value instanceof Blob);

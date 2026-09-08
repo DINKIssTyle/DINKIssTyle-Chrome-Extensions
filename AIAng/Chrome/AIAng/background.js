@@ -1473,6 +1473,7 @@ async function createGeminiSession(model, systemPrompt, signal, onDownloadProgre
     try {
       const createOptions = {
         initialPrompts: [{ role: 'system', content: systemPrompt }],
+        expectedOutputs: [{ type: 'text', languages: ['ko'] }],
         signal
       };
       if (withImages) createOptions.expectedInputs = [{ type: 'text' }, { type: 'image' }];
