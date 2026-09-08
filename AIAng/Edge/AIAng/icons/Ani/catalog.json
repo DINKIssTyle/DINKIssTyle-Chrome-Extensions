@@ -386,6 +386,11 @@
             "path": "Ang (Photoreal) Highres/loading/loading_b.webp",
             "durationMs": 5518,
             "maxPlays": 1
+          },
+          {
+            "path": "Ang (Photoreal) Highres/loading/loading_c.webp",
+            "durationMs": 5518,
+            "maxPlays": 1
           }
         ],
         "happy": [],
@@ -550,6 +555,11 @@
           },
           {
             "path": "Ang (Photoreal) Lowres/loading/loading_b.webp",
+            "durationMs": 5518,
+            "maxPlays": 1
+          },
+          {
+            "path": "Ang (Photoreal) Lowres/loading/loading_c.webp",
             "durationMs": 5518,
             "maxPlays": 1
           }
