@@ -269,10 +269,52 @@ test('floating assistant switches modes, selects contextual actions, and preserv
     await page.locator('.aiang-floating-launcher').click();
     await page.waitForFunction(()=>document.querySelector('.aiang-floating-launcher img').src.includes('/icons/Ani/3D%20Ang/menu/'));
     await page.emulateMedia({reducedMotion:'reduce'});
-    await page.waitForFunction(()=>document.querySelector('.aiang-floating-launcher img').src.endsWith('/icons/AIAng.png'));
+    await page.goto(url+'?mode=board&theme=3D%20Ang');
+    await page.waitForFunction(()=>document.querySelector('.aiang-floating-launcher img')?.src.includes('/icons/Ani/3D%20Ang/Idle/'));
+    const reducedMotionSource = await launcher.locator('img').getAttribute('src');
+    await page.waitForFunction(previous=>document.querySelector('.aiang-floating-launcher img')?.src !== previous, reducedMotionSource);
+    assert.match(await launcher.locator('img').getAttribute('src'), /\/icons\/Ani\/3D%20Ang\/Idle\//);
+    await launcher.click();
+    await page.waitForFunction(()=>document.querySelector('.aiang-floating-launcher img').src.includes('/icons/Ani/3D%20Ang/menu/'));
     await settings({floatingAssistantType:'classic'});
     await page.waitForFunction(()=>document.querySelector('.aiang-floating')?.dataset.type==='classic');
     assert.match(await launcher.locator('img').getAttribute('src'),/AIAng.png$/);
+    assert.deepEqual(errors,[]);
+  } finally {await browser?.close();await new Promise(resolve=>server.close(resolve));}
+});
+
+// Keep this regression independent of the full workflow's layout assertions.
+test('selected character animates with reduced OS motion', {
+  skip: !process.env.AIANG_PLAYWRIGHT_MODULE, timeout: 30000
+}, async () => {
+  const { chromium } = require(process.env.AIANG_PLAYWRIGHT_MODULE);
+  const root = path.resolve(__dirname, '..');
+  const server = http.createServer((req,res) => {
+    const file = path.resolve(root,'.'+decodeURIComponent(new URL(req.url,'http://localhost').pathname));
+    if(!file.startsWith(root+path.sep)) {res.writeHead(404).end();return;}
+    fs.readFile(file,(error,data) => {
+      if(error) {res.writeHead(404).end();return;}
+      res.setHeader('Content-Type',file.endsWith('.js')?'text/javascript':file.endsWith('.css')?'text/css':file.endsWith('.png')?'image/png':file.endsWith('.webp')?'image/webp':file.endsWith('.gif')?'image/gif':'text/html');res.end(data);
+    });
+  });
+  await new Promise(resolve => server.listen(0,'127.0.0.1',resolve));
+  let browser;
+  try {
+    browser = await chromium.launch({executablePath:process.env.AIANG_CHROME_PATH||'/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',headless:true});
+    const page = await browser.newPage({viewport:{width:1000,height:900}});
+    const errors=[];page.on('pageerror',error=>errors.push(error.message));
+    const url=`http://127.0.0.1:${server.address().port}/tests/floating-assistant-fixture.html`;
+    await page.emulateMedia({reducedMotion:'reduce'});
+    await page.goto(url+'?mode=board&theme=3D%20Ang');
+    const source = () => document.querySelector('.aiang-floating-launcher img')?.src;
+    await page.waitForFunction(()=>document.querySelector('.aiang-floating-launcher img')?.src.includes('/3D%20Ang/Idle/'));
+    const first = await page.evaluate(source);
+    await page.waitForFunction(previous=>document.querySelector('.aiang-floating-launcher img')?.src !== previous, first);
+    await page.waitForFunction(()=>{const img=document.querySelector('.aiang-floating-launcher img');return img.complete && img.naturalWidth>0;});
+    await page.locator('.aiang-floating-launcher').click();
+    await page.waitForFunction(()=>document.querySelector('.aiang-floating-launcher img')?.src.includes('/3D%20Ang/menu/'));
+    await page.evaluate(()=>setSettings({floatingAssistantType:'classic'}));
+    await page.waitForFunction(()=>document.querySelector('.aiang-floating-launcher img')?.src.endsWith('/icons/AIAng.png'));
     assert.deepEqual(errors,[]);
   } finally {await browser?.close();await new Promise(resolve=>server.close(resolve));}
 });

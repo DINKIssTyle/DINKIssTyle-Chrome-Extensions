@@ -367,7 +367,6 @@
     launcher.title = label;
   }
 
-  const petMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
   function selectedAnimationTheme() {
     return animationThemes.find(theme => theme.id === floatingAssistantType) || null;
   }
@@ -417,12 +416,12 @@
       })).values()].filter(asset => asset.path);
   }
 
-  function stopThemeAnimation(root) {
+  function stopThemeAnimation(root, showFallback = true) {
     clearTimeout(root._petTimer);
     root._petTimer = null;
     root._menuPlaying = false;
     const url = extensionResourceURL('icons/AIAng.png');
-    if (url) root.querySelector('.aiang-floating-launcher img').src = url;
+    if (showFallback && url) root.querySelector('.aiang-floating-launcher img').src = url;
   }
 
   function normalizeAnimationAsset(value) {
@@ -461,7 +460,7 @@
     const theme = selectedAnimationTheme();
     if (!root.isConnected || !theme) return;
     clearTimeout(root._petTimer);
-    if (document.hidden || petMotion.matches) { stopThemeAnimation(root); return; }
+    if (document.hidden) { stopThemeAnimation(root, false); return; }
     const candidates = animationCandidates(theme, requestedState);
     if (!candidates.length) { stopThemeAnimation(root); return; }
     const asset = chooseStateAnimation(root, candidates, requestedState);
@@ -476,7 +475,7 @@
   function playMenuAnimation(root) {
     const theme = selectedAnimationTheme();
     const candidates = (theme?.states?.menu || []).map(normalizeAnimationAsset).filter(asset => asset.path);
-    if (!candidates.length || document.hidden || petMotion.matches) return;
+    if (!candidates.length || document.hidden) return;
     clearTimeout(root._petTimer);
     const alternatives = candidates.filter(asset => asset.path !== root._petLastMenu);
     const pool = alternatives.length ? alternatives : candidates;
@@ -491,16 +490,16 @@
     }, asset.durationMs);
   }
 
+  // An explicitly selected character remains animated even when the OS reduces UI motion.
   function syncThemeAnimation(root, busy) {
     if (root._menuPlaying) return;
-    const state = document.hidden || petMotion.matches ? 'paused' : `${currentAnimationState()}:${busy ? 'busy' : 'ready'}`;
+    const state = document.hidden ? 'paused' : `${currentAnimationState()}:${busy ? 'busy' : 'ready'}`;
     if (root._petState === state) return;
     root._petState = state;
-    if (state === 'paused') stopThemeAnimation(root);
+    if (state === 'paused') stopThemeAnimation(root, false);
     else playThemeAnimation(root, currentAnimationState());
   }
   document.addEventListener('visibilitychange', syncFloatingActivity);
-  petMotion.addEventListener('change', syncFloatingActivity);
 
   function findFloatingContentBoundary() {
     const visible = element => element instanceof HTMLElement
