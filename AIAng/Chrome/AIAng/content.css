@@ -2004,3 +2004,20 @@
 .aiang-floating[data-type="pet2"] .aiang-floating-launcher img {
   border-radius: inherit;
 }
+/* Keep wide equations inside the answer on narrow screens. */
+.aiang-math {
+  display: inline-block;
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  vertical-align: middle;
+  padding: 0.15em 0;
+}
+.aiang-math-display {
+  display: block;
+  margin: 0.5em 0;
+}
+.aiang-math .katex-display {
+  margin: 0;
+  text-align: left;
+}

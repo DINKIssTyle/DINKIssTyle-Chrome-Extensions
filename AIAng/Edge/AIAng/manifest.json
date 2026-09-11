@@ -48,9 +48,12 @@
         "https://www.damoang.net/*"
       ],
       "css": [
+        "vendor/katex/katex.min.css",
         "content.css"
       ],
       "js": [
+        "vendor/katex/katex.min.js",
+        "shared/math-rendering.js",
         "shared/review-presentation.js",
         "content.js"
       ],
@@ -64,7 +67,8 @@
         "icons/AIAng.png",
         "icons/AIAng.gif",
         "icons/Ani/catalog.json",
-        "icons/Ani/*.webp"
+        "icons/Ani/*.webp",
+        "vendor/katex/fonts/*"
       ],
       "matches": [
         "https://damoang.net/*",

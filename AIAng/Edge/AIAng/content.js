@@ -2765,7 +2765,9 @@
 
   function renderSummaryMarkdown(container, markdown) {
     container.replaceChildren();
-    const lines = String(markdown || '').replace(/\r\n?/g, '\n').split('\n');
+    const source = String(markdown || '').replace(/\r\n?/g, '\n');
+    const math = globalThis.AIAngMath?.protect(source);
+    const lines = (math?.text ?? source).split('\n');
     let index = 0;
     while (index < lines.length) {
       const line = lines[index];
@@ -2852,6 +2854,7 @@
       });
       container.append(paragraph);
     }
+    if (math) globalThis.AIAngMath.restore(container, math);
   }
 
   function isSummaryMarkdownBlockStart(lines, index) {
