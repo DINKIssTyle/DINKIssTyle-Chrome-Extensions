@@ -414,7 +414,7 @@ async function loadSettings() {
     const floatingPosition = ['left', 'center', 'right'].includes(settings.floatingAssistantPosition) ? settings.floatingAssistantPosition : 'center';
     floatingAssistantPositions.forEach(input => { input.checked = input.value === floatingPosition; });
     const themes = Array.isArray(response.animationThemes) ? response.animationThemes : [];
-    floatingAssistantType.replaceChildren(new Option('기존 아이콘', 'classic'));
+    floatingAssistantType.replaceChildren(new Option('기본 아이콘', 'classic'));
     themes.forEach(theme => floatingAssistantType.add(new Option(theme.name, theme.id)));
     floatingAssistantType.value = Array.from(floatingAssistantType.options).some(option => option.value === settings.floatingAssistantType)
       ? settings.floatingAssistantType : 'classic';
