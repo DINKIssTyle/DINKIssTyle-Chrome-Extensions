@@ -764,7 +764,11 @@ function findNaturalChunkBoundary(text, start, idealEnd) {
 }
 
 function moveBoundaryPastProtectedToken(text, start, boundary) {
-  const opening = text.lastIndexOf('[[AIANG_MEDIA_', boundary);
+  const opening = Math.max(
+    text.lastIndexOf('[[AIANG_MEDIA_', boundary),
+    text.lastIndexOf('[[AIANG_URL_', boundary),
+    text.lastIndexOf('[[AIANG_BLOCK_', boundary)
+  );
   const closing = text.lastIndexOf(']]', boundary);
   if (opening < start || opening <= closing) return boundary;
   const tokenEnd = text.indexOf(']]', boundary);
@@ -788,7 +792,11 @@ function getNeighborContext(text, offset, direction) {
   const context = direction === 'before'
     ? source.slice(Math.max(0, offset - GEMINI_NEIGHBOR_CONTEXT_CHARS), offset)
     : source.slice(offset, Math.min(source.length, offset + GEMINI_NEIGHBOR_CONTEXT_CHARS));
-  return context.replace(/\[\[AIANG_MEDIA_[^\]]+\]\]/g, '[미디어]').trim();
+  return context
+    .replace(/\[\[AIANG_MEDIA_[^\]]+\]\]/g, '[미디어]')
+    .replace(/\[\[AIANG_URL_[^\]]+\]\]/g, '[URL]')
+    .replace(/\[\[AIANG_BLOCK_[^\]]+\]\]/g, '[문단 경계]')
+    .trim();
 }
 
 function isGeminiQuotaError(error) {
@@ -849,6 +857,8 @@ function buildPrompts(action, text, personalization, editingContext = null) {
       ...section.rules[action].map(rule => `- ${rule}`),
       ...section.commonRules.map(rule => `- ${rule}`),
       ...(text.includes('[[AIANG_MEDIA_') ? [`- ${section.mediaRule}`] : []),
+      ...(text.includes('[[AIANG_URL_') ? [`- ${section.urlRule}`] : []),
+      ...(text.includes('[[AIANG_BLOCK_') ? [`- ${section.structureRule}`] : []),
       ...(editingContext ? [`- ${section.contextRule}`] : []),
       ...(action !== 'spellcheck' ? [`- ${section.fullResultRule}`] : []),
       `- JSON 형태: ${outputShape}`,

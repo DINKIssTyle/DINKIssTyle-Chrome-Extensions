@@ -8,20 +8,34 @@
     : (globalThis.chrome ?? globalThis.browser);
   let extensionContextAvailable = true;
 
+  function isExtensionContextError(error) {
+    const message = String(error?.message || error).toLowerCase();
+    return message.includes('extension context invalidated')
+      || message.includes('extension is no longer available');
+  }
+
+  function markExtensionContextUnavailable(error) {
+    if (!extensionContextAvailable || !isExtensionContextError(error)) return false;
+    extensionContextAvailable = false;
+    queueMicrotask(() => {
+      clearTimeout(settingsRetryTimer);
+      observer.disconnect();
+      extensionEnabled = false;
+      floatingAssistantEnabled = false;
+      aiActivitySources.clear();
+      removeControls();
+      showExtensionRecoveryControl();
+      console.info('AIAng: Safari extension context was refreshed; reload the page to reconnect.', error);
+    });
+    return true;
+  }
+
   function extensionResourceURL(path) {
     if (!extensionContextAvailable) return '';
     try {
       return extensionAPI.runtime.getURL(path);
     } catch (error) {
-      if (!String(error?.message || error).toLowerCase().includes('extension context invalidated')) throw error;
-      extensionContextAvailable = false;
-      queueMicrotask(() => {
-        observer.disconnect();
-        extensionEnabled = false;
-        floatingAssistantEnabled = false;
-        aiActivitySources.clear();
-        removeControls();
-      });
+      if (!markExtensionContextUnavailable(error)) throw error;
       return '';
     }
   }
@@ -55,10 +69,6 @@
 
   function getActionShort(id, fallback) {
     return promptCatalog?.ui?.actions?.[id]?.short || fallback || DEFAULT_LABELS[id] || id;
-  }
-
-  function getFloatingMenuHeading(kind, fallback) {
-    return promptCatalog?.ui?.floatingMenu?.headings?.[kind] || fallback;
   }
 
   function getFloatingActionLabel(id, subject, fallback) {
@@ -196,6 +206,10 @@
   let animationKeywordRules = [];
   let floatingAssistantSize = 'small';
   let lastFocusedEditor = null;
+  let settingsRetryTimer = 0;
+  let settingsRefreshInFlight = null;
+  const SETTINGS_RETRY_DELAYS_MS = [500, 1500, 4000];
+  const SETTINGS_REQUEST_TIMEOUT_MS = 8000;
   const EDITOR_SELECTOR = '[contenteditable="true"].tiptap.ProseMirror, textarea[placeholder*="댓글을 입력하세요"]';
 
   const CUSTOM_FONT_SIZE_MAP = {
@@ -237,6 +251,7 @@
     commentAdd: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h7"/><path d="M19 3v6M16 6h6"/></svg>',
     question: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M9.8 9a2.4 2.4 0 1 1 3.7 2c-1 .6-1.5 1.1-1.5 2.2"/><path d="M12 17h.01"/></svg>',
     send: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></svg>',
+    refresh: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 4v7h-7"/></svg>',
     settings: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1-2.8 2.8-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.6v.2h-4V21a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1L4.2 17l.1-.1a1.7 1.7 0 0 0 .3-1.9A1.7 1.7 0 0 0 3 14H2.8v-4H3a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9L4.2 7 7 4.2l.1.1a1.7 1.7 0 0 0 1.9.3A1.7 1.7 0 0 0 10 3V2.8h4V3a1.7 1.7 0 0 0 1 1.6 1.7 1.7 0 0 0 1.9-.3l.1-.1L19.8 7l-.1.1a1.7 1.7 0 0 0-.3 1.9 1.7 1.7 0 0 0 1.6 1h.2v4H21a1.7 1.7 0 0 0-1.6 1Z"/></svg>',
     eye: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>',
     thumb: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 10v12M15 5.88 14 10h5.83a2 2 0 0 1 1.92 2.56l-2.33 8A2 2 0 0 1 17.5 22H4a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h3"/></svg>'
@@ -335,6 +350,9 @@
     }
     add('chat', getFloatingActionLabel('chat', null, '궁금한 내용을 질문할게요'), 'question', () =>
       openChatModal(editor || article || document.body, kind === 'post' ? 'comment' : kind));
+    if (kind === 'board') {
+      add('refresh_board', getFloatingActionLabel('refresh_board', null, '게시판 목록을 새로 고칩니다.'), 'refresh', () => location.reload());
+    }
     return actions;
   }
 
@@ -639,10 +657,6 @@
     const menu = root.querySelector('.aiang-floating-menu');
     const focusedAction = menu.contains(document.activeElement) ? document.activeElement.dataset.action : null;
     menu.replaceChildren();
-    const heading = document.createElement('div');
-    heading.className = 'aiang-floating-heading';
-    heading.textContent = getFloatingMenuHeading(context.kind, context.kind === 'body' ? '글쓰기 AI 지원' : context.kind === 'post' ? '게시물 AI 지원' : '게시판 AI 지원');
-    menu.append(heading);
     for (const action of floatingActions(context)) {
       const button = document.createElement('button');
       button.type = 'button';
@@ -1324,6 +1338,16 @@
     });
   }
 
+  function showExtensionRecoveryControl() {
+    if (document.querySelector('.aiang-extension-recovery')) return;
+    const recovery = document.createElement('div');
+    recovery.className = 'aiang-extension-recovery aiang-no-select';
+    recovery.setAttribute('role', 'status');
+    recovery.innerHTML = '<span>Safari 확장 연결이 갱신되었습니다.</span><button type="button">페이지 새로고침</button>';
+    recovery.querySelector('button').addEventListener('click', () => location.reload());
+    (document.body || document.documentElement).append(recovery);
+  }
+
   function collectCommentTexts(articleBody) {
     const followsArticle = element => Boolean(articleBody.compareDocumentPosition(element) & Node.DOCUMENT_POSITION_FOLLOWING);
     const damoangRoot = findDamoangCommentRoot(articleBody);
@@ -1611,24 +1635,237 @@
     snapshot = createTargetSnapshot(target),
     requestId = createRequestId()
   ) {
+    const urlProtection = protectEditingURLs(snapshot.text);
+    const structureProtection = action === 'spellcheck'
+      ? null
+      : protectEditingStructure(urlProtection.text);
     const response = await sendMessage({
       type: 'PROCESS_TEXT',
       requestId,
       action,
-      text: snapshot.text,
+      text: structureProtection?.text || urlProtection.text,
       target: targetType
     });
     if (!response?.ok) throw new Error(response?.error || 'AI 요청에 실패했습니다.');
-    if (!hasValidProtectedMedia(snapshot, response.correctedText)) {
+    const suggestions = restoreEditingSuggestionOffsets(response.suggestions, urlProtection);
+    const correctedText = action === 'spellcheck'
+      ? applyEditingSuggestions(snapshot.text, suggestions)
+      : restoreEditingURLs(restoreEditingStructure(response.correctedText, structureProtection), urlProtection);
+    if (!hasValidProtectedMedia(snapshot, correctedText)) {
       throw new Error('AI 응답에서 이미지 위치 정보가 변경되어 결과를 적용하지 않았습니다. 다시 시도해 주세요.');
     }
     return {
       target,
       originalText: snapshot.text,
-      correctedText: response.correctedText,
-      suggestions: response.suggestions || [],
+      correctedText,
+      suggestions,
       snapshot
     };
+  }
+
+  function protectEditingURLs(value) {
+    const originalText = String(value || '');
+    const expression = /\b(?:https?:\/\/|www\.)[^\s<>"'`]+/giu;
+    const matches = [];
+    for (const match of originalText.matchAll(expression)) {
+      const url = trimEditingURL(match[0]);
+      if (!url) continue;
+      const start = match.index;
+      const end = start + url.length;
+      matches.push({
+        url,
+        start,
+        end,
+        lineIndex: originalText.slice(0, start).split('\n').length - 1,
+        column: start - (originalText.lastIndexOf('\n', start - 1) + 1),
+        beforeBoundary: start > 0 ? originalText.slice(start - 1, start) : null,
+        afterBoundary: end < originalText.length ? originalText.slice(end, end + 1) : null
+      });
+    }
+    if (!matches.length) return { originalText, text: originalText, entries: [] };
+
+    const nonce = `${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+    const entries = [];
+    let originalOffset = 0;
+    let protectedText = '';
+    for (const [index, match] of matches.entries()) {
+      protectedText += originalText.slice(originalOffset, match.start);
+      const token = `[[AIANG_URL_${nonce}_${index + 1}]]`;
+      const protectedStart = protectedText.length;
+      protectedText += token;
+      entries.push({
+        ...match,
+        token,
+        protectedStart,
+        protectedEnd: protectedStart + token.length
+      });
+      originalOffset = match.end;
+    }
+    protectedText += originalText.slice(originalOffset);
+    return { originalText, text: protectedText, entries };
+  }
+
+  function trimEditingURL(value) {
+    let url = String(value || '');
+    url = url.replace(/[.,!?;:…。，、！？；：]+$/u, '');
+    for (const [opening, closing] of [['(', ')'], ['[', ']'], ['{', '}']]) {
+      while (url.endsWith(closing)
+        && countOccurrences(url, closing) > countOccurrences(url, opening)) {
+        url = url.slice(0, -1);
+      }
+    }
+    return url;
+  }
+
+  function protectEditingStructure(value) {
+    const originalText = String(value || '');
+    if (!originalText) return { originalText, text: originalText, entries: [] };
+    const nonce = `${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+    const pieces = originalText.split(/(\n+)/);
+    const entries = [];
+    let protectedText = '';
+    const hasLeadingSeparator = pieces[0] === '' && Boolean(pieces[1]);
+    const prefix = hasLeadingSeparator ? pieces[1] : '';
+    const firstPieceIndex = hasLeadingSeparator ? 2 : 0;
+    for (let pieceIndex = firstPieceIndex, blockIndex = 0; pieceIndex < pieces.length; pieceIndex += 2) {
+      const content = pieces[pieceIndex] || '';
+      if (!content && pieceIndex === pieces.length - 1) break;
+      const startToken = `[[AIANG_BLOCK_${nonce}_${blockIndex + 1}_START]]`;
+      const endToken = `[[AIANG_BLOCK_${nonce}_${blockIndex + 1}_END]]`;
+      const separator = pieces[pieceIndex + 1] || '';
+      protectedText += `${startToken}${content}${endToken}`;
+      entries.push({ startToken, endToken, content, separator });
+      blockIndex += 1;
+    }
+    return { originalText, text: protectedText, entries, prefix };
+  }
+
+  function restoreEditingStructure(value, protection) {
+    if (!protection?.entries.length) return String(value || '');
+    const restored = String(value || '');
+    let previousEnd = -1;
+    let correctedText = protection.prefix || '';
+    for (const entry of protection.entries) {
+      const startIndex = restored.indexOf(entry.startToken, Math.max(0, previousEnd));
+      const contentStart = startIndex + entry.startToken.length;
+      const endIndex = restored.indexOf(entry.endToken, contentStart);
+      const valid = startIndex >= previousEnd
+        && endIndex >= contentStart
+        && countOccurrences(restored, entry.startToken) === 1
+        && countOccurrences(restored, entry.endToken) === 1;
+      const candidate = valid ? restored.slice(contentStart, endIndex) : entry.content;
+      const correctedBlock = /\[\[AIANG_BLOCK_[^\]]+\]\]/.test(candidate)
+        || !hasSameEditingProtectionTokens(entry.content, candidate)
+        ? entry.content
+        : candidate.replace(/\r\n?|\n/g, ' ');
+      if (valid) previousEnd = endIndex + entry.endToken.length;
+      correctedText += preserveEditingLinePrefix(
+        entry.content,
+        preserveEditingBlockWhitespace(entry.content, correctedBlock)
+      ) + entry.separator;
+    }
+    return correctedText;
+  }
+
+  function hasSameEditingProtectionTokens(originalText, correctedText) {
+    const pattern = /\[\[AIANG_(?:MEDIA|URL)_[^\]\r\n]+\]\]/g;
+    const originalTokens = String(originalText || '').match(pattern) || [];
+    const correctedTokens = String(correctedText || '').match(pattern) || [];
+    return originalTokens.length === correctedTokens.length
+      && originalTokens.every((token, index) => token === correctedTokens[index]);
+  }
+
+  function preserveEditingBlockWhitespace(originalText, correctedText) {
+    const original = String(originalText || '');
+    const leading = original.match(/^[ \t]*/)?.[0] || '';
+    const trailing = original.match(/[ \t]*$/)?.[0] || '';
+    return leading + String(correctedText || '').trim() + trailing;
+  }
+
+  function preserveEditingLinePrefix(originalText, correctedText) {
+    const prefixPattern = /^(\s*(?:(?:[-*+•▪◦]|(?:\d+|[A-Za-z])[.)])\s+))/u;
+    const originalPrefix = String(originalText || '').match(prefixPattern)?.[1] || '';
+    const correctedPrefix = String(correctedText || '').match(prefixPattern)?.[1] || '';
+    if (originalPrefix === correctedPrefix) return correctedText;
+    return originalPrefix + correctedText.slice(correctedPrefix.length);
+  }
+
+  function restoreEditingURLs(value, protection) {
+    if (!protection.entries.length) return String(value || '');
+    const originalLines = protection.originalText.split('\n');
+    const correctedLines = String(value || '').split('\n');
+    if (originalLines.length !== correctedLines.length) return protection.originalText;
+    const entriesByLine = new Map();
+    for (const entry of protection.entries) {
+      if (!entriesByLine.has(entry.lineIndex)) entriesByLine.set(entry.lineIndex, []);
+      entriesByLine.get(entry.lineIndex).push(entry);
+    }
+    return correctedLines.map((line, lineIndex) => {
+      const entries = entriesByLine.get(lineIndex) || [];
+      const tokens = line.match(/\[\[AIANG_URL_[^\]\r\n]+\]\]/g) || [];
+      if (!entries.length) return tokens.length ? originalLines[lineIndex] : line;
+      if (tokens.length !== entries.length) return originalLines[lineIndex];
+      let previousTokenEnd = -1;
+      for (const entry of entries) {
+        if (countOccurrences(line, entry.token) !== 1) return originalLines[lineIndex];
+        const tokenStart = line.indexOf(entry.token);
+        const tokenEnd = tokenStart + entry.token.length;
+        const originalBefore = entry.column > 0 ? originalLines[lineIndex].slice(entry.column - 1, entry.column) : null;
+        const originalAfterIndex = entry.column + entry.url.length;
+        const originalAfter = originalAfterIndex < originalLines[lineIndex].length
+          ? originalLines[lineIndex].slice(originalAfterIndex, originalAfterIndex + 1) : null;
+        const correctedBefore = tokenStart > 0 ? line.slice(tokenStart - 1, tokenStart) : null;
+        const correctedAfter = tokenEnd < line.length ? line.slice(tokenEnd, tokenEnd + 1) : null;
+        if (tokenStart < previousTokenEnd || correctedBefore !== originalBefore || correctedAfter !== originalAfter) {
+          return originalLines[lineIndex];
+        }
+        previousTokenEnd = tokenEnd;
+      }
+      let restoredLine = line;
+      for (const entry of entries) restoredLine = restoredLine.replace(entry.token, entry.url);
+      return restoredLine;
+    }).join('\n');
+  }
+
+  function restoreEditingSuggestionOffsets(input, protection) {
+    if (!Array.isArray(input)) return [];
+    return input.flatMap(suggestion => {
+      const start = Number(suggestion?.start);
+      const end = Number(suggestion?.end);
+      if (!Number.isInteger(start) || !Number.isInteger(end) || end <= start) return [];
+      if (protection.entries.some(entry => start < entry.protectedEnd && end > entry.protectedStart)) return [];
+      const originalStart = restoreEditingOffset(start, protection.entries);
+      const originalEnd = restoreEditingOffset(end, protection.entries);
+      const original = protection.originalText.slice(originalStart, originalEnd);
+      const replacement = String(suggestion?.replacement || '');
+      if (!original || !replacement || original === replacement) return [];
+      return [{
+        ...suggestion,
+        original,
+        replacement,
+        start: originalStart,
+        end: originalEnd
+      }];
+    }).sort((left, right) => left.start - right.start || left.end - right.end)
+      .filter((suggestion, index, list) => index === 0 || suggestion.start >= list[index - 1].end);
+  }
+
+  function restoreEditingOffset(offset, entries) {
+    let adjustment = 0;
+    for (const entry of entries) {
+      if (offset <= entry.protectedStart) break;
+      if (offset < entry.protectedEnd) return entry.start;
+      adjustment += (entry.end - entry.start) - (entry.protectedEnd - entry.protectedStart);
+    }
+    return offset + adjustment;
+  }
+
+  function applyEditingSuggestions(value, suggestions) {
+    let result = String(value || '');
+    for (const suggestion of [...suggestions].sort((left, right) => right.start - left.start)) {
+      result = result.slice(0, suggestion.start) + suggestion.replacement + result.slice(suggestion.end);
+    }
+    return result;
   }
 
   async function runTitleSuggestions(editor, button) {
@@ -1789,6 +2026,27 @@
     const cancelled = state?.cancelRequested || error?.name === 'AbortError' || rawMessage === '요청을 취소했습니다.';
     if (cancelled) {
       showToast('요청을 취소했습니다.', 'info', 1800);
+      return;
+    }
+
+    if (!extensionContextAvailable || isExtensionContextError(error)) {
+      markExtensionContextUnavailable(error);
+      showExtensionRecoveryControl();
+      showToast('Safari 확장 연결이 갱신되었습니다. 작성 중인 내용을 확인한 뒤 페이지를 새로고침해 주세요.', 'warning', 8000, true, {
+        actionLabel: '페이지 새로고침',
+        action: () => location.reload(),
+        title: rawMessage,
+        commentHeaderMessage: 'Safari 확장 연결이 갱신되었습니다. 페이지를 새로고침해 주세요.'
+      });
+      return;
+    }
+
+    const isResponseIntegrityError = /AI 응답에서|원문 구조|문서 구조|문단 보호|URL 보호|이미지 위치 정보/i.test(rawMessage);
+    if (isResponseIntegrityError) {
+      showToast('AI 응답이 원문의 URL 또는 문서 구조를 변경하여 결과를 적용하지 않았습니다. 다시 시도해 주세요.', 'warning', 8000, false, {
+        title: rawMessage,
+        commentHeaderMessage: 'AI 응답의 원문 형식이 달라 결과를 적용하지 않았습니다.'
+      });
       return;
     }
 
@@ -2110,7 +2368,7 @@
         + change.replacement
         + entry.currentText.slice(change.end);
       inlineReviewSession.applying = true;
-      writeTargetText(entry.target, replacementText, entry.snapshot.media);
+      writeTargetText(entry.target, replacementText, entry.snapshot.media, true);
       inlineReviewSession.applying = false;
       const delta = change.replacement.length - (change.end - change.start);
       entry.currentText = replacementText;
@@ -2147,7 +2405,7 @@
         for (const change of [...entry.changes].sort((left, right) => right.start - left.start)) {
           text = text.slice(0, change.start) + change.replacement + text.slice(change.end);
         }
-        writeTargetText(entry.target, text, entry.snapshot.media);
+        writeTargetText(entry.target, text, entry.snapshot.media, true);
       }
       session.applying = false;
       closeInlineReview();
@@ -2351,7 +2609,7 @@
       return { ...position, offset: position.offset + 1 };
     };
     const appendVirtual = (text, start, end) => {
-      for (const char of text) units.push({ char, start, end });
+      for (const char of text) units.push({ char, start, end, virtual: true });
     };
     const visit = node => {
       if (node.nodeType === Node.TEXT_NODE) {
@@ -2547,7 +2805,7 @@
           if (createTargetSignature(target) !== snapshot.signature) {
             throw new Error('교정 중 입력 내용이 변경되어 결과를 적용하지 않았습니다. 다시 실행해 주세요.');
           }
-          writeTargetText(target, correctedText, snapshot.media);
+          writeTargetText(target, correctedText, snapshot.media, true);
           closeReview();
           showToast(
             snapshot.media.length
@@ -2664,7 +2922,7 @@
           const bodyResults = changed.filter(result => !(result.target instanceof HTMLInputElement));
           const titleResults = changed.filter(result => result.target instanceof HTMLInputElement);
           for (const result of [...bodyResults, ...titleResults]) {
-            writeTargetText(result.target, result.correctedText, result.snapshot.media);
+            writeTargetText(result.target, result.correctedText, result.snapshot.media, true);
           }
           closeReview();
           showToast(
@@ -4341,7 +4599,7 @@
     return formatted;
   }
 
-  function writeTargetText(target, text, media = []) {
+  function writeTargetText(target, text, media = [], preserveFormatting = false) {
     const scrollState = captureScrollState(target);
     try {
       target.focus({ preventScroll: true });
@@ -4355,6 +4613,11 @@
 
       if (!media.every(item => countOccurrences(text, item.token) === 1)) {
         throw new Error('이미지 위치 정보가 손상되어 교정문을 반영하지 않았습니다.');
+      }
+
+      if (preserveFormatting) {
+        replaceContentEditableTextPreservingFormatting(target, text, media);
+        return;
       }
 
       const backup = Array.from(target.childNodes, node => node.cloneNode(true));
@@ -4387,6 +4650,64 @@
       }
     } finally {
       restoreScrollState(scrollState);
+    }
+  }
+
+  function replaceContentEditableTextPreservingFormatting(target, text, media) {
+    const roots = collectMediaRoots(target);
+    const mediaByNode = new Map(roots.map((node, index) => [node, media[index]]));
+    const currentText = serializeEditorContent(target, mediaByNode);
+    const mapped = buildContentEditableMap({
+      target,
+      currentText,
+      snapshot: { media }
+    });
+    if (!mapped || mapped.text !== currentText) {
+      throw new Error('현재 편집기 양식을 분석하지 못해 교정문을 반영하지 않았습니다.');
+    }
+
+    const changes = buildInlineChangesFromDiff(currentText, String(text || ''), '교정');
+    if (!changes.length) return;
+    const backup = Array.from(target.childNodes, node => node.cloneNode(true));
+    try {
+      for (const change of [...changes].sort((left, right) => right.start - left.start)) {
+        if (change.replacement.includes('\n')
+          || mapped.units.slice(change.start, change.end).some(unit => unit.virtual)) {
+          throw new Error('AI가 문단이나 목록 구조를 변경하여 기존 양식을 안전하게 유지할 수 없습니다. 다시 시도해 주세요.');
+        }
+        const startPosition = (change.start === change.end ? mapped.units[change.start - 1]?.end : null)
+          || mapped.units[change.start]?.start
+          || mapped.units[change.start - 1]?.end
+          || mapped.start;
+        const endPosition = change.end > change.start
+          ? mapped.units[change.end - 1]?.end
+          : startPosition;
+        const range = document.createRange();
+        range.setStart(startPosition.container, startPosition.offset);
+        range.setEnd(endPosition.container, endPosition.offset);
+        const selection = window.getSelection();
+        selection.removeAllRanges();
+        selection.addRange(range);
+        const applied = document.execCommand?.('insertText', false, change.replacement);
+        selection.removeAllRanges();
+        if (!applied) {
+          range.deleteContents();
+          if (change.replacement) range.insertNode(document.createTextNode(change.replacement));
+        }
+      }
+
+      const updatedRoots = collectMediaRoots(target);
+      const updatedMediaByNode = new Map(updatedRoots.map((node, index) => [node, media[index]]));
+      if (serializeEditorContent(target, updatedMediaByNode) !== text) {
+        throw new Error('교정문을 기존 양식에 정확히 반영하지 못했습니다.');
+      }
+      target.normalize();
+      target.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertReplacementText', data: null }));
+      target.dispatchEvent(new Event('change', { bubbles: true }));
+    } catch (error) {
+      window.getSelection()?.removeAllRanges();
+      target.replaceChildren(...backup.map(node => node.cloneNode(true)));
+      throw error;
     }
   }
 
@@ -4764,7 +5085,17 @@
   }
 
   function sendMessage(message) {
-    if (IS_SAFARI_WEB_EXTENSION) return extensionAPI.runtime.sendMessage(message);
+    if (IS_SAFARI_WEB_EXTENSION) {
+      try {
+        return Promise.resolve(extensionAPI.runtime.sendMessage(message)).catch(error => {
+          markExtensionContextUnavailable(error);
+          throw error;
+        });
+      } catch (error) {
+        markExtensionContextUnavailable(error);
+        return Promise.reject(error);
+      }
+    }
     return new Promise((resolve, reject) => {
       extensionAPI.runtime.sendMessage(message, response => {
         const error = extensionAPI.runtime.lastError;
@@ -4787,15 +5118,19 @@
     link.remove();
   }
 
-  extensionAPI.runtime.onMessage?.addListener?.(message => {
-    if (message?.type === 'REQUEST_PROGRESS') updateRequestProgress(message);
-    if (message?.type === 'CHAT_STREAM') {
-      chatStreamHandlers.get(String(message.requestId || ''))?.(String(message.content || ''));
-    }
-    if (message?.type === 'SHOW_NATIVE_SETTINGS') {
-      showToast('AI 설정은 AIAng by DKST 앱에서 변경합니다.', 'info', 8000, true);
-    }
-  });
+  try {
+    extensionAPI.runtime.onMessage?.addListener?.(message => {
+      if (message?.type === 'REQUEST_PROGRESS') updateRequestProgress(message);
+      if (message?.type === 'CHAT_STREAM') {
+        chatStreamHandlers.get(String(message.requestId || ''))?.(String(message.content || ''));
+      }
+      if (message?.type === 'SHOW_NATIVE_SETTINGS') {
+        showToast('AI 설정은 AIAng by DKST 앱에서 변경합니다.', 'info', 8000, true);
+      }
+    });
+  } catch (error) {
+    if (!markExtensionContextUnavailable(error)) throw error;
+  }
 
   document.addEventListener('pointerdown', event => {
     if (!openActionMenu) return;
@@ -4811,7 +5146,8 @@
 
   const observer = new MutationObserver(scheduleScan);
   observer.observe(document.documentElement, { childList: true, subtree: true });
-  extensionAPI.storage.onChanged.addListener((changes, areaName) => {
+  try {
+    extensionAPI.storage.onChanged.addListener((changes, areaName) => {
     if (areaName !== 'local') return;
     if (changes.enabled) {
       extensionEnabled = changes.enabled.newValue !== false;
@@ -4852,7 +5188,10 @@
     if (changes.usePostImageCapture) {
       usePostImageCapture = changes.usePostImageCapture.newValue === true;
     }
-  });
+    });
+  } catch (error) {
+    if (!markExtensionContextUnavailable(error)) throw error;
+  }
   window.addEventListener('resize', () => {
     if (floatingAssistantEnabled) scheduleScan();
     const panel = document.querySelector('.aiang-review-popover');
@@ -4883,10 +5222,35 @@
     });
   }
 
-  function refreshSettings() {
-    return sendMessage({ type: 'GET_SETTINGS' })
+  function withTimeout(promise, timeoutMs, message) {
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error(message)), timeoutMs);
+      Promise.resolve(promise).then(
+        value => { clearTimeout(timer); resolve(value); },
+        error => { clearTimeout(timer); reject(error); }
+      );
+    });
+  }
+
+  function scheduleSettingsRetry(attempt) {
+    const delay = SETTINGS_RETRY_DELAYS_MS[attempt];
+    if (delay === undefined || !extensionContextAvailable) return;
+    clearTimeout(settingsRetryTimer);
+    settingsRetryTimer = setTimeout(() => refreshSettings(attempt + 1), delay);
+  }
+
+  function refreshSettings(attempt = 0) {
+    if (!extensionContextAvailable) {
+      showExtensionRecoveryControl();
+      return Promise.resolve();
+    }
+    if (settingsRefreshInFlight) return settingsRefreshInFlight;
+    if (attempt === 0) clearTimeout(settingsRetryTimer);
+    const request = withTimeout(sendMessage({ type: 'GET_SETTINGS' }), SETTINGS_REQUEST_TIMEOUT_MS, '설정 응답 시간이 초과되었습니다.')
     .then(response => {
-      if (!response?.ok) return;
+      if (!response?.ok) throw new Error(response?.error || '설정을 불러오지 못했습니다.');
+      clearTimeout(settingsRetryTimer);
+      document.querySelector('.aiang-extension-recovery')?.remove();
       const nextFloating = response.settings?.floatingAssistantEnabled === true;
       if (floatingAssistantEnabled !== nextFloating || (extensionEnabled && !response.settings?.enabled)) removeControls();
       floatingAssistantEnabled = nextFloating;
@@ -4910,14 +5274,26 @@
       syncCommentGenerationControls();
       scheduleScan();
     })
-    .catch(() => { });
+    .catch(error => {
+      if (!extensionContextAvailable || markExtensionContextUnavailable(error)) return;
+      console.warn(`AIAng: settings request failed (attempt ${attempt + 1}).`, error);
+      if (SETTINGS_RETRY_DELAYS_MS[attempt] === undefined) showExtensionRecoveryControl();
+      else scheduleSettingsRetry(attempt);
+    })
+    .finally(() => {
+      if (settingsRefreshInFlight === request) settingsRefreshInFlight = null;
+    });
+    settingsRefreshInFlight = request;
+    return request;
   }
   // Safari settings live in the host app, outside browser.storage.
   if (IS_SAFARI_WEB_EXTENSION) {
-    window.addEventListener('focus', refreshSettings);
+    window.addEventListener('focus', () => refreshSettings());
     document.addEventListener('visibilitychange', () => {
       if (!document.hidden) refreshSettings();
     });
+    window.addEventListener('pageshow', () => refreshSettings());
+    window.addEventListener('online', () => refreshSettings());
   }
   refreshSettings();
 })();

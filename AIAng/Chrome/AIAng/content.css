@@ -1881,6 +1881,35 @@
   object-fit: contain;
 }
 
+.aiang-extension-recovery {
+  position: fixed;
+  z-index: 2147483647;
+  right: max(12px, env(safe-area-inset-right));
+  bottom: calc(max(12px, env(safe-area-inset-bottom)) + 56px);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: calc(100vw - 24px);
+  padding: 8px 10px;
+  border: 1px solid var(--aiang-border);
+  border-radius: 12px;
+  background: var(--aiang-surface);
+  color: var(--aiang-text);
+  box-shadow: var(--aiang-shadow-popover);
+  font: 13px/1.4 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+.aiang-extension-recovery button {
+  flex: 0 0 auto;
+  min-height: 34px;
+  padding: 6px 10px;
+  border: 0;
+  border-radius: 8px;
+  background: var(--aiang-primary);
+  color: var(--aiang-primary-foreground);
+  font: 700 13px/1.2 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
 .aiang-floating-menu {
   position: absolute;
   right: var(--aiang-floating-menu-inset, 0px);
@@ -1913,13 +1942,6 @@
 .aiang-floating-menu[hidden],
 .aiang-chat-actions[hidden] {
   display: none !important;
-}
-
-.aiang-floating-heading {
-  padding: 8px 10px;
-  font-size: 12px;
-  font-weight: 700;
-  color: var(--aiang-text-muted);
 }
 
 .aiang-floating-item {

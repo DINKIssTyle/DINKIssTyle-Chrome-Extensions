@@ -22,8 +22,8 @@
         "suggestions에 바뀐 구간만 넣고 start/end는 0부터 시작하는 UTF-16 위치로 작성하세요."
       ],
       "honorific": [
-        "전체 글을 자연스러운 한국어 존댓말(경어체)로 바꾸세요.",
-        "친절한 커뮤니티 대화체를 유지하고 사실과 의도를 보존하세요."
+        "전체 글을 자연스러운 한국어 경어체로 교정하세요.",
+        "사실과 의도를 보존하세요."
       ],
       "improve": [
         "원문의 의미와 사실을 유지하며 문장 흐름, 가독성, 간결성을 개선하세요.",
@@ -36,9 +36,12 @@
     },
     "commonRules": [
       "URL, 이메일, 고유명사, 숫자, 이모티콘을 보존하세요.",
+      "원문의 제목, 문단 구분, 줄바꿈, 목록 순서와 항목 수 등 문서 양식을 유지하세요.",
       "입력 영역을 구분하는 XML 태그는 결과에 포함하지 마세요."
     ],
     "mediaRule": "<content> 안의 [[AIANG_MEDIA_...]] 토큰은 글자, 순서, 개수를 바꾸지 말고 그대로 유지하세요.",
+    "urlRule": "<content> 안의 [[AIANG_URL_...]] 토큰은 교정 대상이 아닌 원문 URL입니다. 글자, 위치, 순서, 개수를 바꾸거나 토큰 바로 앞뒤에 문자·문장부호·이모지를 추가하지 말고 그대로 유지하세요.",
+    "structureRule": "<content> 안의 [[AIANG_BLOCK_..._START]]와 [[AIANG_BLOCK_..._END]]는 원문의 각 문단·목록 항목을 감싸는 보호 표식입니다. 모든 표식과 순서를 유지하고, 표식 내부의 문장만 교정하며 별도의 줄바꿈이나 목록 기호를 만들지 마세요.",
     "contextRule": "<before_context>와 <after_context>는 문맥 확인용이며 <content> 안의 내용만 교정하세요.",
     "fullResultRule": "생략 없는 전체 결과를 반환하세요."
   },
@@ -201,24 +204,52 @@
   },
   "ui": {
     "actions": {
-      "spellcheck": { "label": "맞춤법 검사", "short": "맞춤법" },
-      "honorific": { "label": "경어체로 교정", "short": "경어체" },
-      "improve": { "label": "문장 개선", "short": "문장 개선" },
-      "decorate": { "label": "글 꾸미기", "short": "글 꾸미기" },
-      "chat": { "label": "뭐였더라?", "short": "뭐였더라?" },
-      "suggest_tags": { "label": "태그 생성", "short": "태그 생성" },
-      "generate_comment": { "label": "댓글 생성", "short": "댓글 생성" },
-      "suggest_title": { "label": "글 제목 추천", "short": "제목 추천" },
-      "summarize_post": { "label": "게시물 요약", "short": "요약" },
-      "summarize_reactions": { "label": "댓글 반응 요약", "short": "댓글 요약" },
-      "build_glossary": { "label": "용어 사전", "short": "용어 사전" }
+      "spellcheck": {
+        "label": "맞춤법 검사",
+        "short": "맞춤법"
+      },
+      "honorific": {
+        "label": "경어체로 교정",
+        "short": "경어체"
+      },
+      "improve": {
+        "label": "문장 개선",
+        "short": "문장 개선"
+      },
+      "decorate": {
+        "label": "글 꾸미기",
+        "short": "글 꾸미기"
+      },
+      "chat": {
+        "label": "뭐였더라?",
+        "short": "뭐였더라?"
+      },
+      "suggest_tags": {
+        "label": "태그 생성",
+        "short": "태그 생성"
+      },
+      "generate_comment": {
+        "label": "댓글 생성",
+        "short": "댓글 생성"
+      },
+      "suggest_title": {
+        "label": "글 제목 추천",
+        "short": "제목 추천"
+      },
+      "summarize_post": {
+        "label": "게시물 요약",
+        "short": "요약"
+      },
+      "summarize_reactions": {
+        "label": "댓글 반응 요약",
+        "short": "댓글 요약"
+      },
+      "build_glossary": {
+        "label": "용어 사전",
+        "short": "용어 사전"
+      }
     },
     "floatingMenu": {
-      "headings": {
-        "body": "글쓰기 AI 지원",
-        "post": "게시물 AI 지원",
-        "board": "게시판 AI 지원"
-      },
       "items": {
         "spellcheck": "{{subject}}의 맞춤법을 검사해 주세요",
         "honorific": "{{subject}}을 경어체로 교정해 주세요",
@@ -231,6 +262,7 @@
         "build_glossary": "용어 사전을 보여 주세요",
         "read_board": "이 게시판의 글 목록을 읽어 주세요",
         "chat": "궁금한 내용을 질문할게요",
+        "refresh_board": "게시판 목록을 새로 고칩니다.",
         "settings": "AI 지원 설정"
       },
       "subjects": {
@@ -251,4 +283,3 @@
     }
   }
 }
-

@@ -280,6 +280,22 @@ test('mentions protected media tokens only when the editing input contains one',
   assert.match(withMedia.user, new RegExp(token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
 });
 
+test('instructs editing models to preserve protected URL tokens', () => {
+  const token = '[[AIANG_URL_test_1]]';
+  const prompts = core.buildPrompts('improve', `본문\n${token}`, '');
+
+  assert.match(prompts.user, /교정 대상이 아닌 원문 URL/);
+  assert.match(prompts.user, new RegExp(token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+});
+
+test('instructs editing models to preserve protected document boundaries', () => {
+  const token = '[[AIANG_BLOCK_test_1_START]]';
+  const prompts = core.buildPrompts('improve', `${token}첫 문단[[AIANG_BLOCK_test_1_END]]`, '');
+
+  assert.match(prompts.user, /원문의 각 문단·목록 항목을 감싸는 보호 표식/);
+  assert.match(prompts.user, new RegExp(token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+});
+
 test('fully omits personalization from prompts when it is empty or whitespace-only', () => {
   for (const personalization of ['', '   \n  ']) {
     const editing = core.buildPrompts('improve', '본문', personalization);
@@ -576,6 +592,26 @@ test('splits editing text at natural boundaries without splitting protected medi
   chunks.forEach((chunk, index) => {
     assert.equal(chunk.start, index ? chunks[index - 1].end : 0);
   });
+});
+
+test('does not split protected URL tokens across Gemini editing chunks', () => {
+  const token = `[[AIANG_URL_${'x'.repeat(350)}]]`;
+  const text = `${'가'.repeat(260)} ${token} ${'나'.repeat(260)}`;
+  const chunks = core.splitTextAtNaturalBoundaries(text, 400);
+
+  assert.equal(chunks.map(chunk => chunk.text).join(''), text);
+  assert.equal(chunks.filter(chunk => chunk.text.includes(token)).length, 1);
+  assert.equal(chunks.some(chunk => chunk.text.includes('[[AIANG_URL_') && !chunk.text.includes(token)), false);
+});
+
+test('does not split protected document-boundary tokens across Gemini editing chunks', () => {
+  const token = `[[AIANG_BLOCK_${'x'.repeat(350)}_START]]`;
+  const text = `${'가'.repeat(260)}${token}${'나'.repeat(260)}`;
+  const chunks = core.splitTextAtNaturalBoundaries(text, 400);
+
+  assert.equal(chunks.map(chunk => chunk.text).join(''), text);
+  assert.equal(chunks.filter(chunk => chunk.text.includes(token)).length, 1);
+  assert.equal(chunks.some(chunk => chunk.text.includes('[[AIANG_BLOCK_') && !chunk.text.includes(token)), false);
 });
 
 test('preserves outer chunk whitespace separately from editable content', () => {
@@ -888,7 +924,8 @@ test('provides centralized ui labels and floating menu configuration in prompts.
   const ui = promptCatalog?.ui;
   assert.ok(ui, 'ui section should exist in prompts.json');
   assert.ok(ui.actions?.spellcheck?.label, 'spellcheck action label should exist');
-  assert.ok(ui.floatingMenu?.headings?.body, 'floatingMenu headings should exist');
+  assert.equal(ui.floatingMenu?.headings, undefined, 'floatingMenu headings should be omitted');
   assert.ok(ui.floatingMenu?.items?.spellcheck, 'floatingMenu item templates should exist');
+  assert.equal(ui.floatingMenu?.items?.refresh_board, '게시판 목록을 새로 고칩니다.');
   assert.ok(ui.commentTones?.positive, 'commentTones should exist');
 });

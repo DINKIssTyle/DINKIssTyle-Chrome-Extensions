@@ -52,6 +52,9 @@ test('floating assistant switches modes, selects contextual actions, and preserv
     assert.equal(await page.locator('.aiang-toolbar,.aiang-summary-slot').count(),0);
     await settings({enabled:true});await launcher.waitFor();
 
+    await page.goto(url+'?settingsFailures=2');await launcher.waitFor({timeout:5000});
+    assert.ok(await page.evaluate(()=>testSettingsRequestCount)>=3,'transient settings failures are retried');
+
     await go('?mode=empty');assert.deepEqual(await ids(),['summarize_post','build_glossary','chat']);
     await page.locator('textarea').fill('   ');await open();assert.equal(await action('spellcheck').count(),0);
     await page.locator('textarea').fill('댓글 기슬입니다.');await open();await action('spellcheck').waitFor();
@@ -68,6 +71,22 @@ test('floating assistant switches modes, selects contextual actions, and preserv
       await go('');await page.locator('textarea').fill('댓글 기슬입니다.');await open();await action('spellcheck').waitFor();await action(id).click();await requested('PROCESS_TEXT');
       assert.equal(await page.evaluate(()=>testRequests.find(r=>r.type==='PROCESS_TEXT').action),id);
       assert.equal(await page.locator('textarea').inputValue(),'댓글 기슬입니다.','review does not apply changes automatically');
+    }
+    for(const id of ['spellcheck','honorific','improve','decorate']) {
+      const urlText='https://damoang.net/laboratory/write';
+      await go('');await page.locator('textarea').fill(`${urlText}\n댓글 기슬입니다.`);await open();await action('spellcheck').waitFor();await action(id).click();await requested('PROCESS_TEXT');
+      const sent=await page.evaluate(()=>testRequests.find(r=>r.type==='PROCESS_TEXT').text);
+      assert.doesNotMatch(sent,/https:\/\/damoang\.net/);
+      assert.match(sent,/\[\[AIANG_URL_[^\]]+\]\]/);
+      if(id==='spellcheck') {
+        await page.locator('.aiang-inline-apply-all').click();
+        assert.equal(await page.locator('textarea').inputValue(),`${urlText}\n댓글 기술입니다.`);
+      } else {
+        await page.locator('.aiang-review').waitFor();
+        const reviewText=await page.locator('.aiang-review').innerText();
+        assert.match(reviewText,new RegExp(urlText.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')));
+        assert.doesNotMatch(reviewText,/AIANG_URL/);
+      }
     }
     await go('');await page.locator('textarea').fill('댓글 기슬입니다.');await open();await action('spellcheck').waitFor();await page.evaluate(()=>testHold=true);await action('improve').click();await requested('PROCESS_TEXT');
     assert.equal(await menu.isHidden(),true,'a selected menu closes immediately');
@@ -87,6 +106,14 @@ test('floating assistant switches modes, selects contextual actions, and preserv
     await page.evaluate(()=>releaseTestRequests());
     await page.waitForFunction(()=>document.querySelector('.aiang-floating-launcher').getAttribute('aria-busy')==='false');
     assert.match(await launcher.locator('img').getAttribute('src'),/AIAng\.png$/);await close();
+    await go('');
+    await page.evaluate(()=>{testExtensionContextInvalidated=true;window.dispatchEvent(new Event('resize'));});
+    const recovery=page.locator('.aiang-extension-recovery');await recovery.waitFor();
+    assert.equal(await launcher.count(),0);
+    assert.equal(await recovery.getByText('Safari 확장 연결이 갱신되었습니다.').count(),1);
+    assert.equal(await recovery.getByRole('button').textContent(),'페이지 새로고침');
+    const recoveryNavigation=page.waitForRequest(request=>request.isNavigationRequest()&&new URL(request.url()).pathname.endsWith('/tests/floating-assistant-fixture.html'));
+    await recovery.getByRole('button').click();await recoveryNavigation;await page.waitForLoadState();
     await go('');await page.locator('textarea').fill('댓글 기슬입니다.');await open();await action('improve').waitFor();
     await page.evaluate(()=>testFail=true);await action('improve').click();await requested('PROCESS_TEXT');
     await page.waitForFunction(()=>document.querySelector('.aiang-floating-launcher').getAttribute('aria-busy')==='false');
@@ -147,18 +174,36 @@ test('floating assistant switches modes, selects contextual actions, and preserv
       assert.deepEqual(states[1],states[0],`${mode} chips match with floating enabled and disabled`);
     }
 
-    await go('?mode=board');assert.deepEqual(await ids(),['read_board','chat']);await action('read_board').click();await requested('CHAT');
+    await go('?mode=board');assert.deepEqual(await ids(),['read_board','chat','refresh_board']);
+    assert.equal(await menu.locator('.aiang-floating-heading').count(),0);
+    assert.equal(await action('refresh_board').textContent(),'게시판 목록을 새로 고칩니다.');
+    await action('read_board').click();await requested('CHAT');
     assert.ok(await page.evaluate(()=>testRequests.find(r=>r.type==='CHAT').messages.some(m=>m.content.includes('우주 망원경 관측'))));await close();
+    await open();
+    const refreshNavigation = page.waitForRequest(request => request.isNavigationRequest() && new URL(request.url()).pathname === '/free');
+    await action('refresh_board').click();await refreshNavigation;await page.waitForLoadState();
     for(const [id,type] of [['spellcheck','PROCESS_TEXT'],['honorific','PROCESS_TEXT'],['improve','PROCESS_TEXT'],['decorate','PROCESS_TEXT'],['suggest_tags','SUGGEST_TAGS'],['suggest_title','SUGGEST_TITLES']]) {
       await go('?mode=write');assert.deepEqual(await ids(),['spellcheck','honorific','improve','decorate','suggest_tags','suggest_title','chat']);
       await action(id).click();await requested(type);
       assert.match(await page.locator('.tiptap').innerText(),/기슬/);
     }
+    await go('?mode=format');await action('improve').click();await requested('PROCESS_TEXT');
+    const protectedFormatText=await page.evaluate(()=>testRequests.find(r=>r.type==='PROCESS_TEXT').text);
+    assert.match(protectedFormatText,/\[\[AIANG_BLOCK_[^\]]+_START\]\]/);
+    assert.doesNotMatch(protectedFormatText,/START\]\]\[\[AIANG_BLOCK_[^\]]+_END/,'trailing empty paragraphs are restored locally, not sent to the model');
+    await page.locator('.aiang-review .aiang-primary').click();
+    const formatted=page.locator('.tiptap');
+    assert.equal(await formatted.locator('h2 strong').textContent(),'복구 흐름');
+    assert.equal(await formatted.locator('ul > li').count(),2);
+    assert.equal(await formatted.locator('li').first().textContent(),'설정 요청 기술');
+    assert.equal(await formatted.locator('li em').textContent(),'중복 요청 방지');
+    assert.equal(await formatted.locator('a').getAttribute('href'),'https://damoang.net/laboratory/write');
+    assert.equal(await formatted.locator('a').textContent(),'https://damoang.net/laboratory/write');
     await go('?media=1');await action('summarize_post').click();await requested('CAPTURE_TAB_VIEWPORT');await requested('SUMMARIZE_POST');
     assert.equal(await page.evaluate(()=>testFloatingHiddenDuringCapture),true);
     assert.equal(await launcher.evaluate(el=>getComputedStyle(el).visibility),'visible');await close();
     await go('?mode=write');await page.evaluate(()=>{history.pushState(null,'','/free');document.querySelector('main').innerHTML='<h1>목록</h1>';});
-    await page.waitForFunction(()=>document.querySelector('.aiang-floating-menu').hidden);await open();assert.deepEqual(await ids(),['read_board','chat']);
+    await page.waitForFunction(()=>document.querySelector('.aiang-floating-menu').hidden);await open();assert.deepEqual(await ids(),['read_board','chat','refresh_board']);
     // Desktop follows the content column even with a wide sidebar and layout changes.
     for(const mode of ['post','write','board']) {
       await page.setViewportSize({width:1600,height:900});await go(`?mode=${mode}`);

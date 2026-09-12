@@ -18,6 +18,9 @@ const pending = new Map();
 window.testRequests = [];
 window.testHold = false;
 window.testFail = false;
+window.testExtensionContextInvalidated = false;
+window.testSettingsFailures = Number(params.get('settingsFailures') || 0);
+window.testSettingsRequestCount = 0;
 window.releaseTestRequests = () => {
  for(const callback of pending.values()) callback({ok:true,correctedText:'교정한 문장입니다.',suggestions:[],message:'내용을 읽었습니다.',summary:'요약했습니다.',glossary:'용어 사전입니다.'});
  pending.clear();
@@ -31,9 +34,10 @@ if(mode==='board') {
  document.querySelector('article').remove(); document.querySelector('#comments').remove();
  document.querySelector('main').insertAdjacentHTML('beforeend','<a href="/free/123"><span class="post-title">우주 망원경 관측</span></a>');
  history.replaceState(null,'','/free');
-} else if(mode==='write') {
+} else if(mode==='write'||mode==='format') {
  document.querySelector('article').remove(); document.querySelector('#comments').remove();
- document.querySelector('main').insertAdjacentHTML('beforeend','<input id="title" placeholder="제목을 입력하세요" value="관측 기슬"><div class="tiptap-editor"><div class="tiptap ProseMirror" contenteditable="true"><p>새로운 관측 기슬을 소개합니다.</p></div></div><input id="tags" placeholder="태그">');
+ const editorHTML=mode==='format'?'<h2><strong>복구 흐름</strong></h2><p><a href="https://damoang.net/laboratory/write">https://damoang.net/laboratory/write</a></p><ul><li>설정 요청 기슬</li><li><em>중복 요청 방지</em></li></ul>':'<p>새로운 관측 기슬을 소개합니다.</p>';
+ document.querySelector('main').insertAdjacentHTML('beforeend',`<input id="title" placeholder="제목을 입력하세요" value="관측 기슬"><div class="tiptap-editor"><div class="tiptap ProseMirror" contenteditable="true">${editorHTML}</div></div><input id="tags" placeholder="태그">`);
  history.replaceState(null,'','/write');
 } else if(mode==='empty') {
  document.querySelector('#comments ul').remove(); document.querySelector('#comments h2').textContent='댓글 (0)';
@@ -43,8 +47,8 @@ if(params.has('media')) {
  const image=document.createElement('img');image.src=canvas.toDataURL();document.querySelector('article').append(image);
 }
 window.chrome = {
- runtime:{lastError:null,getURL:value=>'/'+value,onMessage:{addListener(){}},sendMessage(message,callback){
-  if(message.type==='GET_SETTINGS') {Promise.all([fetch('/shared/prompts.json').then(r=>r.json()),fetch('/icons/Ani/catalog.json').then(r=>r.json())]).then(([prompts,animations])=>callback({ok:true,settings:{...testSettings,prompts,animationThemes:animations.themes,animationKeywordRules:animations.keywordRules}}));return;}
+ runtime:{lastError:null,getURL(value){if(testExtensionContextInvalidated)throw new Error('Extension context invalidated.');return '/'+value;},onMessage:{addListener(){}},sendMessage(message,callback){
+  if(message.type==='GET_SETTINGS') {testSettingsRequestCount+=1;if(testSettingsFailures>0){testSettingsFailures-=1;callback({ok:false,error:'일시적인 설정 오류'});return;}Promise.all([fetch('/shared/prompts.json').then(r=>r.json()),fetch('/icons/Ani/catalog.json').then(r=>r.json())]).then(([prompts,animations])=>callback({ok:true,settings:{...testSettings,prompts,animationThemes:animations.themes,animationKeywordRules:animations.keywordRules}}));return;}
   testRequests.push(message);
   if(message.type==='CANCEL_REQUEST') {pending.get(message.requestId)?.({ok:false,error:'요청을 취소했습니다.'});pending.delete(message.requestId);callback({ok:true});return;}
   if(message.type==='CAPTURE_TAB_VIEWPORT') {
@@ -52,7 +56,14 @@ window.chrome = {
     const canvas=document.createElement('canvas');canvas.width=innerWidth;canvas.height=innerHeight;callback({ok:true,dataUrl:canvas.toDataURL()});return;
   }
   if(window.testFail){callback({ok:false,error:'테스트 오류'});return;}
-  const result = message.type==='PROCESS_TEXT' ? {correctedText:message.text.replaceAll('기슬','기술'),suggestions:[]}
+  const typoStart=message.type==='PROCESS_TEXT'?message.text.indexOf('기슬'):-1;
+  let correctedEditingText=message.type==='PROCESS_TEXT'?message.text.replaceAll('기슬','기술'):'';
+  if(mode==='format'&&message.action==='improve') {
+    correctedEditingText=correctedEditingText.replace(/(\[\[AIANG_BLOCK_[^\]]+_START\]\])/g,'\n$1\n- ').replace(/(\[\[AIANG_BLOCK_[^\]]+_END\]\])/g,'\n$1\n');
+    const endingTokens=correctedEditingText.match(/\[\[AIANG_BLOCK_[^\]]+_END\]\]/g)||[];
+    if(endingTokens.length) correctedEditingText=correctedEditingText.replace(endingTokens.at(-1),'');
+  }
+  const result = message.type==='PROCESS_TEXT' ? {correctedText:correctedEditingText,suggestions:message.action==='spellcheck'&&typoStart>=0?[{original:'기슬',replacement:'기술',start:typoStart,end:typoStart+2,reason:'오탈자'}]:[]}
     : message.type==='SUGGEST_TITLES' ? {titles:['새로운 우주 관측 기술','관측 기술의 미래']}
     : message.type==='SUGGEST_TAGS' ? {tags:['우주','관측']}
     : message.type==='SUMMARIZE_POST' ? {summary:'별의 탄생을 연구합니다.'}
