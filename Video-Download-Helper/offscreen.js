@@ -1,3 +1,7 @@
+import { FFmpeg } from "./vendor/ffmpeg/index.js";
+let converter;
+let saveResolve;
+let saveReject;
 // Headless Offscreen HLS segment Downloader & Compiler
 
 let db = null;
@@ -19,7 +23,10 @@ function log(msg, type = "info") {
 
 // Initial Listener for messaging
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  if (message.action === "triggerOffscreenDownload") {
+  if (message.action === "offscreenSaveState") {
+    if (message.state === "complete") saveResolve?.();
+    if (message.state === "interrupted") saveReject?.(new Error(message.error || "Saving interrupted"));
+  } else if (message.action === "triggerOffscreenDownload") {
     const downloadData = message.data;
     startDownload(downloadData);
     sendResponse({ success: true });
@@ -125,7 +132,12 @@ async function startDownload(data) {
     currentDownload = {
       id: data.id,
       url: data.url,
+      type: data.type,
+      playlists: new Map(),
+      assetNames: new Map(),
       filename: data.filename,
+      headerHosts: new Map(),
+      abortController: new AbortController(),
       concurrency: 5, // Default concurrency
       referer: data.referer,
       origin: data.origin,
@@ -150,9 +162,13 @@ async function startDownload(data) {
 
     // 2. Fetch and Parse
     log("Fetching index playlist...", "info");
-    const playlistText = await fetchWithHeaders(currentDownload.url);
+    if (data.type !== "m3u8") {
+      currentDownload.inputName = "input.media";
+      currentDownload.segments.push({ index: 0, name: "input.media", url: data.url, status: "pending", retryCount: 0 });
+    }
+    const playlistText = data.type === "m3u8" ? await fetchWithHeaders(currentDownload.url) : null;
     log("Parsing playlist manifest...", "info");
-    await parsePlaylist(playlistText, currentDownload.url);
+    if (playlistText !== null) currentDownload.inputName = await parsePlaylist(playlistText, currentDownload.url);
 
     if (currentDownload.segments.length === 0) {
       throw new Error("No media segments found in the playlist.");
@@ -175,30 +191,34 @@ async function startDownload(data) {
 }
 
 // Setup DNR rules via Background service worker
-async function setupDNRRules() {
+async function setupDNRRules(targetUrl = currentDownload.url) {
   if (!currentDownload.referer && !currentDownload.origin) return;
 
-  const urlObj = new URL(currentDownload.url);
+  const urlObj = new URL(targetUrl);
+  if (currentDownload.headerHosts.has(urlObj.origin)) return currentDownload.headerHosts.get(urlObj.origin);
+  const ruleId = currentDownload.ruleId + currentDownload.headerHosts.size;
   const filter = `${urlObj.protocol}//${urlObj.hostname}/*`;
   const headers = {};
   if (currentDownload.referer) headers["Referer"] = currentDownload.referer;
-  if (currentDownload.origin) headers["Origin"] = currentDownload.origin;
+  if (currentDownload.origin) { try { headers["Origin"] = new URL(currentDownload.origin).origin; } catch {} }
 
   log(`Registering custom headers (Referer/Origin) for: ${urlObj.hostname}`, "system");
 
-  return new Promise((resolve) => {
+  const registration = new Promise((resolve, reject) => {
     chrome.runtime.sendMessage({
       action: "setDNRRules",
       data: {
-        ruleId: currentDownload.ruleId,
+        ruleId,
         urlFilter: filter,
         headers: headers
       }
     }, (res) => {
-      if (res && res.success) log("Session headers injected.", "success");
-      resolve();
+      if (res?.success) resolve();
+      else reject(new Error(res?.error || "Could not set download headers"));
     });
   });
+  currentDownload.headerHosts.set(urlObj.origin, registration);
+  return registration;
 }
 
 // Clear DNR rules from Background
@@ -207,141 +227,102 @@ async function removeDNRRules() {
   return new Promise((resolve) => {
     chrome.runtime.sendMessage({
       action: "clearDNRRules",
-      data: { ruleIds: [currentDownload.ruleId] }
+      data: { ruleIds: Array.from(currentDownload.headerHosts.keys(), (_, index) => currentDownload.ruleId + index) }
     }, () => resolve());
   });
 }
 
 // Fetch Helper
-async function fetchWithHeaders(targetUrl, responseType = "text") {
-  const options = { method: "GET", cache: "no-cache" };
+async function fetchWithHeaders(targetUrl, responseType = "text", range = null) {
+  await setupDNRRules(targetUrl);
+  const options = { signal: currentDownload.abortController.signal, method: "GET", cache: "no-cache", credentials: "include", headers: range ? { Range: `bytes=${range.start}-${range.end}` } : {} };
   const response = await fetch(targetUrl, options);
   if (!response.ok) throw new Error(`HTTP ${response.status}: ${response.statusText}`);
   
-  if (responseType === "arraybuffer") return await response.arrayBuffer();
+  if (responseType === "arraybuffer") {
+    const buffer = await response.arrayBuffer();
+    if (range && response.status === 200) return buffer.slice(range.start, range.end + 1);
+    return buffer;
+  }
   return await response.text();
 }
 
 // Parse Playlist
-async function parsePlaylist(text, parentUrl) {
-  const lines = text.split("\n");
-  const baseUrl = parentUrl.substring(0, parentUrl.lastIndexOf("/") + 1);
-  
-  let isMasterPlaylist = false;
-  let maxBandwidthUrl = "";
-  let maxBandwidth = 0;
-
-  let keyUrl = "";
-  let aesMethod = null;
-  let ivHex = "";
-
+function attributes(line) {
+  const result = {};
+  for (const match of line.matchAll(/([A-Z0-9-]+)=("[^"]*"|[^,]*)/g)) result[match[1]] = match[2].replace(/^"|"$/g, "");
+  return result;
+}
+function asset(url, range) {
+  const key = url + JSON.stringify(range || null);
+  if (currentDownload.assetNames.has(key)) return currentDownload.assetNames.get(key);
+  const index = currentDownload.segments.length;
+  const name = `asset${index}.bin`;
+  currentDownload.assetNames.set(key, name);
+  currentDownload.segments.push({ index, name, url, range, status: "pending", retryCount: 0 });
+  return name;
+}
+async function parsePlaylist(text, parentUrl, depth = 0) {
+  if (depth > 5) throw new Error("Too many nested playlists");
+  if (!text.trimStart().startsWith("#EXTM3U")) throw new Error("Invalid HLS playlist");
+  const lines = text.split(/\r?\n/).map(line => line.trim());
+  const variants = [];
   for (let i = 0; i < lines.length; i++) {
-    const line = lines[i].trim();
+    if (lines[i].startsWith('#EXT-X-STREAM-INF:')) {
+      const attrs = attributes(lines[i]);
+      const uri = lines.slice(i + 1).find(line => line && !line.startsWith('#'));
+      if (uri) variants.push({ attrs, url: new URL(uri, parentUrl).href });
+    }
+  }
+  if (variants.length) {
+    variants.sort((a, b) => Number(b.attrs.BANDWIDTH || 0) - Number(a.attrs.BANDWIDTH || 0));
+    const selected = variants[0];
+    const video = await parsePlaylist(await fetchWithHeaders(selected.url), selected.url, depth + 1);
+    const audioAttrs = lines.filter(line => line.startsWith('#EXT-X-MEDIA:')).map(attributes)
+      .filter(a => a.TYPE === 'AUDIO' && a['GROUP-ID'] === selected.attrs.AUDIO && a.URI)
+      .sort((a, b) => Number(b.DEFAULT === 'YES') - Number(a.DEFAULT === 'YES'))[0];
+    if (!audioAttrs) return video;
+    const audioUrl = new URL(audioAttrs.URI, parentUrl).href;
+    const audio = await parsePlaylist(await fetchWithHeaders(audioUrl), audioUrl, depth + 1);
+    const name = `master${depth}.m3u8`;
+    currentDownload.playlists.set(name, `#EXTM3U\n#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="audio",NAME="Audio",DEFAULT=YES,AUTOSELECT=YES,URI="${audio}"\n#EXT-X-STREAM-INF:BANDWIDTH=${selected.attrs.BANDWIDTH || 1000000},AUDIO="audio"\n${video}\n`);
+    return name;
+  }
+  if (!lines.includes('#EXT-X-ENDLIST')) throw new Error("Live streams are not yet supported. Select a completed video.");
+  const name = `playlist${currentDownload.playlists.size}.m3u8`;
+  // Reserve the name before descending into other playlists.
+  currentDownload.playlists.set(name, '');
+  const rewritten = [];
+  let range = null;
+  const ends = new Map();
+  function byteRange(value, url) {
+    const [length, offset] = value.split('@').map(Number);
+    const start = offset ?? ends.get(url);
+    if (!Number.isSafeInteger(length) || length <= 0 || !Number.isSafeInteger(start)) throw new Error('Invalid HLS byte range');
+    ends.set(url, start + length);
+    return { start, end: start + length - 1 };
+  }
+  for (let line of lines) {
     if (!line) continue;
-
-    if (line.startsWith("#EXT-X-STREAM-INF")) {
-      isMasterPlaylist = true;
-      const bandwidthMatch = line.match(/BANDWIDTH=(\d+)/i);
-      const bandwidth = bandwidthMatch ? parseInt(bandwidthMatch[1], 10) : 0;
-      
-      let nextLineUrl = lines[i + 1] ? lines[i + 1].trim() : "";
-      if (nextLineUrl && !nextLineUrl.startsWith("#")) {
-        const absoluteSubUrl = makeAbsoluteUrl(nextLineUrl, baseUrl);
-        if (bandwidth > maxBandwidth) {
-          maxBandwidth = bandwidth;
-          maxBandwidthUrl = absoluteSubUrl;
-        }
+    if (line.startsWith('#EXT-X-BYTERANGE:')) { range = line.split(':')[1]; continue; }
+    if (line.startsWith('#EXT-X-KEY:') || line.startsWith('#EXT-X-MAP:')) {
+      const attrs = attributes(line);
+      if (line.startsWith('#EXT-X-KEY:') && attrs.METHOD !== 'NONE' &&
+        (attrs.METHOD !== 'AES-128' || (attrs.KEYFORMAT && attrs.KEYFORMAT !== 'identity'))) throw new Error('Protected or unsupported encrypted stream');
+      if (attrs.URI) {
+        const url = new URL(attrs.URI, parentUrl).href;
+        const local = asset(url, attrs.BYTERANGE ? byteRange(attrs.BYTERANGE, url) : null);
+        line = line.replace(/URI="[^"]*"/, `URI="${local}"`).replace(/,BYTERANGE="[^"]*"/, '');
       }
+    } else if (!line.startsWith('#')) {
+      const url = new URL(line, parentUrl).href;
+      line = asset(url, range ? byteRange(range, url) : null);
+      range = null;
     }
-
-    if (line.startsWith("#EXT-X-KEY")) {
-      const methodMatch = line.match(/METHOD=([^,\s]+)/i);
-      const uriMatch = line.match(/URI="([^"]+)"/i);
-      const ivMatch = line.match(/IV=0x([0-9a-fA-F]+)/i);
-
-      if (methodMatch) aesMethod = methodMatch[1].toUpperCase();
-      if (uriMatch) keyUrl = makeAbsoluteUrl(uriMatch[1], baseUrl);
-      if (ivMatch) ivHex = ivMatch[1];
-    }
-
-    if (line.startsWith("#EXTINF")) {
-      let nextLineUrl = lines[i + 1] ? lines[i + 1].trim() : "";
-      let offset = 1;
-      while (nextLineUrl.startsWith("#") && i + 1 + offset < lines.length) {
-        offset++;
-        nextLineUrl = lines[i + 1 + offset] ? lines[i + 1 + offset].trim() : "";
-      }
-      
-      if (nextLineUrl && !nextLineUrl.startsWith("#")) {
-        currentDownload.segments.push({
-          index: currentDownload.segments.length,
-          url: makeAbsoluteUrl(nextLineUrl, baseUrl),
-          status: "pending",
-          retryCount: 0
-        });
-      }
-    }
+    rewritten.push(line);
   }
-
-  if (isMasterPlaylist && maxBandwidthUrl) {
-    log(`Master stream redirection. Selecting high bandwidth: ${maxBandwidth} Bps`, "info");
-    const childText = await fetchWithHeaders(maxBandwidthUrl);
-    return await parsePlaylist(childText, maxBandwidthUrl);
-  }
-
-  if (aesMethod && aesMethod !== "NONE") {
-    if (aesMethod === "AES-128" && keyUrl) {
-      log("Decryption required. Importing AES-128 Key...", "warning");
-      const keyBuffer = await fetchWithHeaders(keyUrl, "arraybuffer");
-      currentDownload.aesMethod = aesMethod;
-      currentDownload.decryptionKey = await crypto.subtle.importKey(
-        "raw", keyBuffer, { name: "AES-CBC" }, false, ["decrypt"]
-      );
-      if (ivHex) currentDownload.iv = hexToUint8Array(ivHex);
-      log("AES key imported successfully.", "success");
-    } else {
-      throw new Error(`Unsupported stream decryption method: ${aesMethod}`);
-    }
-  }
-}
-
-function makeAbsoluteUrl(path, baseUrl) {
-  if (path.startsWith("http://") || path.startsWith("https://")) return path;
-  if (path.startsWith("/")) {
-    const urlObj = new URL(baseUrl);
-    return `${urlObj.origin}${path}`;
-  }
-  return `${baseUrl}${path}`;
-}
-
-function hexToUint8Array(hex) {
-  const cleanHex = hex.length % 2 !== 0 ? `0${hex}` : hex;
-  const arr = new Uint8Array(cleanHex.length / 2);
-  for (let i = 0; i < arr.length; i++) {
-    arr[i] = parseInt(cleanHex.substr(i * 2, 2), 16);
-  }
-  return arr;
-}
-
-function getSequenceIV(sequence) {
-  const iv = new Uint8Array(16);
-  const view = new DataView(iv.buffer);
-  view.setUint32(12, sequence);
-  return iv;
-}
-
-async function decryptSegment(encryptedBuffer, seqNumber) {
-  if (!currentDownload.decryptionKey) return encryptedBuffer;
-  const iv = currentDownload.iv || getSequenceIV(seqNumber);
-  try {
-    return await crypto.subtle.decrypt(
-      { name: "AES-CBC", iv: iv },
-      currentDownload.decryptionKey,
-      encryptedBuffer
-    );
-  } catch (e) {
-    throw new Error(`Decryption failed on segment #${seqNumber}: ${e.message}`);
-  }
+  currentDownload.playlists.set(name, rewritten.join('\n') + '\n');
+  return name;
 }
 
 // Queue
@@ -359,10 +340,8 @@ function fillQueue() {
     if (currentDownload.activeThreads === 0 && currentDownload.status === "downloading") {
       const failedCount = currentDownload.segments.filter(s => s.status === "failed").length;
       if (failedCount > 0) {
-        currentDownload.status = "waiting_decision";
-        currentDownload.failedCount = failedCount;
-        log(`[warning] ${failedCount} segments failed. Waiting for user decision to skip and compile or cancel...`, "warning");
-        sendStatusUpdate({ failedCount: failedCount });
+        log(`${failedCount} assets failed. MP4 requires a complete stream. Retry the download.`, "error");
+        cleanUpDownload("failed");
       } else {
         currentDownload.status = "compiling";
         compileSegments();
@@ -375,6 +354,7 @@ function fillQueue() {
   currentDownload.activeThreads++;
   
   downloadSegment(nextSegment).then(() => {
+    if (!currentDownload || currentDownload.isCancelled) return;
     currentDownload.activeThreads--;
     fillQueue();
   });
@@ -387,12 +367,10 @@ function fillQueue() {
 async function downloadSegment(segment) {
   const segmentKey = `${currentDownload.id}_${segment.index}`;
   try {
-    const rawBuffer = await fetchWithHeaders(segment.url, "arraybuffer");
+    const rawBuffer = await fetchWithHeaders(segment.url, "arraybuffer", segment.range);
     let processedBuffer = rawBuffer;
 
-    if (currentDownload.aesMethod) {
-      processedBuffer = await decryptSegment(rawBuffer, segment.index);
-    }
+    if (!currentDownload || currentDownload.isCancelled) return;
 
     await saveSegmentToDB(segmentKey, processedBuffer);
 
@@ -404,6 +382,7 @@ async function downloadSegment(segment) {
     sendStatusUpdate();
 
   } catch (err) {
+    if (!currentDownload || currentDownload.isCancelled) return;
     log(`Failed segment #${segment.index} (Attempt ${segment.retryCount + 1}): ${err.message}`, "warning");
     if (segment.retryCount < 3) {
       segment.status = "pending";
@@ -455,70 +434,64 @@ function startSpeedTracker() {
 
 // Merge & Finalize file stream
 async function compileSegments(skipFailed = false) {
-  log("All segments buffered. Initializing sequential compilation...", "success");
-  clearInterval(currentDownload.speedTimer);
-  
-  const total = currentDownload.segments.length;
-  const chunkList = [];
-
+  // Missing assets cannot be safely joined, especially keys and init segments.
+  if (skipFailed) { log("Incomplete streams cannot be converted safely. Retry the download.", "error"); await cleanUpDownload("failed"); return; }
+  currentDownload.status = "compiling";
+  sendStatusUpdate();
+  let blobUrl;
   try {
-    for (let i = 0; i < total; i++) {
-      const segmentKey = `${currentDownload.id}_${i}`;
-      const buffer = await getSegmentFromDB(segmentKey);
-      if (!buffer) {
-        if (skipFailed) {
-          log(`Missing segment #${i} due to download failure. Skipping this chunk.`, "warning");
-          continue;
-        }
-        throw new Error(`Missing buffer block #${i}`);
-      }
-      chunkList.push(buffer);
-
-      if (i % 50 === 0 || i === total - 1) {
-        log(`Compiling chunks: ${i + 1} / ${total}`, "info");
-      }
+    log("Loading local MP4 converter...", "info");
+    converter = new FFmpeg();
+    await converter.load({ coreURL: chrome.runtime.getURL("vendor/ffmpeg/ffmpeg-core.js"),
+      wasmURL: chrome.runtime.getURL("vendor/ffmpeg/ffmpeg-core.wasm") });
+    for (const segment of currentDownload.segments) {
+      const buffer = await getSegmentFromDB(`${currentDownload.id}_${segment.index}`);
+      if (!buffer) throw new Error(`Missing segment ${segment.index}`);
+      await converter.writeFile(segment.name, new Uint8Array(buffer));
     }
-
-    log("Creating unified local Blob...", "info");
-    const outputBlob = new Blob(chunkList, { type: "video/mp2t" });
-    const localBlobUrl = URL.createObjectURL(outputBlob);
-
-    log("Unified local Blob created. Requesting Downloads API to Service Worker...", "info");
-    
-    await new Promise((resolve, reject) => {
-      chrome.runtime.sendMessage({
-        action: "triggerDownloadsApi",
-        data: {
-          url: localBlobUrl,
-          filename: currentDownload.filename
-        }
-      }, (response) => {
-        if (response && response.success) {
-          log("Download trigger acknowledged by Service Worker. Initiating save...", "success");
-          // Hold the offscreen context alive for 8 seconds to prevent Blob URL revocation
-          setTimeout(() => {
-            log("Pipeline complete. File saved.", "success");
-            resolve();
-          }, 8000);
-        } else {
-          reject(new Error(response ? response.error : "Unknown downloads error"));
-        }
-      });
-    });
-
-    cleanUpDownload("completed");
-
+    for (const [name, text] of currentDownload.playlists) await converter.writeFile(name, text);
+    const input = currentDownload.type === 'm3u8'
+      ? ['-allowed_extensions', 'ALL', '-protocol_whitelist', 'file,crypto,data', '-i', currentDownload.inputName]
+      : ['-i', currentDownload.inputName];
+    const base = [...input, '-map', '0:v:0', '-map', '0:a:0?', '-sn', '-dn'];
+    log("Remuxing video and audio into MP4...", "info");
+    let code = await converter.exec([...base, '-c', 'copy', '-movflags', '+faststart', '-y', 'output.mp4']);
+    if (code !== 0) {
+      log("Converting codecs to H.264 / AAC... This may take several minutes.", "warning");
+      code = await converter.exec([...base, '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '23',
+        '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-movflags', '+faststart', '-y', 'output.mp4']);
+    }
+    if (code !== 0) throw new Error('MP4 conversion failed. Unsupported media or insufficient memory.');
+    const output = await converter.readFile('output.mp4');
+    if (!output.byteLength) throw new Error('Empty MP4 output');
+    blobUrl = URL.createObjectURL(new Blob([output], { type: 'video/mp4' }));
+    converter.terminate(); converter = null;
+    currentDownload.status = 'saving';
+    log('MP4 ready. Choose where to save the file.', 'success');
+    const saved = new Promise((resolve, reject) => { saveResolve = resolve; saveReject = reject; });
+    // Register completion listener before asking Chrome to save.
+    saved.catch(() => {});
+    const response = await chrome.runtime.sendMessage({ action: 'triggerDownloadsApi',
+      data: { url: blobUrl, filename: currentDownload.filename } });
+    if (!response?.success) throw new Error(response?.error || 'Could not start save');
+    await saved;
+    log('MP4 file saved.', 'success');
+    await cleanUpDownload('completed');
   } catch (err) {
-    log(`Compilation crash: ${err.message}`, "error");
-    cleanUpDownload("failed");
+    if (currentDownload) { log(`MP4 conversion/save failed: ${err.message}`, 'error'); await cleanUpDownload('failed'); }
+  } finally {
+    if (blobUrl) URL.revokeObjectURL(blobUrl);
+    converter?.terminate(); converter = null;
+    saveResolve = saveReject = null;
   }
 }
 
 // Controls
 function pauseDownload() {
-  if (!currentDownload || currentDownload.isPaused) return;
+  if (!currentDownload || currentDownload.isPaused || currentDownload.status !== "downloading") return;
   currentDownload.isPaused = true;
   currentDownload.status = "paused";
+  sendStatusUpdate();
   log("Downloading process paused.", "warning");
 }
 
@@ -532,6 +505,9 @@ function resumeDownload() {
 
 function cancelDownload() {
   if (!currentDownload) return;
+  currentDownload.abortController.abort();
+  converter?.terminate();
+  saveReject?.(new Error("Cancelled"));
   currentDownload.isCancelled = true;
   currentDownload.status = "cancelled";
   log("Downloading process cancelled by user.", "error");
@@ -540,11 +516,14 @@ function cancelDownload() {
 
 async function cleanUpDownload(finalStatus) {
   if (currentDownload) {
+    currentDownload.abortController.abort();
     clearInterval(currentDownload.speedTimer);
     await removeDNRRules();
     log("Purging temp buffer cache from database...", "info");
     await clearSegmentsFromDB(currentDownload.id);
   }
+
+  if (currentDownload) { currentDownload.status = finalStatus; sendStatusUpdate(); }
 
   // Report final results back to service worker
   chrome.runtime.sendMessage({

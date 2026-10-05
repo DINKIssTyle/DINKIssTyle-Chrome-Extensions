@@ -2,8 +2,13 @@
 // Media detector background script with Offscreen Downloader orchestrator
 
 const detectedMedia = {};
-const mediaMetadataStore = {}; // Stores { videoUrl: { title, thumbnail, pageUrl, resolution, duration } }
+const metadataByTab = {};
+let mediaMetadataStore = {}; // Stores { videoUrl: { title, thumbnail, pageUrl, resolution, duration } }
 let activeDownload = null; // Stores current download progress state
+const downloadStateReady = chrome.storage.session.get("activeDownload").then(stored => {
+  activeDownload = stored.activeDownload || null;
+});
+function persistDownload() { chrome.storage.session.set({ activeDownload }).catch(() => {}); }
 let offscreenCreating = null; // Promisified offscreen status
 
 // Listen for response headers to detect video/audio/m3u8 files
@@ -13,15 +18,9 @@ chrome.webRequest.onHeadersReceived.addListener(
 
     const url = details.url;
     
-    // Skip range chunks / fragments to prevent duplicate smaller files
-    const contentRangeHeader = details.responseHeaders.find(
-      (h) => h.name.toLowerCase() === "content-range"
-    );
-    if (contentRangeHeader) {
-      return;
-    }
-
-    const contentTypeHeader = details.responseHeaders.find(
+    const responseHeaders = details.responseHeaders || [];
+    const contentRangeHeader = responseHeaders.find(h => h.name.toLowerCase() === "content-range");
+    const contentTypeHeader = responseHeaders.find(
       (h) => h.name.toLowerCase() === "content-type"
     );
     const contentType = contentTypeHeader ? contentTypeHeader.value.toLowerCase() : "";
@@ -42,6 +41,8 @@ chrome.webRequest.onHeadersReceived.addListener(
       isMedia = true;
       type = "audio";
     }
+
+    if (contentType.includes("mpegurl")) { type = "m3u8"; extension = "m3u8"; }
 
     // 2. Check URL extension
     const urlObj = new URL(url);
@@ -78,7 +79,7 @@ chrome.webRequest.onHeadersReceived.addListener(
     }
 
     // Skip individual segments
-    if (pathname.includes(".ts") && !pathname.endsWith(".m3u8")) {
+    if (/\.(ts|m4s|aac|vtt|key)$/.test(pathname)) {
       return;
     }
 
@@ -94,21 +95,23 @@ chrome.webRequest.onHeadersReceived.addListener(
         try { filename = decodeURIComponent(filename); } catch (e) {}
 
         // Match metadata fetched by Content Script
+        mediaMetadataStore = metadataByTab[details.tabId] || {};
         const matchedMeta = findMetadataMatch(url, details.initiator);
         
         // Try to extract resolution directly from URL first
         const urlResolution = extractResolutionFromUrl(url);
 
         // Find content-length header
-        const contentLengthHeader = details.responseHeaders.find(
+        const contentLengthHeader = responseHeaders.find(
           (h) => h.name.toLowerCase() === "content-length"
         );
-        const size = contentLengthHeader ? parseInt(contentLengthHeader.value, 10) : null;
+        const rangeTotal = contentRangeHeader?.value?.match(/\/(\d+)$/);
+        const size = rangeTotal ? Number(rangeTotal[1]) : contentLengthHeader ? parseInt(contentLengthHeader.value, 10) : null;
 
         const mediaItem = {
           url: url,
           type: type,
-          extension: extension || contentType.split("/")[1] || "unknown",
+          extension: extension || contentType.split(";")[0].split("/")[1] || "unknown",
           filename: matchedMeta ? matchedMeta.title : filename,
           thumbnail: matchedMeta ? matchedMeta.thumbnail : null,
           contentType: contentType,
@@ -188,12 +191,14 @@ function findMetadataMatch(mediaUrl, initiator) {
 chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
   if (changeInfo.status === "loading") {
     detectedMedia[tabId] = [];
+    delete metadataByTab[tabId];
     updateBadge(tabId);
   }
 });
 
 chrome.tabs.onRemoved.addListener((tabId) => {
   delete detectedMedia[tabId];
+  delete metadataByTab[tabId];
 });
 
 function updateBadge(tabId) {
@@ -210,13 +215,40 @@ function updateBadge(tabId) {
 
 // Handle all Extension runtime messages
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message.action === "discoveredMedia" && sender.tab) {
+    const data = message.data;
+    let url;
+    try { url = new URL(data.url); } catch { return; }
+    if (!["http:", "https:"].includes(url.protocol)) return;
+    const list = detectedMedia[sender.tab.id] ||= [];
+    const existing = list.find(item => item.url === url.href);
+    const item = { url: url.href, type: data.type, extension: data.extension,
+      filename: data.title || "Web Video", thumbnail: data.thumbnail || null,
+      originUrl: sender.url, resolution: data.resolution, duration: data.duration,
+      detectedAt: Date.now(), source: data.source };
+    if (existing) Object.assign(existing, Object.fromEntries(Object.entries(item).filter(([key, value]) => value != null && key !== "detectedAt")));
+    else if (list.length < 500) list.push(item);
+    updateBadge(sender.tab.id);
+    sendResponse({ success: true });
+    return;
+  }
+  if (message.action === "rescanTab") {
+    chrome.webNavigation.getAllFrames({ tabId: message.tabId }).then(frames =>
+      Promise.allSettled(frames.map(frame => chrome.tabs.sendMessage(message.tabId,
+        { action: "rescanMedia" }, { frameId: frame.frameId }))))
+      .then(results => sendResponse({ success: results.some(result => result.status === "fulfilled") }))
+      .catch(() => sendResponse({ success: false }));
+    return true;
+  }
   // 1. Content Script metadata parser reports
   if (message.action === "mediaMetadata") {
     const { videoUrl, title, thumbnail, pageUrl, resolution, duration } = message.data;
+    if (!sender.tab) return;
+    mediaMetadataStore = metadataByTab[sender.tab.id] ||= {};
     mediaMetadataStore[videoUrl] = { title, thumbnail, pageUrl, resolution, duration };
     
     // Update existing detectedMedia entries with new metadata
-    for (let tabId in detectedMedia) {
+    for (let tabId of [sender.tab.id]) {
       const list = detectedMedia[tabId];
       if (list) {
         // Match exact url, or youtube generic if applicable
@@ -261,7 +293,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         id: ruleId,
         priority: 1,
         action: { type: "modifyHeaders", requestHeaders },
-        condition: { urlFilter, resourceTypes: ["xmlhttprequest", "media", "sub_frame"] }
+        condition: { urlFilter, initiatorDomains: [chrome.runtime.id], resourceTypes: ["xmlhttprequest", "media", "sub_frame"] }
       }],
       removeRuleIds: [ruleId]
     }).then(() => {
@@ -289,9 +321,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       filename: filename,
       saveAs: true
     }, (downloadId) => {
-      if (chrome.downloads.lastError) {
-        sendResponse({ success: false, error: chrome.downloads.lastError.message });
+      if (chrome.runtime.lastError) {
+        sendResponse({ success: false, error: chrome.runtime.lastError.message });
       } else {
+        if (activeDownload) { activeDownload.downloadId = downloadId; persistDownload(); }
         sendResponse({ success: true, downloadId: downloadId });
       }
     });
@@ -302,26 +335,17 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   else if (message.action === "startHlsDownload") {
     const downloadData = message.data;
     
-    // Sanitize filename to swap .m3u/.m3u8 with .ts
-    let finalFilename = downloadData.filename || "downloaded_video.ts";
-    finalFilename = finalFilename.split("?")[0].split("#")[0];
-    
-    if (finalFilename.toLowerCase().endsWith(".m3u8")) {
-      finalFilename = finalFilename.slice(0, -5) + ".ts";
-    } else if (finalFilename.toLowerCase().endsWith(".m3u")) {
-      finalFilename = finalFilename.slice(0, -4) + ".ts";
-    } else if (!finalFilename.toLowerCase().endsWith(".ts")) {
-      finalFilename = finalFilename + ".ts";
+    if (activeDownload && !["completed", "failed", "cancelled"].includes(activeDownload.status)) {
+      sendResponse({ success: false, error: "다른 다운로드가 진행 중입니다." });
+      return;
     }
-    
-    // Replace invalid file naming characters
-    finalFilename = finalFilename.replace(/[\/\\?%*:|"<>\s]+/g, "_");
-
+    const finalFilename = mp4Filename(downloadData.filename);
     setupOffscreenDocument().then(() => {
       activeDownload = {
         id: Date.now().toString(),
         url: downloadData.url,
         filename: finalFilename,
+        type: downloadData.type || "m3u8",
         referer: downloadData.referer || "",
         origin: downloadData.origin || "",
         status: "initializing",
@@ -333,6 +357,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         logs: ["[System] Offscreen downloader thread spawned."]
       };
       
+      persistDownload();
       // Send download trigger to Offscreen
       chrome.runtime.sendMessage({
         action: "triggerOffscreenDownload",
@@ -349,11 +374,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   // 7. Offscreen broadcasts progress reports
   else if (message.action === "offscreenProgressUpdate") {
     if (activeDownload) {
-      activeDownload = { ...activeDownload, ...message.data };
+      activeDownload = { ...activeDownload, ...message.data, logs: [...(activeDownload.logs || []), ...(message.data.logs || [])].slice(-300) };
+      persistDownload();
       // Forward status to active Popup if it is currently open
       chrome.runtime.sendMessage({
         action: "popupProgressBroadcast",
-        data: activeDownload
+        data: { ...activeDownload, logs: message.data.logs || [] }
       }).catch(() => {
         // Suppress errors when popup is closed (normal browser behavior)
       });
@@ -363,7 +389,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
   // 8. Popup queries current downloading state
   else if (message.action === "getDownloadStatus") {
-    sendResponse({ activeDownload });
+    downloadStateReady.then(() => sendResponse({ activeDownload }));
+    return true;
   }
 
   // 9. Popup control actions (Pause/Resume/Cancel) forwarders
@@ -381,6 +408,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     chrome.runtime.sendMessage({ action: "offscreenCancel" });
     closeOffscreenDocument().then(() => {
       activeDownload = null;
+      persistDownload();
       sendResponse({ success: true });
     });
     return true;
@@ -396,10 +424,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     const finalStatus = message.status;
     if (activeDownload) {
       activeDownload.status = finalStatus;
+      persistDownload();
     }
-    closeOffscreenDocument().then(() => {
-      activeDownload = null;
-    });
+    closeOffscreenDocument();
     sendResponse({ success: true });
   }
 });
@@ -425,12 +452,11 @@ async function setupOffscreenDocument() {
 
   offscreenCreating = chrome.offscreen.createDocument({
     url: offscreenUrl,
-    reasons: ["LOCAL_STORAGE"], // Accessing IndexedDB counts as local storage reason
+    reasons: ["LOCAL_STORAGE", "BLOBS", "WORKERS"], // Accessing IndexedDB counts as local storage reason
     justification: "HLS segment buffering and file concatenation in background"
   });
 
-  await offscreenCreating;
-  offscreenCreating = null;
+  try { await offscreenCreating; } finally { offscreenCreating = null; }
 }
 
 // Helper: Close Offscreen Document
@@ -447,7 +473,8 @@ async function closeOffscreenDocument() {
 }
 
 // Asynchronously analyze m3u8 playlist manifest to extract resolution, duration, and size
-async function analyzeM3U8(url, originUrl) {
+async function analyzeM3U8(url, originUrl, depth = 0) {
+  if (depth > 5) return null;
   try {
     const headers = {};
     if (originUrl) {
@@ -458,7 +485,7 @@ async function analyzeM3U8(url, originUrl) {
         headers["Origin"] = originUrl;
       }
     }
-    const response = await fetch(url, { headers, cache: "no-cache" });
+    const response = await fetch(url, { headers, cache: "no-cache", credentials: "include" });
     if (!response.ok) return null;
     const text = await response.text();
     
@@ -504,7 +531,7 @@ async function analyzeM3U8(url, originUrl) {
     }
     
     if (isMaster && maxBandwidthUrl) {
-      const subRes = await analyzeM3U8(maxBandwidthUrl, originUrl);
+      const subRes = await analyzeM3U8(maxBandwidthUrl, originUrl, depth + 1);
       if (subRes) {
         return {
           resolution: resolutions.length > 0 ? resolutions[resolutions.length - 1] : subRes.resolution,
@@ -547,3 +574,14 @@ function extractResolutionFromUrl(url) {
   
   return null;
 }
+
+function mp4Filename(name = "video") {
+  const stem = name.split(/[?#]/)[0].replace(/\.(m3u8?|mp4|webm|og[gv]|mov|mkv|ts|m4v)$/i, "");
+  return (stem.replace(/[\/\\?%*:|"<>\x00-\x1f]/g, "_").trim().slice(0, 180) || "video") + ".mp4";
+}
+function makeAbsoluteUrl(path, base) { return new URL(path, base).href; }
+chrome.downloads.onChanged.addListener(delta => {
+  if (activeDownload?.downloadId !== delta.id || !delta.state) return;
+  chrome.runtime.sendMessage({ action: "offscreenSaveState", state: delta.state.current,
+    error: delta.error?.current }).catch(() => {});
+});

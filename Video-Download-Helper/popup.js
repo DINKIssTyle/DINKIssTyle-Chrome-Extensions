@@ -6,6 +6,15 @@ document.addEventListener("DOMContentLoaded", async () => {
   const clearAllBtn = document.getElementById("clear-all-btn");
   const statusText = document.getElementById("status-text");
 
+  const rescanBtn = document.getElementById("rescan-btn");
+  rescanBtn.addEventListener("click", () => {
+    chrome.runtime.sendMessage({ action: "rescanTab", tabId }, response => {
+      showStatus(response?.success ? "페이지를 다시 탐색합니다" : "페이지를 새로고침한 뒤 다시 시도하세요");
+    });
+  });
+  function escapeHTML(value) {
+    return String(value ?? "").replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]));
+  }
   // Progress Elements
   const targetTitle = document.getElementById("target-title");
   const targetUrlLabel = document.getElementById("target-url-label");
@@ -52,7 +61,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   // 1. Initial State Check (Sync with Background)
   chrome.runtime.sendMessage({ action: "getDownloadStatus" }, (response) => {
-    if (response && response.activeDownload) {
+    if (response && response.activeDownload && !["completed", "failed", "cancelled"].includes(response.activeDownload.status)) {
       const state = response.activeDownload;
       showProgressView(state);
       // Re-populate historical logs
@@ -106,45 +115,9 @@ document.addEventListener("DOMContentLoaded", async () => {
     if (tabId) {
       chrome.runtime.sendMessage({ action: "getMediaList", tabId: tabId }, (response) => {
         if (!chrome.runtime.lastError && response && response.mediaList) {
-          const mediaList = response.mediaList;
-          const groupA = mediaList.filter(item => item.duration && item.resolution && item.size);
-          const groupB = mediaList.filter(item => (item.duration || item.resolution || item.size) && !(item.duration && item.resolution && item.size));
-          const groupC = mediaList.filter(item => !(item.duration || item.resolution || item.size));
-          
-          let expectedList = [];
-          if (groupA.length > 0) {
-            expectedList = showAll ? [...groupA, ...groupB, ...groupC] : groupA;
-          } else if (groupB.length > 0) {
-            expectedList = showAll ? [...groupB, ...groupC] : groupB;
-          } else {
-            expectedList = groupC;
-          }
-
-          // Only update if metadata changed to prevent flickering
-          const currentCards = mediaListView.querySelectorAll(".media-card");
-          if (currentCards.length === expectedList.length) {
-            expectedList.forEach((item, index) => {
-              const card = currentCards[index];
-              if (card) {
-                const metaContainer = card.querySelector(".media-meta");
-                if (metaContainer) {
-                  let metaBadges = `
-                    <span class="meta-badge ${item.type}-badge">${item.type}</span>
-                  `;
-                  if (item.extension && item.extension.toLowerCase() !== item.type.toLowerCase()) {
-                    metaBadges += `<span class="meta-badge">${item.extension}</span>`;
-                  }
-                  if (item.resolution) metaBadges += `<span class="meta-badge res-badge">${item.resolution}</span>`;
-                  if (item.duration) metaBadges += `<span class="meta-badge duration-badge">${formatDuration(item.duration)}</span>`;
-                  if (item.size) metaBadges += `<span class="meta-badge size-badge">${formatSize(item.size)}</span>`;
-                  
-                  if (metaContainer.innerHTML !== metaBadges) {
-                    metaContainer.innerHTML = metaBadges;
-                  }
-                }
-              }
-            });
-          } else {
+          const signature = JSON.stringify(response.mediaList);
+          if (mediaListView.dataset.signature !== signature) {
+            mediaListView.dataset.signature = signature;
             renderMediaList(response.mediaList);
           }
         }
@@ -160,6 +133,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   function renderMediaList(mediaList) {
     // Show Empty or List
     progressView.classList.add("hidden");
+    rescanBtn.disabled = false;
 
     if (mediaList.length === 0) {
       noMediaView.classList.remove("hidden");
@@ -213,7 +187,7 @@ document.addEventListener("DOMContentLoaded", async () => {
       card.className = "media-card";
 
       // Select icon markup
-      let iconClass = item.type;
+      let iconClass = escapeHTML(item.type);
       let iconSvg = "";
       if (item.type === "m3u8") {
         iconSvg = `<svg class="media-type-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>`;
@@ -227,7 +201,7 @@ document.addEventListener("DOMContentLoaded", async () => {
       let thumbnailMarkup = "";
       if (item.thumbnail) {
         thumbnailMarkup = `
-          <img class="media-thumbnail-img" src="${item.thumbnail}" alt="Thumbnail">
+          <img class="media-thumbnail-img" src="${escapeHTML(item.thumbnail)}" alt="Thumbnail">
           <div class="media-icon-container ${iconClass} hidden" style="position: absolute; top:0; left:0;">
             ${iconSvg}
           </div>
@@ -241,13 +215,13 @@ document.addEventListener("DOMContentLoaded", async () => {
       }
 
       let metaBadges = `
-        <span class="meta-badge ${item.type}-badge">${item.type}</span>
+        <span class="meta-badge ${escapeHTML(item.type)}-badge">${escapeHTML(item.type)}</span>
       `;
       if (item.extension && item.extension.toLowerCase() !== item.type.toLowerCase()) {
-        metaBadges += `<span class="meta-badge">${item.extension}</span>`;
+        metaBadges += `<span class="meta-badge">${escapeHTML(item.extension)}</span>`;
       }
       if (item.resolution) {
-        metaBadges += `<span class="meta-badge res-badge">${item.resolution}</span>`;
+        metaBadges += `<span class="meta-badge res-badge">${escapeHTML(item.resolution)}</span>`;
       }
       if (item.duration) {
         metaBadges += `<span class="meta-badge duration-badge">${formatDuration(item.duration)}</span>`;
@@ -261,7 +235,7 @@ document.addEventListener("DOMContentLoaded", async () => {
           ${thumbnailMarkup}
         </div>
         <div class="media-info">
-          <div class="media-name" title="${item.filename}">${item.filename}</div>
+          <div class="media-name" title="${escapeHTML(item.filename)}">${escapeHTML(item.filename)}</div>
           <div class="media-meta">
             ${metaBadges}
           </div>
@@ -308,12 +282,13 @@ document.addEventListener("DOMContentLoaded", async () => {
 
       // Download Action
       card.querySelector(".run-download-btn").addEventListener("click", () => {
-        if (item.type === "m3u8") {
+        if (item.type !== "audio") {
           // Trigger In-Popup HLS Download pipeline
           chrome.runtime.sendMessage({
             action: "startHlsDownload",
             data: {
               url: item.url,
+              type: item.type,
               filename: item.filename,
               referer: item.originUrl,
               origin: item.originUrl
@@ -324,6 +299,7 @@ document.addEventListener("DOMContentLoaded", async () => {
               showProgressView({
                 filename: item.filename,
                 url: item.url,
+              type: item.type,
                 status: "initializing",
                 percent: 0,
                 downloadedCount: 0,
@@ -332,7 +308,7 @@ document.addEventListener("DOMContentLoaded", async () => {
                 eta: "--:--",
                 logs: []
               });
-            }
+            } else { showStatus(res?.error || "다운로드를 시작하지 못했습니다"); }
           });
         } else {
           // Trigger standard browser download
@@ -399,6 +375,8 @@ document.addEventListener("DOMContentLoaded", async () => {
     segmentsVal.textContent = `${state.downloadedCount} / ${state.totalCount}`;
     etaVal.textContent = state.eta;
 
+    pauseBtn.disabled = !["downloading", "paused"].includes(state.status);
+    rescanBtn.disabled = !["completed", "failed", "cancelled"].includes(state.status);
     // Button states
     if (state.status === "paused") {
       pauseBtn.classList.add("hidden");
@@ -482,8 +460,9 @@ document.addEventListener("DOMContentLoaded", async () => {
         }, 100);
       }
 
+      if (state.status === "failed") showStatus("다운로드 실패: 로그를 확인하세요");
       // Check if finished or failed
-      if (state.status === "completed" || state.status === "cancelled" || state.status === "failed") {
+      if (state.status === "completed" || state.status === "cancelled") {
         setTimeout(() => {
           progressView.classList.add("hidden");
           if (tabId) loadMedia();

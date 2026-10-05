@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Video Downloader",
-  "version": "1.0.0",
-  "description": "Find and download video/audio files from any webpage, including robust merging and decryption of M3U8/HLS streams.",
+  "version": "1.1.0",
+  "description": "Discover page videos and save direct videos and HLS streams as MP4.",
   "permissions": [
     "webRequest",
     "downloads",
@@ -10,7 +10,8 @@
     "tabs",
     "activeTab",
     "declarativeNetRequest",
-    "offscreen"
+    "offscreen",
+    "webNavigation"
   ],
   "host_permissions": [
     "<all_urls>"
@@ -28,7 +29,8 @@
         "content.js"
       ],
       "run_at": "document_end",
-      "all_frames": true
+      "all_frames": true,
+      "match_about_blank": true
     }
   ],
   "action": {

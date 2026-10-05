@@ -1,154 +1,80 @@
-// Created by DINKIssTyle on 2026. Copyright (C) 2026 DINKI'ssTyle. All rights reserved.
-// Content script to scan for video thumbnails and titles
-
-// Send collected metadata to background
-function sendMetadata(videoUrl, title, thumbnail, resolution, duration) {
-  if (!videoUrl) return;
-  
-  // Resolve relative URLs to absolute URLs
-  const absoluteVideoUrl = resolveUrl(videoUrl);
-  const absoluteThumbnailUrl = thumbnail ? resolveUrl(thumbnail) : null;
-  const pageTitle = title || document.title || "Web Video";
-
-  chrome.runtime.sendMessage({
-    action: "mediaMetadata",
-    data: {
-      videoUrl: absoluteVideoUrl,
-      title: pageTitle,
-      thumbnail: absoluteThumbnailUrl,
-      pageUrl: window.location.href,
-      resolution: resolution || null,
-      duration: duration || null
+// Discover media in every frame, including lazy sources and open shadow roots.
+const reported = new Map();
+const watched = new WeakSet();
+const roots = new WeakSet();
+let pendingScan;
+function discover(raw, source, media, explicitType) {
+  let url;
+  try { url = new URL(raw, document.baseURI); } catch { return; }
+  if (!['http:', 'https:'].includes(url.protocol)) return;
+  const ext = url.pathname.match(/\.([a-z0-9]+)$/i)?.[1]?.toLowerCase();
+  const hls = /mpegurl/i.test(explicitType || '') || ['m3u8', 'm3u'].includes(ext);
+  const audio = /audio/i.test(explicitType || '') || ['mp3', 'm4a', 'wav', 'oga'].includes(ext) || media?.tagName === 'AUDIO';
+  if (!hls && !audio && !['mp4', 'webm', 'ogv', 'mov', 'mkv', 'm4v'].includes(ext) && !/^video\//i.test(explicitType || '') && !media) return;
+  const data = { url: url.href, source, type: hls ? 'm3u8' : audio ? 'audio' : 'video',
+    extension: hls ? 'm3u8' : ext || (audio ? 'audio' : 'video'),
+    title: media?.getAttribute('title') || document.querySelector('meta[property="og:title"]')?.content || document.title || 'Web Video',
+    thumbnail: media?.poster || document.querySelector('meta[property="og:image"]')?.content || null,
+    resolution: media?.videoWidth ? `${media.videoWidth}x${media.videoHeight}` : null,
+    duration: Number.isFinite(media?.duration) && media.duration > 0 ? media.duration : null };
+  const signature = JSON.stringify(data);
+  if (reported.get(url.href) === signature) return;
+  if (reported.size > 1000) reported.clear();
+  reported.set(url.href, signature);
+  chrome.runtime.sendMessage({ action: 'discoveredMedia', data }).catch(() => {});
+}
+function scanMedia(media) {
+  for (const attr of ['currentSrc', 'src']) if (media[attr]) discover(media[attr], 'media element', media);
+  for (const attr of ['data-src', 'data-video-src', 'data-hls', 'data-url']) {
+    if (media.getAttribute(attr)) discover(media.getAttribute(attr), 'lazy media', media);
+  }
+  media.querySelectorAll('source').forEach(node => discover(node.src || node.dataset.src, 'source', media, node.type));
+  if (!watched.has(media)) {
+    watched.add(media);
+    for (const event of ['loadedmetadata', 'durationchange', 'emptied', 'play']) media.addEventListener(event, () => scanMedia(media));
+  }
+}
+function walkJSON(value, depth = 0) {
+  if (depth > 12 || !value) return;
+  if (typeof value === 'string') discover(value, 'page data');
+  else if (Array.isArray(value)) value.slice(0, 1000).forEach(item => walkJSON(item, depth + 1));
+  else if (typeof value === 'object') Object.values(value).slice(0, 1000).forEach(item => walkJSON(item, depth + 1));
+}
+function scan(root = document) {
+  if (!roots.has(root)) {
+    roots.add(root);
+    new MutationObserver(scheduleScan).observe(root, { childList: true, subtree: true, attributes: true,
+      attributeFilter: ['src', 'href', 'content', 'poster', 'data-src', 'data-video-src', 'data-hls', 'data-url'] });
+  }
+  root.querySelectorAll('video,audio').forEach(scanMedia);
+  root.querySelectorAll('a[href],link[href],meta[content],[data-src],[data-video-src],[data-hls],[data-url]').forEach(node => {
+    for (const attr of ['href', 'content', 'data-src', 'data-video-src', 'data-hls', 'data-url']) {
+      const value = node.getAttribute(attr);
+      if (value) discover(value, 'page attribute', null, node.getAttribute('type'));
     }
   });
-}
-
-// Convert relative path to absolute
-function resolveUrl(path) {
-  try {
-    return new URL(path, window.location.href).href;
-  } catch (e) {
-    return path;
-  }
-}
-
-// Extract YouTube Video ID from URL
-function getYouTubeId(url) {
-  const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|\&v=)([^#\&\?]*).*/;
-  const match = url.match(regExp);
-  return (match && match[2].length === 11) ? match[2] : null;
-}
-
-// Extract standard page Meta Image (fallback)
-function getPageMetaImage() {
-  let pageMetaImage = null;
-  const ogImage = document.querySelector('meta[property="og:image"]');
-  const twitterImage = document.querySelector('meta[name="twitter:image"]');
-  const linkImage = document.querySelector('link[rel="image_src"]');
-  
-  if (ogImage) pageMetaImage = ogImage.content;
-  else if (twitterImage) pageMetaImage = twitterImage.content;
-  else if (linkImage) pageMetaImage = linkImage.href;
-  return pageMetaImage;
-}
-
-// Scan individual video element and send metadata
-function scanVideoElement(video) {
-  const title = video.getAttribute("title") || video.getAttribute("alt") || document.title;
-  let thumbnail = video.getAttribute("poster") || getPageMetaImage();
-  const resolution = (video.videoWidth && video.videoHeight) ? `${video.videoWidth}x${video.videoHeight}` : null;
-  const duration = (video.duration && !isNaN(video.duration)) ? video.duration : null;
-
-  if (video.src && !video.src.startsWith("blob:")) {
-    sendMetadata(video.src, title, thumbnail, resolution, duration);
-  }
-
-  const sources = video.querySelectorAll("source");
-  sources.forEach((src) => {
-    if (src.src) {
-      sendMetadata(src.src, title, thumbnail, resolution, duration);
+  root.querySelectorAll('script:not([src])').forEach(script => {
+    const text = script.textContent;
+    if (!text || text.length > 2_000_000 || reported.get(script) === text) return;
+    reported.set(script, text);
+    if (/json/i.test(script.type)) { try { walkJSON(JSON.parse(text)); } catch {} }
+    const normalized = text.replace(/\\\//g, '/').replace(/\\u0026/gi, '&');
+    for (const match of normalized.matchAll(/(?:https?:\/\/|\/)[^\s"'<>\\]+?\.(?:mp4|webm|m3u8|m4v|mov|ogv)(?:\?[^\s"'<>\\]*)?/gi)) {
+      discover(match[0], 'player configuration');
     }
   });
+  root.querySelectorAll('*').forEach(node => { if (node.shadowRoot) scan(node.shadowRoot); });
 }
-
-// Inspect page DOM
-function scanDOM() {
-  // 1. YouTube specific scanning
-  if (window.location.hostname.includes("youtube.com")) {
-    const ytId = getYouTubeId(window.location.href);
-    if (ytId) {
-      const thumb = `https://i.ytimg.com/vi/${ytId}/hqdefault.jpg`;
-      const titleElem = document.querySelector("h1.ytd-watch-metadata, yt-formatted-string.ytd-video-primary-info-renderer");
-      const title = titleElem ? titleElem.textContent.trim() : document.title.replace(" - YouTube", "");
-      
-      const video = document.querySelector("video");
-      let resolution = null;
-      let duration = null;
-      if (video) {
-        resolution = (video.videoWidth && video.videoHeight) ? `${video.videoWidth}x${video.videoHeight}` : null;
-        duration = (video.duration && !isNaN(video.duration)) ? video.duration : null;
-        
-        if (!video.dataset.hasMetadataListener) {
-          video.dataset.hasMetadataListener = "true";
-          video.addEventListener("loadedmetadata", scanDOM);
-        }
-      }
-
-      sendMetadata(window.location.href, title, thumb, resolution, duration);
-      sendMetadata("youtube", title, thumb, resolution, duration);
-      return;
-    }
-  }
-
-  // 2. Scan video tags
-  const videos = document.querySelectorAll("video");
-  videos.forEach((video) => {
-    scanVideoElement(video);
-
-    // Watch for metadata load
-    if (!video.dataset.hasMetadataListener) {
-      video.dataset.hasMetadataListener = "true";
-      video.addEventListener("loadedmetadata", () => {
-        scanVideoElement(video);
-      });
-    }
-  });
+function scheduleScan() {
+  if (pendingScan) return;
+  pendingScan = setTimeout(() => { pendingScan = null; scan(); }, 350);
 }
-
-// Periodically scan the page for dynamic video elements
-let scanTimeout = null;
-function throttledScan() {
-  clearTimeout(scanTimeout);
-  scanTimeout = setTimeout(scanDOM, 1000);
-}
-
-// Initial scan
-scanDOM();
-
-// Watch for DOM changes (MutationObserver)
-const observer = new MutationObserver((mutations) => {
-  let shouldScan = false;
-  for (let mutation of mutations) {
-    if (mutation.addedNodes.length > 0) {
-      for (let node of mutation.addedNodes) {
-        if (node.tagName === "VIDEO" || node.tagName === "SOURCE" || (node.querySelector && node.querySelector("video, source"))) {
-          shouldScan = true;
-          break;
-        }
-      }
-    }
-    if (shouldScan) break;
-  }
-  
-  if (shouldScan) {
-    throttledScan();
-  }
-});
-
-observer.observe(document.body, {
-  childList: true,
-  subtree: true
-});
-
-// Re-scan when window is fully loaded
-window.addEventListener("load", scanDOM);
+scan();
+performance.getEntriesByType('resource').forEach(entry => discover(entry.name, 'resource timing'));
+try {
+  new PerformanceObserver(list => list.getEntries().forEach(entry => discover(entry.name, 'resource timing'))).observe({ type: 'resource', buffered: true });
+} catch {}
+chrome.runtime.onMessage.addListener(message => { if (message.action === 'rescanMedia') { reported.clear(); scan(); } });
+window.addEventListener('load', scheduleScan);
+// Also finds shadow roots attached after their hosts were inserted and SPA changes.
+setInterval(scheduleScan, 5000);
