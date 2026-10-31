@@ -2,7 +2,7 @@ import { FFmpeg } from "./vendor/ffmpeg/index.js";
 let converter;
 let saveResolve;
 let saveReject;
-// Headless Offscreen HLS segment Downloader & Compiler
+// Headless Offscreen HLS & Segmented Stream Downloader & Compiler
 
 let db = null;
 const DB_NAME = "HLSDownloaderDB";
@@ -123,6 +123,183 @@ function clearSegmentsFromDB(idPrefix) {
   });
 }
 
+// Strip fake header bytes if an MPEG-TS segment (.dat / .bin) has obfuscation padding before 0x47 sync bytes
+function normalizeSegmentBuffer(buffer) {
+  if (!buffer || buffer.byteLength < 377) return buffer;
+  const bytes = new Uint8Array(buffer);
+  if (bytes[0] === 0x47) return buffer;
+  // Preserve MP4 / fMP4 boxes (ftyp, styp, moof, sidx, emsg, free, mdat, wide)
+  const boxType = String.fromCharCode(bytes[4], bytes[5], bytes[6], bytes[7]);
+  if (/^(ftyp|styp|moof|sidx|emsg|free|mdat|wide)$/.test(boxType)) return buffer;
+  // Scan first 4KB for MPEG-TS 188-byte sync byte pattern (0x47 at i, i+188, i+376)
+  const limit = Math.min(bytes.length - 376, 4096);
+  for (let i = 1; i < limit; i++) {
+    if (bytes[i] === 0x47 && bytes[i + 188] === 0x47 && bytes[i + 376] === 0x47) {
+      return buffer.slice(i);
+    }
+  }
+  return buffer;
+}
+
+// Build segment URL from variant template and sequence index
+function buildVariantSegmentUrl(variant, index) {
+  const idxStr = variant.padWidth > 0
+    ? String(index).padStart(variant.padWidth, "0")
+    : String(index);
+  return `${variant.baseUrl}${variant.prefix}${idxStr}${variant.suffix}${variant.query || ""}`;
+}
+
+// Probe if a segment URL exists without downloading the entire segment body
+async function probeSegmentUrl(targetUrl) {
+  await setupDNRRules(targetUrl);
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 8000);
+  const onAbort = () => controller.abort();
+  currentDownload.abortController.signal.addEventListener("abort", onAbort, { once: true });
+  try {
+    const response = await fetch(targetUrl, {
+      signal: controller.signal,
+      method: "GET",
+      cache: "no-cache",
+      credentials: "include",
+      headers: { Range: "bytes=0-3" }
+    });
+    if (!response.ok) return false;
+    const ct = (response.headers.get("content-type") || "").toLowerCase();
+    if (ct.includes("text/html") || ct.includes("application/json") || ct.includes("text/plain") || ct.includes("application/xml")) {
+      return false;
+    }
+    if (response.body) {
+      const reader = response.body.getReader();
+      const { value } = await reader.read();
+      await reader.cancel().catch(() => {});
+      if (!value || value.byteLength === 0) return false;
+      // Reject HTML/XML ('<') or JSON ('{') error responses disguised with binary content-type
+      if (value[0] === 0x3c || value[0] === 0x7b) return false;
+    }
+    return true;
+  } catch {
+    return false;
+  } finally {
+    clearTimeout(timeout);
+    currentDownload.abortController.signal.removeEventListener("abort", onAbort);
+  }
+}
+
+// Prepare full segment list from a grouped segment stream (e.g. v1_0000.dat, v0_0001.dat, v0_0002.dat...)
+async function prepareSegmentGroupDownload(group) {
+  if (!group) throw new Error("Missing segment group metadata.");
+  const variants = Object.values(group.variants || {});
+  variants.sort((a, b) => {
+    const aMulti = a.count >= 2 ? 1 : 0;
+    const bMulti = b.count >= 2 ? 1 : 0;
+    if (aMulti !== bMulti) return bMulti - aMulti;
+    if ((b.avgSize || 0) !== (a.avgSize || 0)) return (b.avgSize || 0) - (a.avgSize || 0);
+    return b.count - a.count;
+  });
+
+  const primary = variants[0] || null;
+  const observedList = group.observedSegments || [];
+  const observedMap = new Map();
+  for (const seg of observedList) {
+    if (!observedMap.has(seg.index) || (primary && seg.variantKey === primary.variantKey)) {
+      observedMap.set(seg.index, seg);
+    }
+  }
+  const observedIndices = [...observedMap.keys()].sort((a, b) => a - b);
+
+  if (!primary) {
+    if (observedList.length === 0) throw new Error("No segments found in segmented stream.");
+    for (const seg of observedList) {
+      const index = currentDownload.segments.length;
+      currentDownload.segments.push({
+        index,
+        seqIndex: seg.index ?? index,
+        name: `asset${index}.bin`,
+        url: seg.url,
+        fallbackUrl: null,
+        variantKey: seg.variantKey || "default",
+        status: "pending",
+        retryCount: 0
+      });
+    }
+    currentDownload.inputName = "playlist0.m3u8";
+    return "playlist0.m3u8";
+  }
+
+  log(`Selected stream template: ${primary.prefix}${"0".repeat(primary.padWidth || 1)}${primary.suffix}`, "info");
+
+  // 1. Determine startIndex (prefer 0 or 1 so the video starts from the very beginning)
+  let startIndex = observedIndices.length > 0 ? observedIndices[0] : 0;
+  if (startIndex > 0) {
+    if (await probeSegmentUrl(buildVariantSegmentUrl(primary, 0))) {
+      startIndex = 0;
+    } else if (startIndex > 1 && await probeSegmentUrl(buildVariantSegmentUrl(primary, 1))) {
+      startIndex = 1;
+    }
+  }
+
+  // 2. Determine endIndex using exponential + binary search beyond maxObserved
+  const maxObserved = observedIndices.length > 0 ? observedIndices[observedIndices.length - 1] : startIndex;
+  let endIndex = maxObserved;
+
+  if (await probeSegmentUrl(buildVariantSegmentUrl(primary, maxObserved + 1))) {
+    log("Probing stream to find total segment count...", "info");
+    let low = maxObserved + 1;
+    let high = null;
+    let step = 4;
+    while (step <= 16384) {
+      if (currentDownload.isCancelled) throw new Error("Cancelled");
+      const candidate = low + step;
+      if (await probeSegmentUrl(buildVariantSegmentUrl(primary, candidate))) {
+        low = candidate;
+        step *= 2;
+      } else {
+        high = candidate;
+        break;
+      }
+    }
+    if (high === null) high = low + 1;
+    while (low + 1 < high) {
+      if (currentDownload.isCancelled) throw new Error("Cancelled");
+      const mid = Math.floor((low + high) / 2);
+      if (await probeSegmentUrl(buildVariantSegmentUrl(primary, mid))) {
+        low = mid;
+      } else {
+        high = mid;
+      }
+    }
+    endIndex = low;
+  }
+
+  log(`Resolved segment sequence: #${startIndex} to #${endIndex} (${endIndex - startIndex + 1} segments)`, "info");
+
+  for (let seq = startIndex; seq <= endIndex; seq++) {
+    const obs = observedMap.get(seq);
+    const primaryUrl = buildVariantSegmentUrl(primary, seq);
+    const isSameVariant = obs && obs.variantKey === primary.variantKey;
+    const url = isSameVariant ? obs.url : primaryUrl;
+    const fallbackUrl = isSameVariant
+      ? (obs.url !== primaryUrl ? primaryUrl : null)
+      : (obs ? obs.url : null);
+    const index = currentDownload.segments.length;
+    currentDownload.segments.push({
+      index,
+      seqIndex: seq,
+      name: `asset${index}.bin`,
+      url,
+      fallbackUrl,
+      variantKey: isSameVariant ? obs.variantKey : primary.variantKey,
+      fallbackVariantKey: isSameVariant ? primary.variantKey : (obs ? obs.variantKey : null),
+      status: "pending",
+      retryCount: 0
+    });
+  }
+
+  currentDownload.inputName = "playlist0.m3u8";
+  return "playlist0.m3u8";
+}
+
 // Pipeline Main
 async function startDownload(data) {
   try {
@@ -133,6 +310,9 @@ async function startDownload(data) {
       id: data.id,
       url: data.url,
       type: data.type,
+      manifestText: data.manifestText || null,
+      manifestBaseUrl: data.manifestBaseUrl || null,
+      segmentGroup: data.segmentGroup || null,
       playlists: new Map(),
       assetNames: new Map(),
       filename: data.filename,
@@ -158,17 +338,47 @@ async function startDownload(data) {
     log(`Spawning HLS Download worker for target: ${currentDownload.filename}`, "info");
 
     // 1. Setup Session rules
-    await setupDNRRules();
+    if (!currentDownload.url.startsWith("blob:")) {
+      await setupDNRRules();
+    }
 
     // 2. Fetch and Parse
-    log("Fetching index playlist...", "info");
-    if (data.type !== "m3u8") {
+    if (data.type === "segments") {
+      log("Analyzing segmented media stream...", "info");
+      currentDownload.inputName = await prepareSegmentGroupDownload(currentDownload.segmentGroup);
+    } else if (data.type !== "m3u8") {
+      log("Fetching direct media stream...", "info");
       currentDownload.inputName = "input.media";
       currentDownload.segments.push({ index: 0, name: "input.media", url: data.url, status: "pending", retryCount: 0 });
+    } else {
+      log("Fetching index playlist...", "info");
+      let playlistText = null;
+      if (currentDownload.url.startsWith("blob:") && currentDownload.manifestText) {
+        playlistText = currentDownload.manifestText;
+      } else {
+        try {
+          playlistText = await fetchWithHeaders(currentDownload.url);
+        } catch (fetchErr) {
+          if (currentDownload.manifestText) {
+            log("Using captured in-page playlist manifest...", "info");
+            playlistText = currentDownload.manifestText;
+          } else if (currentDownload.segmentGroup) {
+            log(`Playlist fetch failed (${fetchErr.message}); falling back to grouped segment stream...`, "warning");
+            currentDownload.type = "segments";
+            currentDownload.inputName = await prepareSegmentGroupDownload(currentDownload.segmentGroup);
+          } else {
+            throw fetchErr;
+          }
+        }
+      }
+      if (playlistText !== null) {
+        log("Parsing playlist manifest...", "info");
+        const baseForParse = currentDownload.url.startsWith("blob:")
+          ? (currentDownload.manifestBaseUrl || currentDownload.referer || currentDownload.origin)
+          : currentDownload.url;
+        currentDownload.inputName = await parsePlaylist(playlistText, baseForParse);
+      }
     }
-    const playlistText = data.type === "m3u8" ? await fetchWithHeaders(currentDownload.url) : null;
-    log("Parsing playlist manifest...", "info");
-    if (playlistText !== null) currentDownload.inputName = await parsePlaylist(playlistText, currentDownload.url);
 
     if (currentDownload.segments.length === 0) {
       throw new Error("No media segments found in the playlist.");
@@ -194,7 +404,9 @@ async function startDownload(data) {
 async function setupDNRRules(targetUrl = currentDownload.url) {
   if (!currentDownload.referer && !currentDownload.origin) return;
 
-  const urlObj = new URL(targetUrl);
+  let urlObj;
+  try { urlObj = new URL(targetUrl); } catch { return; }
+  if (!["http:", "https:"].includes(urlObj.protocol)) return;
   if (currentDownload.headerHosts.has(urlObj.origin)) return currentDownload.headerHosts.get(urlObj.origin);
   const ruleId = currentDownload.ruleId + currentDownload.headerHosts.size;
   const filter = `${urlObj.protocol}//${urlObj.hostname}/*`;
@@ -367,8 +579,23 @@ function fillQueue() {
 async function downloadSegment(segment) {
   const segmentKey = `${currentDownload.id}_${segment.index}`;
   try {
-    const rawBuffer = await fetchWithHeaders(segment.url, "arraybuffer", segment.range);
-    let processedBuffer = rawBuffer;
+    let rawBuffer;
+    try {
+      rawBuffer = await fetchWithHeaders(segment.url, "arraybuffer", segment.range);
+      segment.usedVariantKey = segment.variantKey;
+    } catch (primaryErr) {
+      if (segment.fallbackUrl) {
+        log(`Switching segment #${segment.index} to fallback stream URL...`, "info");
+        rawBuffer = await fetchWithHeaders(segment.fallbackUrl, "arraybuffer", segment.range);
+        segment.usedVariantKey = segment.fallbackVariantKey || segment.variantKey;
+      } else {
+        throw primaryErr;
+      }
+    }
+
+    const processedBuffer = currentDownload.type !== "video"
+      ? normalizeSegmentBuffer(rawBuffer)
+      : rawBuffer;
 
     if (!currentDownload || currentDownload.isCancelled) return;
 
@@ -444,13 +671,66 @@ async function compileSegments(skipFailed = false) {
     converter = new FFmpeg();
     await converter.load({ coreURL: chrome.runtime.getURL("vendor/ffmpeg/ffmpeg-core.js"),
       wasmURL: chrome.runtime.getURL("vendor/ffmpeg/ffmpeg-core.wasm") });
-    for (const segment of currentDownload.segments) {
+
+    let isFmp4Segments = false;
+    for (let i = 0; i < currentDownload.segments.length; i++) {
+      const segment = currentDownload.segments[i];
       const buffer = await getSegmentFromDB(`${currentDownload.id}_${segment.index}`);
       if (!buffer) throw new Error(`Missing segment ${segment.index}`);
-      await converter.writeFile(segment.name, new Uint8Array(buffer));
+      const bytes = new Uint8Array(buffer);
+      if (i === 0 && currentDownload.type === "segments" && bytes.length >= 8 && bytes[0] !== 0x47) {
+        const box = String.fromCharCode(bytes[4], bytes[5], bytes[6], bytes[7]);
+        if (/^(ftyp|styp|moof)$/.test(box)) isFmp4Segments = true;
+      }
+      await converter.writeFile(segment.name, bytes);
     }
+
+    if (currentDownload.type === "segments") {
+      if (isFmp4Segments) {
+        // Concatenate fragmented MP4 chunks into a single input file
+        const parts = [];
+        let totalLen = 0;
+        for (const segment of currentDownload.segments) {
+          const buffer = await getSegmentFromDB(`${currentDownload.id}_${segment.index}`);
+          const arr = new Uint8Array(buffer);
+          parts.push(arr);
+          totalLen += arr.byteLength;
+        }
+        const combined = new Uint8Array(totalLen);
+        let offset = 0;
+        for (const arr of parts) {
+          combined.set(arr, offset);
+          offset += arr.byteLength;
+        }
+        await converter.writeFile("input.media", combined);
+        currentDownload.inputName = "input.media";
+      } else {
+        // Build synthetic HLS playlist for MPEG-TS (.dat / .ts) segments
+        const playlistLines = [
+          "#EXTM3U",
+          "#EXT-X-VERSION:3",
+          "#EXT-X-TARGETDURATION:10",
+          "#EXT-X-MEDIA-SEQUENCE:0"
+        ];
+        let prevVariant = null;
+        for (const seg of currentDownload.segments) {
+          const vKey = seg.usedVariantKey || seg.variantKey || "default";
+          if (prevVariant !== null && vKey !== prevVariant) {
+            playlistLines.push("#EXT-X-DISCONTINUITY");
+          }
+          prevVariant = vKey;
+          playlistLines.push("#EXTINF:4.000,");
+          playlistLines.push(seg.name);
+        }
+        playlistLines.push("#EXT-X-ENDLIST");
+        currentDownload.playlists.set("playlist0.m3u8", playlistLines.join("\n") + "\n");
+        currentDownload.inputName = "playlist0.m3u8";
+      }
+    }
+
     for (const [name, text] of currentDownload.playlists) await converter.writeFile(name, text);
-    const input = currentDownload.type === 'm3u8'
+    const useHlsDemuxer = currentDownload.type === 'm3u8' || (currentDownload.type === 'segments' && !isFmp4Segments);
+    const input = useHlsDemuxer
       ? ['-allowed_extensions', 'ALL', '-protocol_whitelist', 'file,crypto,data', '-i', currentDownload.inputName]
       : ['-i', currentDownload.inputName];
     const base = [...input, '-map', '0:v:0', '-map', '0:a:0?', '-sn', '-dn'];

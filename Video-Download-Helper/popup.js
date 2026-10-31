@@ -151,9 +151,11 @@ document.addEventListener("DOMContentLoaded", async () => {
     mediaListView.innerHTML = "";
 
     // Split list into high priority, medium priority, and low priority
-    const groupA = mediaList.filter(item => item.duration && item.resolution && item.size);
-    const groupB = mediaList.filter(item => (item.duration || item.resolution || item.size) && !(item.duration && item.resolution && item.size));
-    const groupC = mediaList.filter(item => !(item.duration || item.resolution || item.size));
+    const isTopPriority = item => item.type === "m3u8" || item.type === "segments" || (item.duration && item.resolution && item.size);
+    const isMediumPriority = item => !isTopPriority(item) && (item.duration || item.resolution || item.size);
+    const groupA = mediaList.filter(isTopPriority);
+    const groupB = mediaList.filter(isMediumPriority);
+    const groupC = mediaList.filter(item => !isTopPriority(item) && !isMediumPriority(item));
 
     let listToShow = [];
     let showMoreButton = false;
@@ -187,9 +189,9 @@ document.addEventListener("DOMContentLoaded", async () => {
       card.className = "media-card";
 
       // Select icon markup
-      let iconClass = escapeHTML(item.type);
+      let iconClass = escapeHTML(item.type === "segments" ? "m3u8" : item.type);
       let iconSvg = "";
-      if (item.type === "m3u8") {
+      if (item.type === "m3u8" || item.type === "segments") {
         iconSvg = `<svg class="media-type-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>`;
       } else if (item.type === "audio") {
         iconSvg = `<svg class="media-type-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>`;
@@ -214,11 +216,16 @@ document.addEventListener("DOMContentLoaded", async () => {
         `;
       }
 
+      const displayType = item.type === "segments" ? "stream" : item.type;
+      const badgeClass = item.type === "segments" ? "m3u8-badge" : `${escapeHTML(item.type)}-badge`;
       let metaBadges = `
-        <span class="meta-badge ${escapeHTML(item.type)}-badge">${escapeHTML(item.type)}</span>
+        <span class="meta-badge ${badgeClass}">${escapeHTML(displayType)}</span>
       `;
       if (item.extension && item.extension.toLowerCase() !== item.type.toLowerCase()) {
         metaBadges += `<span class="meta-badge">${escapeHTML(item.extension)}</span>`;
+      }
+      if (item.type === "segments" && item.segmentCount) {
+        metaBadges += `<span class="meta-badge">${escapeHTML(item.segmentCount)} segs</span>`;
       }
       if (item.resolution) {
         metaBadges += `<span class="meta-badge res-badge">${escapeHTML(item.resolution)}</span>`;
@@ -287,8 +294,10 @@ document.addEventListener("DOMContentLoaded", async () => {
           chrome.runtime.sendMessage({
             action: "startHlsDownload",
             data: {
+              tabId: tabId,
               url: item.url,
               type: item.type,
+              groupKey: item.groupKey || null,
               filename: item.filename,
               referer: item.originUrl,
               origin: item.originUrl
