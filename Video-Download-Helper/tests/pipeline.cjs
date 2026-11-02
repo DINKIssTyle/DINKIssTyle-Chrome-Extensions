@@ -1,3 +1,4 @@
+// Created by DINKIssTyle on 2026. Copyright (C) 2026 DINKI'ssTyle. All rights reserved.
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
@@ -47,7 +48,7 @@ assert.equal(vm.runInContext('detectedMedia[3][0].segmentCount', context), 5);
 assert.equal(vm.runInContext('detectedMedia[3][0].size', context), 20100000);
 
 const offscreen = vm.createContext({ chrome, URL, console, setTimeout, clearTimeout, setInterval, clearInterval, AbortController, Map, Set, Uint8Array });
-vm.runInContext(fs.readFileSync(path.join(root, 'offscreen.js'), 'utf8').replace(/^import .*\n/, ''), offscreen);
+vm.runInContext(fs.readFileSync(path.join(root, 'offscreen.js'), 'utf8').replace(/import\s+[^;]+;\s*/g, ''), offscreen);
 async function parse(text, url = 'https://cdn.test/path/index.m3u8') {
   vm.runInContext('currentDownload = { segments: [], playlists: new Map(), assetNames: new Map() }; log = () => {}', offscreen);
   offscreen.text = text; offscreen.url = url;
@@ -100,5 +101,30 @@ async function parse(text, url = 'https://cdn.test/path/index.m3u8') {
   const strippedLen = vm.runInContext('normalizeSegmentBuffer(testBuf).byteLength', offscreen);
   assert.equal(strippedLen, 188 * 3);
 
-  console.log('PASS: range responses, MIME-only HLS, DOM discovery, filenames, AES metadata, ranges, separate audio, unsupported streams, split MP2T .dat grouping & probing');
+  // Unit tests for remuxing progress helpers
+  const parsedLog = vm.runInContext('parseFfmpegLog("frame= 1234 fps= 45.2 q=-1.0 size= 45056kB time=00:03:15.52 bitrate=1894.2kbits/s speed= 32.4x")', offscreen);
+  assert.equal(parsedLog.timeStr, "00:03:15.52");
+  assert.equal(parsedLog.timeSec, 195.52);
+  assert.equal(parsedLog.speed, "32.4x");
+  assert.equal(parsedLog.size, "44.0 MB");
+  assert.equal(parsedLog.fps, "45.2");
+
+  assert.equal(vm.runInContext('formatTime(65)', offscreen), "01:05");
+  assert.equal(vm.runInContext('formatTime(3665)', offscreen), "01:01:05");
+
+  vm.runInContext(`
+    currentDownload = {
+      status: "compiling",
+      percent: 0,
+      totalDuration: 200,
+      segments: []
+    };
+    sendStatusUpdate = () => {};
+    updateCompileProgress({ phase: "remux", timeSec: 50, speed: "25x" });
+  `, offscreen);
+  assert.equal(vm.runInContext('currentDownload.percent', offscreen), 25);
+  assert.equal(vm.runInContext('currentDownload.eta', offscreen), "6s");
+  assert.match(vm.runInContext('currentDownload.statusText', offscreen), /Remuxing: 00:50 \/ 03:20 \(25%\)/);
+
+  console.log('PASS: range responses, MIME-only HLS, DOM discovery, filenames, AES metadata, ranges, separate audio, unsupported streams, split MP2T .dat grouping & probing, remux progress tracking');
 })().catch(error => { console.error(error); process.exitCode = 1; });

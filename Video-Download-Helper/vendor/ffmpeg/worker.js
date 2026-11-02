@@ -1,3 +1,4 @@
+// Created by DINKIssTyle on 2026. Copyright (C) 2026 DINKI'ssTyle. All rights reserved.
 /// <reference no-default-lib="true" />
 /// <reference lib="esnext" />
 /// <reference lib="webworker" />
@@ -57,10 +58,44 @@ const writeFile = ({ path, data }) => {
     ffmpeg.FS.writeFile(path, data);
     return true;
 };
-const readFile = ({ path, encoding }) => ffmpeg.FS.readFile(path, { encoding });
-// TODO: check if deletion works.
+const readFile = ({ path, encoding }) => {
+    if (encoding === "blob") {
+        try {
+            const lookup = ffmpeg.FS.lookupPath(path);
+            if (lookup && lookup.node && lookup.node.contents) {
+                const contents = lookup.node.contents;
+                const size = lookup.node.usedBytes !== undefined ? lookup.node.usedBytes : contents.length;
+                const mime = path.endsWith(".mp4") ? "video/mp4" : "application/octet-stream";
+                const CHUNK_SIZE = 32 * 1024 * 1024;
+                const chunks = [];
+                for (let offset = 0; offset < size; offset += CHUNK_SIZE) {
+                    chunks.push(contents.subarray(offset, Math.min(size, offset + CHUNK_SIZE)));
+                }
+                const blob = new Blob(chunks, { type: mime });
+                try { ffmpeg.FS.unlink(path); } catch {}
+                return blob;
+            }
+        } catch (e) {
+            console.error("Worker read blob error:", e);
+        }
+        const data = ffmpeg.FS.readFile(path, { encoding: "binary" });
+        const mime = path.endsWith(".mp4") ? "video/mp4" : "application/octet-stream";
+        const blob = new Blob([data], { type: mime });
+        try { ffmpeg.FS.unlink(path); } catch {}
+        return blob;
+    }
+    return ffmpeg.FS.readFile(path, { encoding });
+};
 const deleteFile = ({ path }) => {
     ffmpeg.FS.unlink(path);
+    return true;
+};
+const deleteFiles = ({ paths }) => {
+    if (Array.isArray(paths)) {
+        for (let i = 0; i < paths.length; i++) {
+            try { ffmpeg.FS.unlink(paths[i]); } catch {}
+        }
+    }
     return true;
 };
 const rename = ({ oldPath, newPath }) => {
@@ -123,6 +158,9 @@ self.onmessage = async ({ data: { id, type, data: _data }, }) => {
                 break;
             case FFMessageType.DELETE_FILE:
                 data = deleteFile(_data);
+                break;
+            case FFMessageType.DELETE_FILES:
+                data = deleteFiles(_data);
                 break;
             case FFMessageType.RENAME:
                 data = rename(_data);

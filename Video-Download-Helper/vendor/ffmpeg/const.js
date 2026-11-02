@@ -1,3 +1,4 @@
+// Created by DINKIssTyle on 2026. Copyright (C) 2026 DINKI'ssTyle. All rights reserved.
 export const MIME_TYPE_JAVASCRIPT = "text/javascript";
 export const MIME_TYPE_WASM = "application/wasm";
 export const CORE_VERSION = "0.12.9";
@@ -10,6 +11,7 @@ export var FFMessageType;
     FFMessageType["WRITE_FILE"] = "WRITE_FILE";
     FFMessageType["READ_FILE"] = "READ_FILE";
     FFMessageType["DELETE_FILE"] = "DELETE_FILE";
+    FFMessageType["DELETE_FILES"] = "DELETE_FILES";
     FFMessageType["RENAME"] = "RENAME";
     FFMessageType["CREATE_DIR"] = "CREATE_DIR";
     FFMessageType["LIST_DIR"] = "LIST_DIR";

@@ -23,6 +23,9 @@ document.addEventListener("DOMContentLoaded", async () => {
   const speedVal = document.getElementById("speed-val");
   const segmentsVal = document.getElementById("segments-val");
   const etaVal = document.getElementById("eta-val");
+  const speedTitle = document.getElementById("speed-title");
+  const segmentsTitle = document.getElementById("segments-title");
+  const etaTitle = document.getElementById("eta-title");
   const logTerminal = document.getElementById("log-terminal");
 
   const pauseBtn = document.getElementById("pause-btn");
@@ -300,7 +303,8 @@ document.addEventListener("DOMContentLoaded", async () => {
               groupKey: item.groupKey || null,
               filename: item.filename,
               referer: item.originUrl,
-              origin: item.originUrl
+              origin: item.originUrl,
+              duration: item.duration || null
             }
           }, (res) => {
             if (res && res.success) {
@@ -378,13 +382,41 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   // Draw metrics
   function updateProgressUI(state) {
-    percentVal.textContent = `${state.percent}%`;
-    progressBarFill.style.width = `${state.percent}%`;
-    speedVal.textContent = state.speed;
-    segmentsVal.textContent = `${state.downloadedCount} / ${state.totalCount}`;
-    etaVal.textContent = state.eta;
+    percentVal.textContent = `${state.percent ?? 0}%`;
+    progressBarFill.style.width = `${state.percent ?? 0}%`;
 
-    pauseBtn.disabled = !["downloading", "paused"].includes(state.status);
+    if (state.status === "compiling") {
+      targetUrlLabel.textContent = state.statusText || "Remuxing into MP4...";
+      targetUrlLabel.classList.add("highlight-status");
+      if (speedTitle) speedTitle.textContent = "Speed";
+      speedVal.textContent = state.compileSpeed || state.speed || "Processing...";
+      if (segmentsTitle) segmentsTitle.textContent = state.stage === "preparing_segments" ? "Segments" : "Time";
+      segmentsVal.textContent = state.timeInfo || (state.stage === "preparing_segments" ? `${state.downloadedCount} / ${state.totalCount}` : "--:--");
+      if (etaTitle) etaTitle.textContent = "ETA";
+      etaVal.textContent = state.eta || "--:--";
+      pauseBtn.disabled = true;
+    } else if (state.status === "saving") {
+      targetUrlLabel.textContent = state.statusText || "Saving MP4 file...";
+      targetUrlLabel.classList.add("highlight-status");
+      if (speedTitle) speedTitle.textContent = "Status";
+      speedVal.textContent = "Saving...";
+      if (segmentsTitle) segmentsTitle.textContent = "Result";
+      segmentsVal.textContent = "Done";
+      if (etaTitle) etaTitle.textContent = "ETA";
+      etaVal.textContent = "--:--";
+      pauseBtn.disabled = true;
+    } else {
+      targetUrlLabel.textContent = state.url || "";
+      targetUrlLabel.classList.remove("highlight-status");
+      if (speedTitle) speedTitle.textContent = "Speed";
+      speedVal.textContent = state.speed || "0 KB/s";
+      if (segmentsTitle) segmentsTitle.textContent = "Segments";
+      segmentsVal.textContent = `${state.downloadedCount || 0} / ${state.totalCount || 0}`;
+      if (etaTitle) etaTitle.textContent = "ETA";
+      etaVal.textContent = state.eta || "--:--";
+      pauseBtn.disabled = !["downloading", "paused"].includes(state.status);
+    }
+
     rescanBtn.disabled = !["completed", "failed", "cancelled"].includes(state.status);
     // Button states
     if (state.status === "paused") {

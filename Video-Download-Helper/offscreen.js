@@ -1,3 +1,4 @@
+// Created by DINKIssTyle on 2026. Copyright (C) 2026 DINKI'ssTyle. All rights reserved.
 import { FFmpeg } from "./vendor/ffmpeg/index.js";
 let converter;
 let saveResolve;
@@ -56,6 +57,10 @@ function sendStatusUpdate(delta = {}) {
     speed: currentDownload.speed || "0 KB/s",
     eta: currentDownload.eta || "--:--",
     status: currentDownload.status,
+    stage: currentDownload.stage || null,
+    statusText: currentDownload.statusText || null,
+    timeInfo: currentDownload.timeInfo || null,
+    compileSpeed: currentDownload.compileSpeed || null,
     ...delta
   };
 
@@ -326,6 +331,7 @@ async function startDownload(data) {
       activeThreads: 0,
       downloadedCount: 0,
       percent: 0,
+      totalDuration: data.duration || 0,
       isPaused: false,
       isCancelled: false,
       bytesDownloaded: 0,
@@ -474,7 +480,7 @@ function asset(url, range) {
   currentDownload.segments.push({ index, name, url, range, status: "pending", retryCount: 0 });
   return name;
 }
-async function parsePlaylist(text, parentUrl, depth = 0) {
+async function parsePlaylist(text, parentUrl, depth = 0, isAudio = false) {
   if (depth > 5) throw new Error("Too many nested playlists");
   if (!text.trimStart().startsWith("#EXTM3U")) throw new Error("Invalid HLS playlist");
   const lines = text.split(/\r?\n/).map(line => line.trim());
@@ -489,13 +495,13 @@ async function parsePlaylist(text, parentUrl, depth = 0) {
   if (variants.length) {
     variants.sort((a, b) => Number(b.attrs.BANDWIDTH || 0) - Number(a.attrs.BANDWIDTH || 0));
     const selected = variants[0];
-    const video = await parsePlaylist(await fetchWithHeaders(selected.url), selected.url, depth + 1);
+    const video = await parsePlaylist(await fetchWithHeaders(selected.url), selected.url, depth + 1, false);
     const audioAttrs = lines.filter(line => line.startsWith('#EXT-X-MEDIA:')).map(attributes)
       .filter(a => a.TYPE === 'AUDIO' && a['GROUP-ID'] === selected.attrs.AUDIO && a.URI)
       .sort((a, b) => Number(b.DEFAULT === 'YES') - Number(a.DEFAULT === 'YES'))[0];
     if (!audioAttrs) return video;
     const audioUrl = new URL(audioAttrs.URI, parentUrl).href;
-    const audio = await parsePlaylist(await fetchWithHeaders(audioUrl), audioUrl, depth + 1);
+    const audio = await parsePlaylist(await fetchWithHeaders(audioUrl), audioUrl, depth + 1, true);
     const name = `master${depth}.m3u8`;
     currentDownload.playlists.set(name, `#EXTM3U\n#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="audio",NAME="Audio",DEFAULT=YES,AUTOSELECT=YES,URI="${audio}"\n#EXT-X-STREAM-INF:BANDWIDTH=${selected.attrs.BANDWIDTH || 1000000},AUDIO="audio"\n${video}\n`);
     return name;
@@ -514,8 +520,15 @@ async function parsePlaylist(text, parentUrl, depth = 0) {
     ends.set(url, start + length);
     return { start, end: start + length - 1 };
   }
+  let currentExtinf = 0;
   for (let line of lines) {
     if (!line) continue;
+    if (line.startsWith('#EXTINF:')) {
+      const match = line.match(/#EXTINF:\s*([0-9.]+)/);
+      if (match) currentExtinf = parseFloat(match[1]);
+      rewritten.push(line);
+      continue;
+    }
     if (line.startsWith('#EXT-X-BYTERANGE:')) { range = line.split(':')[1]; continue; }
     if (line.startsWith('#EXT-X-KEY:') || line.startsWith('#EXT-X-MAP:')) {
       const attrs = attributes(line);
@@ -530,6 +543,10 @@ async function parsePlaylist(text, parentUrl, depth = 0) {
       const url = new URL(line, parentUrl).href;
       line = asset(url, range ? byteRange(range, url) : null);
       range = null;
+      if (!isAudio && currentExtinf > 0) {
+        currentDownload.totalDuration = (currentDownload.totalDuration || 0) + currentExtinf;
+        currentExtinf = 0;
+      }
     }
     rewritten.push(line);
   }
@@ -659,21 +676,205 @@ function startSpeedTracker() {
   }, 1000);
 }
 
+// Helpers for Compile & Remux Progress Tracking
+function formatTime(seconds) {
+  if (!seconds || isNaN(seconds) || seconds < 0) return "00:00";
+  const s = Math.floor(seconds);
+  const hrs = Math.floor(s / 3600);
+  const mins = Math.floor((s % 3600) / 60);
+  const secs = s % 60;
+  if (hrs > 0) {
+    return `${hrs.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+  }
+  return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+}
+
+function parseFfmpegLog(msg) {
+  const result = {};
+  if (!msg || typeof msg !== "string") return result;
+
+  // time=00:01:23.45 or time=01:23.45
+  const timeMatch = msg.match(/time=\s*(\d{2}:\d{2}:\d{2}\.\d+|\d{2}:\d{2}\.\d+)/);
+  if (timeMatch) {
+    result.timeStr = timeMatch[1];
+    const parts = timeMatch[1].split(':');
+    if (parts.length === 3) {
+      result.timeSec = parseInt(parts[0], 10) * 3600 + parseInt(parts[1], 10) * 60 + parseFloat(parts[2]);
+    } else if (parts.length === 2) {
+      result.timeSec = parseInt(parts[0], 10) * 60 + parseFloat(parts[1]);
+    }
+  }
+
+  // speed= 35.2x
+  const speedMatch = msg.match(/speed=\s*([\d.]+x)/);
+  if (speedMatch) {
+    result.speed = speedMatch[1].trim();
+  }
+
+  // size= 12345kB or 12345B
+  const sizeMatch = msg.match(/size=\s*(\d+)\s*(kB|B|MB)/i);
+  if (sizeMatch) {
+    const val = parseInt(sizeMatch[1], 10);
+    const unit = sizeMatch[2].toUpperCase();
+    if (unit === 'KB') {
+      result.size = val >= 1024 ? `${(val / 1024).toFixed(1)} MB` : `${val} KB`;
+    } else if (unit === 'MB') {
+      result.size = `${val} MB`;
+    } else {
+      result.size = `${val} B`;
+    }
+  }
+
+  // fps= 60
+  const fpsMatch = msg.match(/fps=\s*([\d.]+)/);
+  if (fpsMatch) {
+    result.fps = fpsMatch[1].trim();
+  }
+
+  return result;
+}
+
+let lastCompileLogTime = 0;
+let lastCompileUpdateTime = 0;
+
+function updateCompileProgress({ phase, timeSec, progressRatio, speed, size, fps }) {
+  if (!currentDownload || currentDownload.status !== "compiling") return;
+
+  if (timeSec !== undefined && timeSec > (currentDownload.compileTimeSec || 0)) {
+    currentDownload.compileTimeSec = timeSec;
+  }
+  if (speed) currentDownload.compileSpeed = speed;
+  if (size) currentDownload.compileSize = size;
+  if (fps) currentDownload.compileFps = fps;
+
+  const totalDur = currentDownload.totalDuration || 0;
+  const currentSec = currentDownload.compileTimeSec || 0;
+
+  // Percentage calculation
+  let percent = currentDownload.percent;
+  if (totalDur > 0 && currentSec > 0) {
+    percent = Math.min(99, Math.max(1, Math.round((currentSec / totalDur) * 100)));
+  } else if (progressRatio !== null && progressRatio !== undefined && progressRatio > 0) {
+    percent = Math.min(99, Math.max(1, Math.round(progressRatio * 100)));
+  }
+  currentDownload.percent = percent;
+
+  // ETA calculation
+  let etaStr = "--:--";
+  if (totalDur > 0 && currentSec > 0 && currentDownload.compileSpeed) {
+    const speedMultiplier = parseFloat(currentDownload.compileSpeed);
+    if (speedMultiplier > 0) {
+      const remainingSecs = Math.max(0, (totalDur - currentSec) / speedMultiplier);
+      if (remainingSecs < 60) {
+        etaStr = `${Math.round(remainingSecs)}s`;
+      } else {
+        etaStr = `${Math.floor(remainingSecs / 60)}m ${Math.round(remainingSecs % 60)}s`;
+      }
+    }
+  }
+  currentDownload.eta = etaStr;
+
+  const phaseLabel = phase === "transcode" ? "Transcoding" : "Remuxing";
+  const formattedCur = formatTime(currentSec);
+  const formattedTot = totalDur > 0 ? formatTime(totalDur) : null;
+  const timeDisplay = formattedTot ? `${formattedCur} / ${formattedTot}` : formattedCur;
+
+  currentDownload.statusText = `${phaseLabel}: ${timeDisplay} (${percent}%)`;
+  currentDownload.speed = currentDownload.compileSpeed || (phase === "transcode" ? "Transcoding..." : "Remuxing...");
+  currentDownload.timeInfo = timeDisplay;
+
+  const now = Date.now();
+  // UI update throttled to 350ms
+  if (now - lastCompileUpdateTime >= 350) {
+    lastCompileUpdateTime = now;
+    sendStatusUpdate({
+      stage: phase,
+      statusText: currentDownload.statusText,
+      timeInfo: timeDisplay,
+      compileSpeed: currentDownload.compileSpeed,
+      compileSize: currentDownload.compileSize
+    });
+  }
+
+  // Console terminal log throttled to 1500ms
+  if (now - lastCompileLogTime >= 1500) {
+    lastCompileLogTime = now;
+    const parts = [];
+    parts.push(`[${phaseLabel}] ${timeDisplay} (${percent}%)`);
+    if (currentDownload.compileSpeed) parts.push(`Speed: ${currentDownload.compileSpeed}`);
+    if (currentDownload.compileSize) parts.push(`Size: ${currentDownload.compileSize}`);
+    if (etaStr !== "--:--") parts.push(`ETA: ${etaStr}`);
+    log(parts.join(" | "), "info");
+  }
+}
+
 // Merge & Finalize file stream
 async function compileSegments(skipFailed = false) {
   // Missing assets cannot be safely joined, especially keys and init segments.
-  if (skipFailed) { log("Incomplete streams cannot be converted safely. Retry the download.", "error"); await cleanUpDownload("failed"); return; }
+  if (skipFailed) {
+    log("Incomplete streams cannot be converted safely. Retry the download.", "error");
+    await cleanUpDownload("failed");
+    return;
+  }
+
+  // 1. Stop download speed timer
+  if (currentDownload.speedTimer) {
+    clearInterval(currentDownload.speedTimer);
+    currentDownload.speedTimer = null;
+  }
+
   currentDownload.status = "compiling";
+  currentDownload.stage = "loading_converter";
+  currentDownload.percent = 0;
+  currentDownload.speed = "--";
+  currentDownload.eta = "--:--";
+  currentDownload.statusText = "Loading local MP4 converter...";
   sendStatusUpdate();
+
   let blobUrl;
   try {
     log("Loading local MP4 converter...", "info");
     converter = new FFmpeg();
-    await converter.load({ coreURL: chrome.runtime.getURL("vendor/ffmpeg/ffmpeg-core.js"),
-      wasmURL: chrome.runtime.getURL("vendor/ffmpeg/ffmpeg-core.wasm") });
+    let remuxPhase = "remux";
+    lastCompileLogTime = 0;
+    lastCompileUpdateTime = 0;
+
+    converter.on("progress", ({ progress, time }) => {
+      const timeSec = Math.max(0, time / 1000000);
+      updateCompileProgress({
+        phase: remuxPhase,
+        timeSec,
+        progressRatio: progress > 0 && progress <= 1 ? progress : null
+      });
+    });
+
+    converter.on("log", ({ type, message }) => {
+      if (!message) return;
+      const info = parseFfmpegLog(message);
+      if (info.timeSec !== undefined || info.speed || info.size) {
+        updateCompileProgress({
+          phase: remuxPhase,
+          timeSec: info.timeSec,
+          speed: info.speed,
+          size: info.size,
+          fps: info.fps
+        });
+      }
+    });
+
+    await converter.load({
+      coreURL: chrome.runtime.getURL("vendor/ffmpeg/ffmpeg-core.js"),
+      wasmURL: chrome.runtime.getURL("vendor/ffmpeg/ffmpeg-core.wasm")
+    });
+
+    // 2. Write segments into FFmpeg virtual file system
+    currentDownload.stage = "preparing_segments";
+    const totalSegs = currentDownload.segments.length;
+    log(`Preparing ${totalSegs} media segments for MP4 converter...`, "info");
+    let lastWriteStatusTime = Date.now();
 
     let isFmp4Segments = false;
-    for (let i = 0; i < currentDownload.segments.length; i++) {
+    for (let i = 0; i < totalSegs; i++) {
       const segment = currentDownload.segments[i];
       const buffer = await getSegmentFromDB(`${currentDownload.id}_${segment.index}`);
       if (!buffer) throw new Error(`Missing segment ${segment.index}`);
@@ -683,7 +884,22 @@ async function compileSegments(skipFailed = false) {
         if (/^(ftyp|styp|moof)$/.test(box)) isFmp4Segments = true;
       }
       await converter.writeFile(segment.name, bytes);
+
+      const now = Date.now();
+      const prepPercent = Math.round(((i + 1) / totalSegs) * 100);
+      if (now - lastWriteStatusTime > 400 || i === totalSegs - 1) {
+        lastWriteStatusTime = now;
+        currentDownload.percent = prepPercent;
+        currentDownload.speed = `${i + 1} / ${totalSegs}`;
+        currentDownload.statusText = `Preparing segments: ${i + 1}/${totalSegs} (${prepPercent}%)`;
+        sendStatusUpdate({
+          stage: "preparing_segments",
+          statusText: currentDownload.statusText,
+          timeInfo: `${i + 1}/${totalSegs}`
+        });
+      }
     }
+    log(`All ${totalSegs} segments loaded into converter.`, "success");
 
     if (currentDownload.type === "segments") {
       if (isFmp4Segments) {
@@ -728,40 +944,114 @@ async function compileSegments(skipFailed = false) {
       }
     }
 
-    for (const [name, text] of currentDownload.playlists) await converter.writeFile(name, text);
+    for (const [name, text] of currentDownload.playlists) {
+      await converter.writeFile(name, text);
+    }
+
+    // 3. Remux
+    currentDownload.stage = "remuxing";
+    currentDownload.percent = 0;
+    currentDownload.statusText = "Remuxing video and audio into MP4...";
+    log("Remuxing video and audio into MP4...", "info");
+    sendStatusUpdate();
+
     const useHlsDemuxer = currentDownload.type === 'm3u8' || (currentDownload.type === 'segments' && !isFmp4Segments);
     const input = useHlsDemuxer
       ? ['-allowed_extensions', 'ALL', '-protocol_whitelist', 'file,crypto,data', '-i', currentDownload.inputName]
       : ['-i', currentDownload.inputName];
     const base = [...input, '-map', '0:v:0', '-map', '0:a:0?', '-sn', '-dn'];
-    log("Remuxing video and audio into MP4...", "info");
+
     let code = await converter.exec([...base, '-c', 'copy', '-movflags', '+faststart', '-y', 'output.mp4']);
+
     if (code !== 0) {
+      remuxPhase = "transcode";
+      currentDownload.stage = "transcoding";
+      currentDownload.percent = 0;
+      currentDownload.compileTimeSec = 0;
+      currentDownload.statusText = "Converting codecs (H.264 / AAC)...";
       log("Converting codecs to H.264 / AAC... This may take several minutes.", "warning");
-      code = await converter.exec([...base, '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '23',
-        '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-movflags', '+faststart', '-y', 'output.mp4']);
+      sendStatusUpdate();
+
+      code = await converter.exec([
+        ...base,
+        '-c:v', 'libx264',
+        '-preset', 'ultrafast',
+        '-crf', '23',
+        '-pix_fmt', 'yuv420p',
+        '-c:a', 'aac',
+        '-movflags', '+faststart',
+        '-y', 'output.mp4'
+      ]);
     }
+
     if (code !== 0) throw new Error('MP4 conversion failed. Unsupported media or insufficient memory.');
-    const output = await converter.readFile('output.mp4');
-    if (!output.byteLength) throw new Error('Empty MP4 output');
-    blobUrl = URL.createObjectURL(new Blob([output], { type: 'video/mp4' }));
-    converter.terminate(); converter = null;
+
+    // 4. Free up memory: batch delete temporary segment files from Wasm converter memory immediately
+    log("Purging raw segments from converter memory to free RAM...", "info");
+    const filesToDelete = [
+      ...currentDownload.segments.map(s => s.name),
+      ...Array.from(currentDownload.playlists.keys())
+    ];
+    try { await converter.deleteFiles(filesToDelete); } catch {}
+
+    // 5. Read output MP4 file as Blob (Zero-copy transfer without duplicate buffer allocation)
+    currentDownload.stage = "reading_output";
+    currentDownload.percent = 99;
+    currentDownload.statusText = "Reading generated MP4 file (Zero-copy)...";
+    log("Reading generated MP4 file from converter...", "info");
+    sendStatusUpdate();
+
+    const outputResult = await converter.readFile('output.mp4', 'blob');
+    let outputBlob;
+    if (outputResult instanceof Blob) {
+      outputBlob = outputResult;
+    } else if (outputResult?.byteLength) {
+      outputBlob = new Blob([outputResult], { type: 'video/mp4' });
+    } else {
+      throw new Error('Empty MP4 output');
+    }
+
+    if (!outputBlob.size) throw new Error('Empty MP4 output');
+
+    const outputMb = (outputBlob.size / (1024 * 1024)).toFixed(1);
+    log(`MP4 ready (${outputMb} MB). Preparing file save...`, 'success');
+
+    blobUrl = URL.createObjectURL(outputBlob);
+
+    // 6. Save file (Keep converter alive until download is safely finished)
     currentDownload.status = 'saving';
-    log('MP4 ready. Choose where to save the file.', 'success');
-    const saved = new Promise((resolve, reject) => { saveResolve = resolve; saveReject = reject; });
-    // Register completion listener before asking Chrome to save.
+    currentDownload.stage = 'saving';
+    currentDownload.percent = 100;
+    currentDownload.speed = "Ready";
+    currentDownload.statusText = "Saving MP4 file...";
+    sendStatusUpdate();
+
+    const saved = new Promise((resolve, reject) => {
+      saveResolve = resolve;
+      saveReject = reject;
+    });
     saved.catch(() => {});
-    const response = await chrome.runtime.sendMessage({ action: 'triggerDownloadsApi',
-      data: { url: blobUrl, filename: currentDownload.filename } });
-    if (!response?.success) throw new Error(response?.error || 'Could not start save');
+
+    log("Requesting browser to save file...", "info");
+    const response = await chrome.runtime.sendMessage({
+      action: 'triggerDownloadsApi',
+      data: { url: blobUrl, filename: currentDownload.filename }
+    });
+    if (!response?.success) throw new Error(response?.error || 'Could not start Chrome download');
+
+    log(`Save process started (ID: ${response.downloadId || 'ok'}). Waiting for completion...`, "info");
     await saved;
-    log('MP4 file saved.', 'success');
+    log('MP4 file successfully saved.', 'success');
     await cleanUpDownload('completed');
   } catch (err) {
-    if (currentDownload) { log(`MP4 conversion/save failed: ${err.message}`, 'error'); await cleanUpDownload('failed'); }
+    if (currentDownload) {
+      log(`MP4 conversion/save failed: ${err.message}`, 'error');
+      await cleanUpDownload('failed');
+    }
   } finally {
     if (blobUrl) URL.revokeObjectURL(blobUrl);
-    converter?.terminate(); converter = null;
+    converter?.terminate();
+    converter = null;
     saveResolve = saveReject = null;
   }
 }

@@ -374,6 +374,12 @@ body {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  transition: color 0.2s ease;
+}
+
+.url-label.highlight-status {
+  color: #c084fc;
+  font-weight: 500;
 }
 
 .action-buttons {

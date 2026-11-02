@@ -1,3 +1,4 @@
+// Created by DINKIssTyle on 2026. Copyright (C) 2026 DINKI'ssTyle. All rights reserved.
 import { FFMessageType } from "./const.js";
 import { getMessageID } from "./utils.js";
 import { ERROR_TERMINATED, ERROR_NOT_LOADED } from "./errors.js";
@@ -25,6 +26,14 @@ export class FFmpeg {
      */
     #registerHandlers = () => {
         if (this.#worker) {
+            this.#worker.onerror = (err) => {
+                const message = err?.message || "FFmpeg worker crashed or ran out of memory";
+                for (const id in this.#rejects) {
+                    this.#rejects[id](new Error(message));
+                    delete this.#rejects[id];
+                    delete this.#resolves[id];
+                }
+            };
             this.#worker.onmessage = ({ data: { id, type, data }, }) => {
                 switch (type) {
                     case FFMessageType.LOAD:
@@ -38,6 +47,7 @@ export class FFmpeg {
                     case FFMessageType.WRITE_FILE:
                     case FFMessageType.READ_FILE:
                     case FFMessageType.DELETE_FILE:
+                    case FFMessageType.DELETE_FILES:
                     case FFMessageType.RENAME:
                     case FFMessageType.CREATE_DIR:
                     case FFMessageType.LIST_DIR:
@@ -266,6 +276,10 @@ export class FFmpeg {
     deleteFile = (path, { signal } = {}) => this.#send({
         type: FFMessageType.DELETE_FILE,
         data: { path },
+    }, undefined, signal);
+    deleteFiles = (paths, { signal } = {}) => this.#send({
+        type: FFMessageType.DELETE_FILES,
+        data: { paths },
     }, undefined, signal);
     /**
      * Rename a file or directory.

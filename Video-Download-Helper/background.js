@@ -653,18 +653,24 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   // 5.5. Delegate downloads execution from offscreen document
   else if (message.action === "triggerDownloadsApi") {
     const { url, filename } = message.data;
-    chrome.downloads.download({
-      url: url,
-      filename: filename,
-      saveAs: true
-    }, (downloadId) => {
-      if (chrome.runtime.lastError) {
-        sendResponse({ success: false, error: chrome.runtime.lastError.message });
-      } else {
-        if (activeDownload) { activeDownload.downloadId = downloadId; persistDownload(); }
-        sendResponse({ success: true, downloadId: downloadId });
-      }
-    });
+    try {
+      chrome.downloads.download({
+        url: url,
+        filename: filename,
+        saveAs: true
+      }, (downloadId) => {
+        if (chrome.runtime.lastError) {
+          console.error("downloads.download error:", chrome.runtime.lastError);
+          sendResponse({ success: false, error: chrome.runtime.lastError.message });
+        } else {
+          if (activeDownload) { activeDownload.downloadId = downloadId; persistDownload(); }
+          sendResponse({ success: true, downloadId: downloadId });
+        }
+      });
+    } catch (err) {
+      console.error("triggerDownloadsApi sync error:", err);
+      sendResponse({ success: false, error: err.message });
+    }
     return true;
   }
 
@@ -695,6 +701,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         url: downloadData.url,
         filename: finalFilename,
         type: downloadData.type || "m3u8",
+        duration: downloadData.duration || null,
         referer: downloadData.referer || "",
         origin: downloadData.origin || "",
         manifestText: downloadData.manifestText || matchedItem?.manifestText || null,
@@ -950,7 +957,8 @@ function mp4Filename(name = "video") {
 }
 function makeAbsoluteUrl(path, base) { return new URL(path, base).href; }
 chrome.downloads.onChanged.addListener(delta => {
-  if (activeDownload?.downloadId !== delta.id || !delta.state) return;
+  if (!activeDownload || !delta.state) return;
+  if (activeDownload.downloadId && activeDownload.downloadId !== delta.id) return;
   chrome.runtime.sendMessage({ action: "offscreenSaveState", state: delta.state.current,
     error: delta.error?.current }).catch(() => {});
 });
